@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/embedding_result/schema.json",
+  "title": "EmbeddingResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "video_id",
+    "segment_id",
+    "frame_id",
+    "timestamp_ms",
+    "embedding_id",
+    "embedding_uri",
+    "embedding_dim",
+    "model_name",
+    "model_version"
+  ],
+  "properties": {
+    "video_id": { "type": "string", "minLength": 1 },
+    "segment_id": { "type": "string", "minLength": 1 },
+    "frame_id": { "type": "string", "minLength": 1 },
+    "timestamp_ms": { "type": "integer", "minimum": 0 },
+    "embedding_id": { "type": "string", "minLength": 1 },
+    "embedding_uri": { "type": "string", "pattern": "^(s3|gs|azure|https?)://" },
+    "embedding_dim": { "type": "integer", "minimum": 1 },
+    "model_name": { "type": "string", "minLength": 1 },
+    "model_version": { "type": "string", "minLength": 1 }
+  }
+}

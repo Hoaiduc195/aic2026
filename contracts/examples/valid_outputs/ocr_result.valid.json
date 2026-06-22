@@ -1,0 +1,20 @@
+{
+  "video_id": "video_test_0001",
+  "segment_id": "video_test_0001_seg_002",
+  "frame_id": "frame_000385",
+  "timestamp_ms": 15400,
+  "text": "Cua Hang Tap Hoa Co Vy - 123 Nguyen Hue",
+  "boxes": [
+    {
+      "text": "Cua Hang Tap Hoa Co Vy",
+      "box": [[10, 20], [200, 20], [200, 50], [10, 50]],
+      "confidence": 0.96
+    },
+    {
+      "text": "123 Nguyen Hue",
+      "box": [[12, 55], [150, 55], [150, 80], [12, 80]],
+      "confidence": 0.94
+    }
+  ],
+  "confidence": 0.95
+}

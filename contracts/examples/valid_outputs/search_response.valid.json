@@ -1,0 +1,21 @@
+{
+  "query_id": "query_0001",
+  "query": "tim doan co xe may truoc cua hang",
+  "results": [
+    {
+      "segment_id": "video_test_0001_seg_002",
+      "video_id": "video_test_0001",
+      "timestamp_start_ms": 12000,
+      "timestamp_end_ms": 18000,
+      "preview_uri": "s3://aic-multimedia-artifacts/keyframes/video_test_0001/frame_000385.webp",
+      "score": 0.93,
+      "evidence": {
+        "ocr_text": "Cua Hang Tap Hoa Co Vy",
+        "asr_text": "cho nay re phai roi di thang",
+        "caption": "A motorcycle moves along a busy street in daytime",
+        "objects": ["motorcycle", "person"]
+      },
+      "matched_modalities": ["embedding", "ocr", "caption"]
+    }
+  ]
+}

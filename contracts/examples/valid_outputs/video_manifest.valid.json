@@ -1,0 +1,10 @@
+{
+  "video_id": "video_test_0001",
+  "original_filename": "street_scene_01.mp4",
+  "storage_uri": "s3://aic-multimedia-artifacts/raw/videos/street_scene_01.mp4",
+  "duration_ms": 185000,
+  "fps": 25.0,
+  "width": 1920,
+  "height": 1080,
+  "created_at": "2026-06-22T09:00:00Z"
+}

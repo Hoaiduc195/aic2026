@@ -1,0 +1,63 @@
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Python and Node basics
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+node_modules/
+dist/
+build/
+
+# Raw inputs and large generated outputs
+data/samples/raw_videos/*
+artifacts/keyframes/*
+artifacts/audio/*
+artifacts/transcripts/*
+artifacts/embeddings/*
+artifacts/ocr/*
+artifacts/captions/*
+artifacts/objects/*
+artifacts/fused/*
+artifacts/checkpoints/*
+artifacts/manifests/*.parquet
+artifacts/manifests/*.jsonl
+artifacts/metadata/*.parquet
+artifacts/metadata/*.jsonl
+
+# Local cache and scratch
+data/local_cache/*
+data/scratch/*
+data/tmp/*
+
+# Database snapshots and local indexes
+database/snapshots/*
+database/indexes/*.bin
+database/indexes/*.faiss
+
+# Model weights and checkpoints
+**/*.ckpt
+**/*.pt
+**/*.pth
+**/*.onnx
+**/*.safetensors
+
+# Keep scaffold folders
+!data/samples/.gitkeep
+!data/local_cache/.gitkeep
+!data/scratch/.gitkeep
+!data/tmp/.gitkeep
+!artifacts/manifests/.gitkeep
+!artifacts/checkpoints/.gitkeep
+!artifacts/metadata/.gitkeep
+!artifacts/keyframes/.gitkeep
+!artifacts/audio/.gitkeep
+!artifacts/transcripts/.gitkeep
+!artifacts/embeddings/.gitkeep
+!artifacts/ocr/.gitkeep
+!artifacts/captions/.gitkeep
+!artifacts/objects/.gitkeep
+!artifacts/fused/.gitkeep

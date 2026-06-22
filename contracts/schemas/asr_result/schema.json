@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/asr_result/schema.json",
+  "title": "AsrResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "video_id",
+    "segment_id",
+    "asr_start_ms",
+    "asr_end_ms",
+    "text",
+    "confidence"
+  ],
+  "properties": {
+    "video_id": { "type": "string", "minLength": 1 },
+    "segment_id": { "type": "string", "minLength": 1 },
+    "asr_start_ms": { "type": "integer", "minimum": 0 },
+    "asr_end_ms": { "type": "integer", "minimum": 0 },
+    "text": { "type": "string" },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+  }
+}

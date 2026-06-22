@@ -1,0 +1,31 @@
+{
+  "video_id": "video_test_0001",
+  "segment_id": "video_test_0001_seg_002",
+  "segment_start_ms": 12000,
+  "segment_end_ms": 18000,
+  "keyframes": [
+    "frame_000385"
+  ],
+  "ocr_text": "Cua Hang Tap Hoa Co Vy - 123 Nguyen Hue",
+  "asr_text": "cho nay re phai roi di thang dung khong anh",
+  "captions": {
+    "vi": "Xe may dang di chuyen tren duong pho dong duc vao ban ngay",
+    "en": "A motorcycle moves along a busy street in daytime"
+  },
+  "objects": [
+    "motorcycle",
+    "person",
+    "storefront"
+  ],
+  "embedding_refs": [
+    {
+      "embedding_id": "emb_clip_000385",
+      "embedding_uri": "s3://aic-multimedia-artifacts/embeddings/video_test_0001/frame_000385.npy",
+      "embedding_dim": 512
+    }
+  ],
+  "storage_refs": {
+    "keyframe_uri": "s3://aic-multimedia-artifacts/keyframes/video_test_0001/frame_000385.webp",
+    "transcript_uri": "s3://aic-multimedia-artifacts/transcripts/video_test_0001/asr_segments.parquet"
+  }
+}

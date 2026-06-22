@@ -1,0 +1,11 @@
+{
+  "video_id": "video_test_0001",
+  "segment_id": "video_test_0001_seg_002",
+  "frame_id": "frame_000385",
+  "timestamp_ms": 15400,
+  "embedding_id": "emb_clip_000385",
+  "embedding_uri": "s3://aic-multimedia-artifacts/embeddings/video_test_0001/frame_000385.npy",
+  "embedding_dim": "512",
+  "model_name": "clip-vit-base",
+  "model_version": "placeholder"
+}

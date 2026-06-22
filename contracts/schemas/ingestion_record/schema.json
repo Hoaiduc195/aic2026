@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/ingestion_record/schema.json",
+  "title": "IngestionRecord",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ingestion_id",
+    "source_artifact_uri",
+    "target_index",
+    "record_count",
+    "status",
+    "started_at",
+    "finished_at",
+    "errors"
+  ],
+  "properties": {
+    "ingestion_id": { "type": "string", "minLength": 1 },
+    "source_artifact_uri": { "type": "string", "pattern": "^(s3|gs|azure|https?)://" },
+    "target_index": { "type": "string", "minLength": 1 },
+    "record_count": { "type": "integer", "minimum": 0 },
+    "status": { "type": "string", "enum": ["pending", "running", "completed", "failed"] },
+    "started_at": { "type": "string", "format": "date-time" },
+    "finished_at": { "type": "string", "format": "date-time" },
+    "errors": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

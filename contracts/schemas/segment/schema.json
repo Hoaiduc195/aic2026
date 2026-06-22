@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/segment/schema.json",
+  "title": "Segment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "video_id",
+    "segment_id",
+    "segment_start_ms",
+    "segment_end_ms",
+    "source",
+    "confidence"
+  ],
+  "properties": {
+    "video_id": { "type": "string", "minLength": 1 },
+    "segment_id": { "type": "string", "minLength": 1 },
+    "segment_start_ms": { "type": "integer", "minimum": 0 },
+    "segment_end_ms": { "type": "integer", "minimum": 0 },
+    "source": { "type": "string", "minLength": 1 },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+  }
+}

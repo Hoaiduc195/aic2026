@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/video_manifest/schema.json",
+  "title": "VideoManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "video_id",
+    "original_filename",
+    "storage_uri",
+    "duration_ms",
+    "fps",
+    "width",
+    "height",
+    "created_at"
+  ],
+  "properties": {
+    "video_id": { "type": "string", "minLength": 1 },
+    "original_filename": { "type": "string", "minLength": 1 },
+    "storage_uri": { "type": "string", "pattern": "^(s3|gs|azure|https?)://" },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "fps": { "type": "number", "exclusiveMinimum": 0 },
+    "width": { "type": "integer", "minimum": 1 },
+    "height": { "type": "integer", "minimum": 1 },
+    "created_at": { "type": "string", "format": "date-time" }
+  }
+}

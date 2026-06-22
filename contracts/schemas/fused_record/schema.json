@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/fused_record/schema.json",
+  "title": "FusedRecord",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "video_id",
+    "segment_id",
+    "segment_start_ms",
+    "segment_end_ms",
+    "keyframes",
+    "ocr_text",
+    "asr_text",
+    "captions",
+    "objects",
+    "embedding_refs",
+    "storage_refs"
+  ],
+  "properties": {
+    "video_id": { "type": "string", "minLength": 1 },
+    "segment_id": { "type": "string", "minLength": 1 },
+    "segment_start_ms": { "type": "integer", "minimum": 0 },
+    "segment_end_ms": { "type": "integer", "minimum": 0 },
+    "keyframes": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "ocr_text": { "type": "string" },
+    "asr_text": { "type": "string" },
+    "captions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vi", "en"],
+      "properties": {
+        "vi": { "type": "string" },
+        "en": { "type": "string" }
+      }
+    },
+    "objects": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "embedding_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["embedding_id", "embedding_uri", "embedding_dim"],
+        "properties": {
+          "embedding_id": { "type": "string" },
+          "embedding_uri": { "type": "string", "pattern": "^(s3|gs|azure|https?)://" },
+          "embedding_dim": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "storage_refs": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

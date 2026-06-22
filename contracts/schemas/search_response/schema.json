@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/search_response/schema.json",
+  "title": "SearchResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["query_id", "query", "results"],
+  "properties": {
+    "query_id": { "type": "string", "minLength": 1 },
+    "query": { "type": "string", "minLength": 1 },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "segment_id",
+          "video_id",
+          "timestamp_start_ms",
+          "timestamp_end_ms",
+          "preview_uri",
+          "score",
+          "evidence",
+          "matched_modalities"
+        ],
+        "properties": {
+          "segment_id": { "type": "string", "minLength": 1 },
+          "video_id": { "type": "string", "minLength": 1 },
+          "timestamp_start_ms": { "type": "integer", "minimum": 0 },
+          "timestamp_end_ms": { "type": "integer", "minimum": 0 },
+          "preview_uri": { "type": "string", "pattern": "^(s3|gs|azure|https?)://" },
+          "score": { "type": "number" },
+          "evidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "ocr_text": { "type": "string" },
+              "asr_text": { "type": "string" },
+              "caption": { "type": "string" },
+              "objects": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            }
+          },
+          "matched_modalities": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

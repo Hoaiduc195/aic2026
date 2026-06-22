@@ -1,0 +1,12 @@
+{
+  "video_id": "video_test_0001",
+  "segment_id": "video_test_0001_seg_002",
+  "frame_id": "frame_000385",
+  "timestamp_ms": 15400,
+  "storage_uri": "s3://aic-multimedia-artifacts/keyframes/video_test_0001/frame_000385.webp",
+  "quality_scores": {
+    "brightness": 128.5,
+    "blur_score": 342.1,
+    "std_score": 45.2
+  }
+}

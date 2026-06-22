@@ -1,0 +1,7 @@
+{
+  "segment_id": "video_test_0001_seg_002",
+  "segment_start_ms": 12000,
+  "segment_end_ms": 18000,
+  "source": "transnetv2",
+  "confidence": 0.97
+}
