@@ -1,0 +1,27 @@
+:root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #07100e; color: #eaf5f0; }
+* { box-sizing: border-box; }
+body { margin: 0; background: radial-gradient(circle at 20% -10%, #174b3c, transparent 35%), #07100e; min-height: 100vh; }
+button, input, select { font: inherit; }
+.workbench { max-width: 1500px; margin: auto; padding: 28px; }
+.eyebrow { margin: 0; color: #7ee2b8; text-transform: uppercase; letter-spacing: .15em; font-size: .75rem; }
+h1 { margin: 5px 0 24px; font-size: clamp(1.6rem, 3vw, 2.6rem); }
+.query { display: grid; grid-template-columns: minmax(280px, 1fr) 180px 120px; gap: 12px; padding: 16px; border: 1px solid #285649; background: #0c1c18dd; border-radius: 12px; }
+label span { display: block; color: #9fb9af; margin-bottom: 6px; font-size: .8rem; }
+input, select { width: 100%; min-height: 42px; color: inherit; background: #07110e; border: 1px solid #35685a; border-radius: 7px; padding: 9px 11px; }
+button { color: #06120e; background: #7ee2b8; border: 0; border-radius: 7px; padding: 10px 14px; cursor: pointer; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+.query > button { align-self: end; min-height: 42px; }
+.warning, .error { border-radius: 8px; padding: 10px 14px; }
+.warning { background: #493b10; color: #ffe69b; }
+.error { background: #481b20; color: #ffc3c9; }
+.content { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(320px, .7fr); gap: 18px; margin-top: 18px; }
+.results { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; align-content: start; }
+.card { min-height: 110px; text-align: left; display: flex; flex-direction: column; gap: 8px; color: #eaf5f0; background: #10231e; border: 1px solid #285649; }
+.card.selected { outline: 2px solid #7ee2b8; background: #17332b; }
+.card small { color: #9fb9af; }
+.inspector { min-height: 390px; padding: 18px; border: 1px solid #285649; background: #0c1c18; border-radius: 12px; }
+.inspector h2 { margin-top: 0; }
+video { width: 100%; max-height: 340px; background: #000; }
+.evidence { display: flex; gap: 12px; padding: 9px 0; border-bottom: 1px solid #23463d; }
+.evidence b { color: #7ee2b8; min-width: 70px; }
+@media (max-width: 820px) { .query, .content { grid-template-columns: 1fr; } .workbench { padding: 16px; } }

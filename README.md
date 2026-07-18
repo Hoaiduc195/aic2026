@@ -59,3 +59,47 @@ graph TD
 
 ---
 *For further technical specifications, please consult the documentation provided in the `docs/` directory.*
+
+## Implemented qualification MVP
+
+The repository now contains an executable, offline-safe baseline:
+
+- canonical JSON Schemas and semantic validation for versions, temporal
+  hierarchy, evidence, artifacts, query plans, branch results, and search;
+- deterministic Python manifest ingestion, temporal hierarchy, sampling,
+  quality scoring, OCR-aware deduplication, evidence publication, ASR mapping,
+  and offline hybrid retrieval/evaluation;
+- a NestJS API with strict input validation, Vietnamese/English query planning,
+  independent retrieval deadlines, weighted RRF, temporal grouping, five task
+  executors, sessions, health checks, and a disabled competition adapter;
+- a Next.js operator workbench with precise segment playback, evidence IDs,
+  degraded-state visibility, and keyboard result navigation;
+- an internal FastAPI inference boundary with an offline deterministic encoder
+  for development contract testing;
+- Docker Compose and `dev`, `benchmark`, and `aic2026-safe` configuration
+  profiles. Runtime networking is internal and organizer submission is off.
+
+The built-in evidence index is a small fixture used to prove the complete
+search path. Replace it with validated PostgreSQL/pgvector artifacts before a
+real dataset run. Optional models and live organizer submission stay disabled
+until hardware benchmarks and the authoritative 2026 organizer protocol exist.
+
+## Local verification
+
+```powershell
+python -m unittest discover -s tests -v
+python -m unittest apps.inference.tests.test_service -v
+npm install
+npm test
+npm run build
+```
+
+Start the frontend/backend in development after installing dependencies:
+
+```powershell
+npm run start:dev --workspace=@aic2026/backend
+npm run dev --workspace=@aic2026/frontend
+```
+
+The backend listens on port `3000` by default; when using Compose it is exposed
+at `http://localhost:3001` and the frontend at `http://localhost:3000`.

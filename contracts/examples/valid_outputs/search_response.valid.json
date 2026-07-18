@@ -1,21 +1,8 @@
 {
-  "query_id": "query_0001",
-  "query": "tim doan co xe may truoc cua hang",
-  "results": [
-    {
-      "segment_id": "video_test_0001_seg_002",
-      "video_id": "video_test_0001",
-      "timestamp_start_ms": 12000,
-      "timestamp_end_ms": 18000,
-      "preview_uri": "s3://aic-multimedia-artifacts/keyframes/video_test_0001/frame_000385.webp",
-      "score": 0.93,
-      "evidence": {
-        "ocr_text": "Cua Hang Tap Hoa Co Vy",
-        "asr_text": "cho nay re phai roi di thang",
-        "caption": "A motorcycle moves along a busy street in daytime",
-        "objects": ["motorcycle", "person"]
-      },
-      "matched_modalities": ["embedding", "ocr", "caption"]
-    }
-  ]
+  "request_id":"req-001","query_id":"query-001","query":"tìm xe buýt số 18","task":"textual_kis","executor":"textual-kis-v1",
+  "versions":{"dataset_id":"aic2026-golden","dataset_version":"fixture-1","pipeline_version":"pipeline-1","schema_version":"1.0.0","index_version":"index-1","model_revisions":{"ocr":"paddle-fixture"},"activation_state":"active"},
+  "confidence":0.87,"degraded":false,"unavailable_branches":[],
+  "branches":[{"request_id":"req-001","branch":"ocr","status":"completed","versions":{"dataset_id":"aic2026-golden","dataset_version":"fixture-1","pipeline_version":"pipeline-1","schema_version":"1.0.0","index_version":"index-1","model_revisions":{"ocr":"paddle-fixture"},"activation_state":"active"},"elapsed_ms":42,"deadline_ms":400,"candidates":[{"segment_id":"seg-001","video_id":"video-001","rank":1,"score":0.87,"evidence_ids":["ev-ocr-001"]}],"error":null}],
+  "results":[{"segment_id":"seg-001","video_id":"video-001","start_ms":0,"end_ms":1000,"preview_uri":"file:///artifacts/previews/seg-001.webp","score":0.87,"evidence_ids":["ev-ocr-001"],"matched_modalities":["ocr"],"versions":{"dataset_id":"aic2026-golden","dataset_version":"fixture-1","pipeline_version":"pipeline-1","schema_version":"1.0.0","index_version":"index-1","model_revisions":{"ocr":"paddle-fixture"},"activation_state":"active"}}],
+  "timing_ms":{"planning":4,"retrieval":42,"fusion":2,"total":48}
 }

@@ -9,6 +9,10 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 node_modules/
+coverage/
+**/coverage/
+.next/
+**/.next/
 dist/
 build/
 

@@ -1,0 +1,7 @@
+{
+  "evidence_id":"ev-asr-001","video_id":"video-001","temporal_node_id":"seg-001","evidence_type":"asr","start_ms":100,"end_ms":900,
+  "payload":{"text":"xin chào thành phố hồ chí minh","language":"vi"},"confidence":0.91,
+  "producer":{"stage":"asr","code_version":"8166656","model_family":"whisper","model_revision":"small-fixture"},
+  "provenance":{"run_id":"run-001","artifact_uri":"file:///artifacts/asr/video-001.parquet","artifact_checksum":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+  "versions":{"dataset_id":"aic2026-golden","dataset_version":"fixture-1","pipeline_version":"pipeline-1","schema_version":"1.0.0","index_version":"index-1","model_revisions":{"asr":"small-fixture"},"activation_state":"active"}
+}

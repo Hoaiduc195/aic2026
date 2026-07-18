@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aic2026.local/contracts/schemas/version_manifest/schema.json",
+  "title": "VersionManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["dataset_id", "dataset_version", "pipeline_version", "schema_version", "index_version", "model_revisions", "activation_state"],
+  "properties": {
+    "dataset_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "dataset_version": {"type": "string", "minLength": 1},
+    "pipeline_version": {"type": "string", "minLength": 1},
+    "schema_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "index_version": {"type": "string", "minLength": 1},
+    "model_revisions": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}},
+    "activation_state": {"enum": ["staged", "active", "retired"]}
+  }
+}

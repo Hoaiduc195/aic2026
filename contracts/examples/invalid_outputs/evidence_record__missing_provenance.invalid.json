@@ -1,0 +1,5 @@
+{
+  "evidence_id":"ev-asr-001","video_id":"video-001","temporal_node_id":"seg-001","evidence_type":"asr","start_ms":100,"end_ms":900,
+  "payload":{"text":"xin chào"},"confidence":0.91,"producer":{"stage":"asr","code_version":"1","model_family":"whisper","model_revision":"small"},
+  "versions":{"dataset_id":"aic2026-golden","dataset_version":"fixture-1","pipeline_version":"pipeline-1","schema_version":"1.0.0","index_version":"index-1","model_revisions":{},"activation_state":"active"}
+}

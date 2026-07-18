@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aic-hcmc-2026"
+version = "0.1.0"
+description = "Offline multimodal evidence pipeline for AI Challenge HCMC 2026"
+requires-python = ">=3.11"
+
+[project.optional-dependencies]
+test = [
+  "coverage>=7.6",
+  "hypothesis>=6.100",
+  "jsonschema>=4.23",
+  "pytest>=8.3",
+  "pytest-cov>=6.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-config --strict-markers"
+
+[tool.coverage.run]
+branch = true
+source = ["pipelines"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_covered = true

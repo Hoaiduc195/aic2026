@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aic2026.local/contracts/schemas/query_plan/schema.json",
+  "title": "QueryPlan",
+  "type": "object", "additionalProperties": false,
+  "required": ["request_id", "query", "normalized_query", "task", "variants", "concepts", "constraints", "temporal_relations", "granularities", "branches", "fallback_policy", "versions"],
+  "properties": {
+    "request_id": {"type": "string", "minLength": 1}, "query": {"type": "string", "minLength": 1},
+    "normalized_query": {"type": "string", "minLength": 1},
+    "task": {"enum": ["textual_kis", "video_kis", "avs", "vqa", "kisc"]},
+    "variants": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "concepts": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "constraints": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["field", "operator", "value", "hard"], "properties": {"field": {"type": "string", "minLength": 1}, "operator": {"enum": ["eq", "contains", "gte", "lte", "in"]}, "value": {}, "hard": {"type": "boolean"}}}},
+    "temporal_relations": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["relation", "left", "right"], "properties": {"relation": {"enum": ["before", "after", "while"]}, "left": {"type": "string", "minLength": 1}, "right": {"type": "string", "minLength": 1}}}},
+    "granularities": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["frame", "micro_event", "segment", "context_window"]}},
+    "branches": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["branch", "top_k", "timeout_ms"], "properties": {"branch": {"enum": ["visual", "ocr", "asr", "caption", "object", "audio"]}, "top_k": {"type": "integer", "minimum": 1, "maximum": 1000}, "timeout_ms": {"type": "integer", "minimum": 1, "maximum": 30000}}}},
+    "fallback_policy": {"type": "array", "minItems": 1, "items": {"enum": ["expand_query", "expand_neighbors", "clarify", "abstain"]}},
+    "versions": {"$ref": "https://aic2026.local/contracts/schemas/version_manifest/schema.json"}
+  }
+}

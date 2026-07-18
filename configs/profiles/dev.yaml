@@ -1,0 +1,13 @@
+profile: dev
+network:
+  external_access: true
+storage:
+  backend: filesystem
+  artifact_root: artifacts/pipeline_runs
+models:
+  allow_mock: true
+competition:
+  submission_enabled: false
+retrieval:
+  branch_deadline_ms: 500
+  fused_deadline_ms: 1500

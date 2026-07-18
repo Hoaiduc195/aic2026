@@ -1,0 +1,12 @@
+{
+  "video_id":"video-001","timeline_start_ms":0,"timeline_end_ms":2000,
+  "nodes":[
+    {"node_id":"ctx-001","node_type":"context_window","parent_id":null,"child_ids":["seg-001","seg-002"],"start_ms":0,"end_ms":2000,"ordinal":0},
+    {"node_id":"seg-001","node_type":"segment","parent_id":"ctx-001","child_ids":["micro-001"],"start_ms":0,"end_ms":1000,"ordinal":0},
+    {"node_id":"seg-002","node_type":"segment","parent_id":"ctx-001","child_ids":["micro-002"],"start_ms":1000,"end_ms":2000,"ordinal":1},
+    {"node_id":"micro-001","node_type":"micro_event","parent_id":"seg-001","child_ids":["frame-001"],"start_ms":0,"end_ms":1000,"ordinal":0},
+    {"node_id":"micro-002","node_type":"micro_event","parent_id":"seg-002","child_ids":["frame-002"],"start_ms":1000,"end_ms":2000,"ordinal":0},
+    {"node_id":"frame-001","node_type":"frame","parent_id":"micro-001","child_ids":[],"start_ms":0,"end_ms":1000,"ordinal":0},
+    {"node_id":"frame-002","node_type":"frame","parent_id":"micro-002","child_ids":[],"start_ms":1000,"end_ms":2000,"ordinal":0}
+  ]
+}

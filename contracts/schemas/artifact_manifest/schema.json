@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aic2026.local/contracts/schemas/artifact_manifest/schema.json",
+  "title": "ArtifactManifest",
+  "type": "object", "additionalProperties": false,
+  "required": ["artifact_id", "run_id", "stage", "uri", "checksum", "schema_id", "media_type", "size_bytes", "row_count", "created_at", "publication_state", "versions"],
+  "properties": {
+    "artifact_id": {"type": "string", "minLength": 1}, "run_id": {"type": "string", "minLength": 1},
+    "stage": {"type": "string", "minLength": 1},
+    "uri": {"type": "string", "pattern": "^(s3|https?|file)://"},
+    "checksum": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "schema_id": {"type": "string", "minLength": 1}, "media_type": {"type": "string", "minLength": 1},
+    "size_bytes": {"type": "integer", "minimum": 0}, "row_count": {"type": ["integer", "null"], "minimum": 0},
+    "created_at": {"type": "string", "format": "date-time"},
+    "publication_state": {"enum": ["staged", "validated", "published", "quarantined"]},
+    "versions": {"$ref": "https://aic2026.local/contracts/schemas/version_manifest/schema.json"}
+  }
+}

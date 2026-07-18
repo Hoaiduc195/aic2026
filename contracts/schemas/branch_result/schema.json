@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aic2026.local/contracts/schemas/branch_result/schema.json",
+  "title": "BranchResult",
+  "type": "object", "additionalProperties": false,
+  "required": ["request_id", "branch", "status", "versions", "elapsed_ms", "deadline_ms", "candidates", "error"],
+  "properties": {
+    "request_id": {"type": "string", "minLength": 1},
+    "branch": {"enum": ["visual", "ocr", "asr", "caption", "object", "audio"]},
+    "status": {"enum": ["completed", "timed_out", "unavailable", "failed"]},
+    "versions": {"$ref": "https://aic2026.local/contracts/schemas/version_manifest/schema.json"},
+    "elapsed_ms": {"type": "integer", "minimum": 0}, "deadline_ms": {"type": "integer", "minimum": 1},
+    "candidates": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["segment_id", "video_id", "rank", "score", "evidence_ids"], "properties": {"segment_id": {"type": "string", "minLength": 1}, "video_id": {"type": "string", "minLength": 1}, "rank": {"type": "integer", "minimum": 1}, "score": {"type": "number"}, "evidence_ids": {"type": "array", "items": {"type": "string", "minLength": 1}}}}},
+    "error": {"oneOf": [{"type": "null"}, {"type": "object", "additionalProperties": false, "required": ["code", "message", "recoverable"], "properties": {"code": {"type": "string", "minLength": 1}, "message": {"type": "string", "minLength": 1}, "recoverable": {"type": "boolean"}}}]}
+  },
+  "allOf": [
+    {"if": {"properties": {"status": {"const": "completed"}}}, "then": {"properties": {"error": {"type": "null"}}}},
+    {"if": {"properties": {"status": {"enum": ["timed_out", "unavailable", "failed"]}}}, "then": {"properties": {"error": {"type": "object"}}}}
+  ]
+}

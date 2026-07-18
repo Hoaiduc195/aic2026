@@ -1,0 +1,18 @@
+profile: aic2026-safe
+network:
+  external_access: false
+  deny_unconfigured_hosts: true
+storage:
+  backend: minio
+  source_media_read_only: true
+models:
+  allow_mock: false
+  local_files_only: true
+  require_pinned_revision: true
+competition:
+  submission_enabled: false
+  automatic_mode_enabled: false
+  human_confirmation_required: true
+retrieval:
+  branch_deadline_ms: 500
+  fused_deadline_ms: 1500

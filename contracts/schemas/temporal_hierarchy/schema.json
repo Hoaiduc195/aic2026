@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aic2026.local/contracts/schemas/temporal_hierarchy/schema.json",
+  "title": "TemporalHierarchy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["video_id", "timeline_start_ms", "timeline_end_ms", "nodes"],
+  "properties": {
+    "video_id": {"type": "string", "minLength": 1},
+    "timeline_start_ms": {"const": 0},
+    "timeline_end_ms": {"type": "integer", "minimum": 1},
+    "nodes": {
+      "type": "array", "minItems": 4,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["node_id", "node_type", "parent_id", "child_ids", "start_ms", "end_ms", "ordinal"],
+        "properties": {
+          "node_id": {"type": "string", "minLength": 1},
+          "node_type": {"enum": ["frame", "micro_event", "segment", "context_window"]},
+          "parent_id": {"type": ["string", "null"]},
+          "child_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+          "start_ms": {"type": "integer", "minimum": 0},
+          "end_ms": {"type": "integer", "minimum": 1},
+          "ordinal": {"type": "integer", "minimum": 0}
+        }
+      }
+    }
+  }
+}

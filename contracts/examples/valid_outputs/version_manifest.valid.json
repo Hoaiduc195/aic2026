@@ -1,0 +1,1 @@
+{"dataset_id":"aic2026-golden","dataset_version":"fixture-1","pipeline_version":"pipeline-1","schema_version":"1.0.0","index_version":"index-1","model_revisions":{"visual":"siglip-fixture","asr":"whisper-fixture"},"activation_state":"active"}

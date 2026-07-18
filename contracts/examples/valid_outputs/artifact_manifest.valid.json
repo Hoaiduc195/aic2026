@@ -1,0 +1,5 @@
+{
+  "artifact_id":"artifact-001","run_id":"run-001","stage":"asr","uri":"file:///artifacts/asr/video-001.parquet","checksum":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "schema_id":"contracts/schemas/evidence_record/schema.json","media_type":"application/vnd.apache.parquet","size_bytes":4096,"row_count":2,"created_at":"2026-07-18T00:00:00Z","publication_state":"validated",
+  "versions":{"dataset_id":"aic2026-golden","dataset_version":"fixture-1","pipeline_version":"pipeline-1","schema_version":"1.0.0","index_version":"index-1","model_revisions":{"asr":"small-fixture"},"activation_state":"staged"}
+}

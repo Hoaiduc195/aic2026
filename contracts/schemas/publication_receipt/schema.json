@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aic2026.local/contracts/schemas/publication_receipt/schema.json",
+  "title": "PublicationReceipt",
+  "description": "Batch checksum receipt. Canonical per-artifact metadata uses ArtifactManifest.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["manifest_id", "run_id", "dataset_version", "pipeline_version", "artifacts"],
+  "properties": {
+    "manifest_id": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "run_id": {"type": "string", "minLength": 1},
+    "dataset_version": {"type": "string", "minLength": 1},
+    "pipeline_version": {"type": "string", "minLength": 1},
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["relative_path", "sha256", "size_bytes"],
+        "properties": {
+          "relative_path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "size_bytes": {"type": "integer", "minimum": 0}
+        }
+      }
+    }
+  }
+}

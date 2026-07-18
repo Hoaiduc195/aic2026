@@ -1,0 +1,14 @@
+profile: benchmark
+network:
+  external_access: false
+storage:
+  backend: minio
+models:
+  allow_mock: false
+  require_pinned_revision: true
+competition:
+  submission_enabled: false
+retrieval:
+  branch_deadline_ms: 500
+  fused_deadline_ms: 1500
+  record_traces: true
