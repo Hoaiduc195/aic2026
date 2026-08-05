@@ -1,0 +1,8 @@
+# torch is preinstalled on Kaggle GPU images
+av
+opencv-python-headless
+open_clip_torch
+faiss-cpu
+pandas
+pyarrow
+pillow

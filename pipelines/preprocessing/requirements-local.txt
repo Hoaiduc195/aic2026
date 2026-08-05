@@ -1,0 +1,7 @@
+# CPU-only local dev / smoke tests (no torch, no faiss)
+av
+opencv-python
+numpy
+pandas
+pyarrow
+pillow
