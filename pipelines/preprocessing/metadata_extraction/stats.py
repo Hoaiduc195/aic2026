@@ -199,23 +199,6 @@ def build_report(cfg, store) -> str:
             f"| End-to-end (text encode + search) | {e2e['mean_ms']} | {e2e['p50_ms']} | {e2e['p95_ms']} |",
         ]
 
-    latency_clause = "sub-second text-to-video retrieval."
-    if bench:
-        latency_clause = (f"text-to-video retrieval at {bench['end_to_end']['p50_ms']:.0f} ms/query "
-                          f"end-to-end (p95 {bench['end_to_end']['p95_ms']:.0f} ms).")
-    lines += [
-        "",
-        "## CV-ready bullet",
-        "```",
-        f"Built an end-to-end video preprocessing pipeline (TransNetV2 shot detection, adaptive",
-        f"sampling, quality filtering, 2-tier dedup) processing {total_h:.1f}h of video ({n_videos:,} videos,",
-        f"{total_shots:,} shots) at {total_h / total_compute_h if total_compute_h else 0:.0f}x realtime on "
-        f"{env.get('gpu', 'GPU')}, reducing {raw_frames:,} raw frames to {final:,} keyframes",
-        f"(-{reduction:.1f}%), embedded with {cfg.embed_model} and indexed in FAISS for",
-        latency_clause,
-        "```",
-        "",
-    ]
     report = "\n".join(lines)
     store.report_path.write_text(report, encoding="utf-8")
     print(f"[report] written to {store.report_path}")
