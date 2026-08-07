@@ -40,7 +40,7 @@ def hamming(a: int, b: int) -> int:
     return (a ^ b).bit_count()
 
 
-def phash_dedup(items: list[dict]) -> list[dict]:
+def phash_dedup(items: list[dict], max_hamming: int = 5) -> list[dict]:
     """Sequential near-duplicate removal, purely a compaction step (no gap
     awareness -- that is enforce_coverage's job, run afterwards on the full
     pipeline output). `items` are time-ordered dicts with 'frame' (RGB) and
@@ -48,7 +48,7 @@ def phash_dedup(items: list[dict]) -> list[dict]:
     kept: list[dict] = []
     for it in items:
         it["hash"] = dhash(it["frame"])
-        if kept and hamming(kept[-1]["hash"], it["hash"]) < 5:
+        if kept and hamming(kept[-1]["hash"], it["hash"]) < max_hamming:
             if it["blur_score"] > kept[-1]["blur_score"]:
                 kept[-1] = it
             continue

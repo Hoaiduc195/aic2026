@@ -97,7 +97,7 @@ def extract_video(video_row, shots_df, cfg, store, embedder=None) -> dict:
             ci += 1
 
     n_after_quality = len(picked)
-    kept = phash_dedup(picked)
+    kept = phash_dedup(picked, max_hamming=cfg.phash_hamming_max)
     drops["phash"] = n_after_quality - len(kept)
 
     feats = None
