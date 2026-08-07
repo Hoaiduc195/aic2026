@@ -14,8 +14,8 @@ class PipelineConfig:
 
     # --- Adaptive sampling (spec §3.2) ---
     short_shot_max_s: float = 3.0       # T < 3s   -> 1 frame at shot middle
-    medium_shot_max_s: float = 10.0     # 3..10s   -> frames at 25/50/75%
-    long_shot_period_s: float = 2.0     # T > 10s  -> 1 frame every 2s
+    medium_shot_max_s: float = 4.0      # 3..4s    -> frames at 25/50/75%
+    long_shot_period_s: float = 1.0     # T > 4s   -> 1 frame every 1s
     window_radius: int = 2              # pick sharpest frame within ±N frames of each target
 
     # --- Quality filters (spec §4), measured on the 720px-long-edge grayscale ---
@@ -25,10 +25,9 @@ class PipelineConfig:
     std_min: float = 10.0               # low-information / flat-image threshold
 
     # --- Dedup ---
-    phash_hamming_max: int = 5          # spec §4.4, sequential dHash
-    cosine_dup_threshold: float = 0.90  # global within-video embedding dedup
-    max_gap_s: float = 10.0             # coverage guarantee: never let dedup open a
-                                        # temporal hole wider than this (0 = disabled)
+    phash_hamming_max: int = 4          # spec §4.4, sequential dHash
+    cosine_dup_threshold: float = 0.93  # global within-video embedding dedup (0.93 preserves motion granularity)
+    max_gap_s: float = 8.0              # coverage guarantee: never let dedup open a temporal hole > 8s
 
     # --- Visual embedding ---
     embed: bool = True
