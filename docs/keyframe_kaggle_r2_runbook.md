@@ -51,7 +51,7 @@ The checked-in notebook defaults to:
 USE_R2 = True
 SMOKE_LIMIT = 1
 LIMIT_HOURS = None
-R2_VIDEO_PREFIX = "videos/"
+R2_VIDEO_PREFIX = ""  # current team bucket stores videos at its root
 R2_OUTPUT_PREFIX = "aic-runs/keyframes-smoke"
 ```
 
