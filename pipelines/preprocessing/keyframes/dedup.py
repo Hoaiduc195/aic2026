@@ -1,4 +1,4 @@
-"""Two-tier deduplication (spec §4.4 + §5.1):
+"""Retrieval-lane deduplication with temporal coverage repair.
 tier 1 — sequential dHash on CPU (near-identical neighbours),
 tier 2 — global within-video cosine on CLIP embeddings (recurring scenes,
          e.g. A->B->A cutbacks that a sequential check misses),
@@ -23,7 +23,11 @@ the end that looks at *actual* gaps in the final list and backfills the
 sharpest available original candidate into any gap that is too wide. This is
 easy to reason about because the guarantee is checked directly against the
 thing that matters (final output timestamps), not inferred from bookkeeping
-that increasingly does not correspond to those timestamps."""
+that increasingly does not correspond to those timestamps.
+
+This module must never be applied to the dense temporal lane: duplicate source
+frames still carry valid event-boundary evidence and exact frame identifiers.
+"""
 
 import cv2
 import numpy as np
@@ -45,6 +49,8 @@ def phash_dedup(items: list[dict], max_hamming: int = 5) -> list[dict]:
     awareness -- that is enforce_coverage's job, run afterwards on the full
     pipeline output). `items` are time-ordered dicts with 'frame' (RGB) and
     'blur_score'. When two neighbours collide, the sharper one wins."""
+    if isinstance(max_hamming, bool) or not isinstance(max_hamming, int) or max_hamming < 0:
+        raise ValueError("max_hamming must be a non-negative integer")
     kept: list[dict] = []
     for it in items:
         it["hash"] = dhash(it["frame"])

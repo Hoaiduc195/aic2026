@@ -13,6 +13,7 @@ dist/
 build/
 
 # Raw inputs and large generated outputs
+outputs/
 data/samples/raw_videos/*
 artifacts/keyframes/*
 artifacts/audio/*

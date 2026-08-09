@@ -97,8 +97,8 @@ flowchart TD
 |---|---|---|---|
 | Probe, metadata extraction, and canonical timestamps | Unreliable media metadata and seeking | `pipelines/preprocessing/metadata_extraction/`, `video_ingestion/` | All later artifacts share one source-aligned timeline |
 | Shot detection plus temporal hierarchy | Edited and continuous media need different boundaries | `pipelines/preprocessing/shot_detection/` and related preprocessing modules | Complete temporal coverage at several granularities |
-| Coverage-safe keyframe sampling | Fixed sampling misses short events | `pipelines/preprocessing/keyframe_sampling/` | Every valid visual segment keeps a preview and candidate evidence |
-| Soft quality scoring and modality-aware deduplication | Hard filtering destroys rare evidence | `quality_filtering/`, `deduplication/` | Cost reduction without silently removing temporal coverage |
+| Coverage-safe keyframe sampling | Fixed sampling misses short events | `pipelines/preprocessing/keyframes/sampling.py` | Every valid visual segment keeps a preview and candidate evidence |
+| Soft quality scoring and modality-aware deduplication | Hard filtering destroys rare evidence | `pipelines/preprocessing/keyframes/{quality,dedup,structural}.py` | Cost reduction without silently removing temporal coverage |
 | OCR, ASR, caption, object, and visual extraction | Evidence is split across modalities | `pipelines/feature_extraction/` | Searchable, provenance-rich evidence records per modality |
 | Offline temporal alignment and publication | Modality outputs have different time spans | `pipelines/fusion/` | Evidence is mapped to frames, segments, and context windows |
 | Validation and versioned ingestion | Partial or incompatible outputs corrupt indexes | `pipelines/ingestion/`, `contracts/` | Only contract-valid, compatible artifacts become searchable |

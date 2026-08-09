@@ -12,14 +12,15 @@ considered worth indexing — exactly the "keyframe chất lượng, không ph�
 nói suông" evidence requested.
 
 Usage:
-    python -m aicpp.eval_btc --out outputs --btc-dir btc_keyframes
+    python -m pipelines.preprocessing.cli eval-btc --out outputs --btc-dir btc_keyframes
 """
 
-import json
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from ..io_utils import write_csv_atomic, write_text_atomic
 
 
 def coverage_for_video(btc_times: np.ndarray, our_times: np.ndarray, tolerance_s: float) -> float:
@@ -32,7 +33,7 @@ def coverage_for_video(btc_times: np.ndarray, our_times: np.ndarray, tolerance_s
 
 
 def _btc_path_for(btc_dir: Path, vid: str) -> Path | None:
-    """Our duplicate-disambiguation (aicpp/probe.py::_make_video_id) prefixes
+    """Our duplicate-disambiguation (video_ingestion/probe.py::_make_video_id) prefixes
     a video_id with its parent folder name when two files share a stem, e.g.
     'video_L25_V006' for a copy found under a folder literally named 'video'.
     BTC's own files are keyed by the original stem only, so also try that."""
@@ -101,7 +102,7 @@ def build_eval_report(store, btc_dir: Path, tolerances: tuple[float, ...] = (1.0
             "(wrong source path for `features/map-keyframes`, or a mount-path mismatch "
             "with the videos), or the BTC filenames don't match our video_ids.",
         ])
-        out_path.write_text(msg, encoding="utf-8")
+        write_text_atomic(msg, out_path)
         print("[eval_btc] no matching BTC files — wrote diagnostic EVAL_BTC.md")
         return msg
 
@@ -139,8 +140,8 @@ def build_eval_report(store, btc_dir: Path, tolerances: tuple[float, ...] = (1.0
         lines.append(f"| {r['video_id']} | {int(r['n_btc'])} | {int(r['n_ours'])} | {covs} |")
 
     report = "\n".join(lines)
-    out_path.write_text(report, encoding="utf-8")
-    df.to_csv(store.root / "eval_btc_per_video.csv", index=False)
+    write_text_atomic(report, out_path)
+    write_csv_atomic(df, store.root / "eval_btc_per_video.csv")
     print(f"[eval_btc] {len(df)} videos compared, report -> {out_path}")
     for tol in tolerances:
         col = f"coverage@{tol:g}s"

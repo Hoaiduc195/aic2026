@@ -10,20 +10,52 @@ import time
 import numpy as np
 import pandas as pd
 
+from .io_utils import atomic_output_path, write_json_atomic, write_parquet_atomic
+
 
 def build_index(cfg, store) -> None:
     import faiss
     maps, feats = [], []
     for f in sorted((store.root / "features").glob("*.npy")):
         vid = f.stem
-        map_path = store.map_path(vid)
-        if not map_path.exists():
-            print(f"[index] SKIP {vid}: no map csv")
+        metadata_path = store.metadata_path(vid)
+        if not metadata_path.exists():
+            print(f"[index] SKIP {vid}: no extraction checkpoint")
             continue
-        m = pd.read_csv(map_path)
+        try:
+            extraction_meta = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            print(f"[index] SKIP {vid}: invalid extraction checkpoint")
+            continue
+        if not extraction_meta.get("embedded", False):
+            print(f"[index] SKIP {vid}: extraction was run without embeddings")
+            continue
+        canonical_path = store.retrieval_frames_path(vid)
+        compatibility_path = store.map_path(vid)
+        if canonical_path.exists():
+            m = pd.read_parquet(canonical_path)
+        elif compatibility_path.exists():
+            m = pd.read_csv(compatibility_path)
+        else:
+            print(f"[index] SKIP {vid}: no retrieval-frame metadata")
+            continue
         x = np.load(f).astype(np.float32)
         if len(m) != len(x):
             print(f"[index] SKIP {vid}: {len(m)} csv rows != {len(x)} feature rows")
+            continue
+        # Canonical sparse artifacts should already contain only the retrieval
+        # lane. Keep this defensive filter so an older/migrated artifact can
+        # never leak a temporal-only quality route into FAISS.
+        if "eligible_for_embedding" in m.columns:
+            eligible = m["eligible_for_embedding"].fillna(False).astype(bool).to_numpy()
+            m = m.loc[eligible].reset_index(drop=True)
+            x = x[eligible]
+        if "selected_for_retrieval" in m.columns:
+            selected = m["selected_for_retrieval"].fillna(False).astype(bool).to_numpy()
+            m = m.loc[selected].reset_index(drop=True)
+            x = x[selected]
+        if len(m) == 0:
+            print(f"[index] SKIP {vid}: no retrieval-eligible vectors")
             continue
         maps.append(m)
         feats.append(x)
@@ -35,15 +67,16 @@ def build_index(cfg, store) -> None:
     faiss.normalize_L2(x_all)  # fp16 round-trip may denormalize slightly
     index = faiss.IndexFlatIP(x_all.shape[1])
     index.add(x_all)
-    faiss.write_index(index, str(store.faiss_path))
-    table.to_parquet(store.index_table_path, index=False)
-    store.index_meta_path.write_text(json.dumps({
+    with atomic_output_path(store.faiss_path) as temporary:
+        faiss.write_index(index, str(temporary))
+    write_parquet_atomic(table, store.index_table_path)
+    write_json_atomic({
         "n_vectors": int(index.ntotal),
         "dim": int(x_all.shape[1]),
         "n_videos": int(table["video_id"].nunique()),
         "embed_model": cfg.embed_model,
         "embed_pretrained": cfg.embed_pretrained,
-    }, indent=2), encoding="utf-8")
+    }, store.index_meta_path)
     size_mb = store.faiss_path.stat().st_size / 2**20
     print(f"[index] {index.ntotal} vectors, dim {x_all.shape[1]}, {size_mb:.1f} MB")
 
@@ -117,8 +150,7 @@ def benchmark(cfg, store, k: int = 10, rounds: int = 5) -> dict:
         "vector_search": _stats(search_ms),
         "end_to_end": _stats(e2e_ms),
     }
-    (store.root / "index" / "benchmark.json").write_text(
-        json.dumps(result, indent=2), encoding="utf-8")
+    write_json_atomic(result, store.root / "index" / "benchmark.json")
     print(f"[benchmark] {len(BENCHMARK_QUERIES)} queries x {rounds} rounds on "
           f"{index.ntotal:,} vectors (top-{k}):")
     print(f"[benchmark]   vector search  mean {result['vector_search']['mean_ms']} ms | "

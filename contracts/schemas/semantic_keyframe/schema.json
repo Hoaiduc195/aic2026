@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/semantic_keyframe/schema.json",
+  "title": "SemanticKeyframeSelection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_window_id",
+    "video_id",
+    "original_frame_id",
+    "timestamp_ms",
+    "selection_score",
+    "selector"
+  ],
+  "properties": {
+    "event_window_id": { "type": "string", "minLength": 1 },
+    "video_id": { "type": "string", "minLength": 1 },
+    "original_frame_id": { "type": "integer", "minimum": 0 },
+    "timestamp_ms": { "type": "number", "minimum": 0 },
+    "selection_score": { "type": "number" },
+    "selector": { "type": "string", "minLength": 1 },
+    "evidence": { "type": "object" }
+  }
+}

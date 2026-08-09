@@ -16,6 +16,11 @@ The source code within this repository is organized systematically to promote mo
 - **`experiments/`**: Dedicated to Research and Development, containing Jupyter Notebooks and experimental scripts for model fine-tuning and exploratory data analysis.
 - **`pipelines/`**: The core component housing the offline and online processing pipelines, including Keyframe Extraction, Deduplication, Visual Embedding (CLIP/SigLIP), Optical Character Recognition (OCR), and Automatic Speech Recognition (ASR).
 
+The implemented keyframe pipeline and its exact-frame output contract are
+documented in [`pipelines/preprocessing/README.md`](pipelines/preprocessing/README.md).
+The supported GitHub-to-Kaggle deployment using raw video from Cloudflare R2
+is documented in [`docs/keyframe_kaggle_r2_runbook.md`](docs/keyframe_kaggle_r2_runbook.md).
+
 ## System Architecture
 The system architecture follows a tiered processing paradigm. It leverages early-stage noise filtering mechanisms to drastically reduce the computational burden on resource-intensive deep learning models. A cornerstone of this design is the **Dynamic Keyframe Extraction** strategy.
 
@@ -31,10 +36,10 @@ graph TD
     D1 --> E1[Transcription with Start/End Timestamps]
     
     C2 --> D2[Adaptive Keyframe Sampling]
-    D2 --> D3[Quality Filter: Brightness, Blur, Contrast]
-    D3 --> D4[Perceptual Hash / DINOv2 Deduplication]
+    D2 --> D3[Quality Scoring and Routing]
+    D3 --> D4[dHash / SigLIP Cosine Deduplication]
     
-    D4 --> E2[Filtered & Deduplicated Keyframes]
+    D4 --> E2[Retrieval-Eligible Keyframes]
     
     E2 --> F1[Visual Embedding Module: CLIP/SigLIP]
     E2 --> F2[OCR Module: PaddleOCR]
@@ -55,7 +60,12 @@ graph TD
 1. **Multimodal Query Processing**: Seamlessly supports Visual Search, Optical Character Recognition (OCR), Automatic Speech Recognition (ASR), Semantic Captioning, and Object-based Retrieval.
 2. **Computational Efficiency**: Employs rigorous Quality Filtering and Deduplication algorithms prior to feature extraction, significantly optimizing GPU utilization and processing throughput.
 3. **Fault Tolerance and Recovery**: Implements a robust checkpointing mechanism by persisting intermediate states (.parquet/.npy formats), ensuring the pipeline can resume processing from the last successful execution point in the event of an interruption.
-4. **Segment-Oriented Design**: Organizes and queries data primarily at the segment level rather than by isolated frames, thereby preserving contextual integrity and precise temporal boundaries.
+4. **Two-Stage Keyframe Foundation**: Preserves a zero-based, PTS-aware source
+   identity for every decoded frame; builds sparse retrieval frames and event
+   windows; supports optional DINOv2 structural deduplication/cluster medoids;
+   and densely decodes candidate windows to an explainable semantic frame
+   selection. Query-specific event models and full Textual KIS, VQA, or TRAKE
+   handlers remain downstream work.
 
 ---
 *For further technical specifications, please consult the documentation provided in the `docs/` directory.*

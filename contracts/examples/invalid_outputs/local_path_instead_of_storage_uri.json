@@ -3,6 +3,7 @@
   "original_filename": "street_scene_01.mp4",
   "storage_uri": "C:/datasets/raw/street_scene_01.mp4",
   "duration_ms": 185000,
+  "fps_str": "25/1",
   "fps": 25.0,
   "width": 1920,
   "height": 1080,

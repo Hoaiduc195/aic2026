@@ -5,3 +5,6 @@ numpy
 pandas
 pyarrow
 pillow
+boto3  # optional at runtime; required for s3:// and r2:// raw-video URIs
+python-dotenv  # optional --env-file support for local R2 credentials
+jsonschema  # contract tests

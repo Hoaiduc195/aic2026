@@ -6,6 +6,8 @@ import json
 
 import pandas as pd
 
+from ..io_utils import write_text_atomic
+
 
 def _coverage(store, metas: list[dict]) -> pd.DataFrame:
     """Max gap between consecutive keyframes per video (including video ends).
@@ -43,7 +45,7 @@ def build_report(cfg, store) -> str:
 
     n_videos = len(metas)
     total_h = sum(m["duration_s"] for m in metas) / 3600
-    raw_frames = sum(m["n_frames_raw_est"] for m in metas)
+    raw_frames = sum(m.get("n_frames_manifest", m["n_frames_raw_est"]) for m in metas)
     candidates = sum(m["n_candidates"] for m in metas)
     after_quality = sum(m["n_after_quality"] for m in metas)
     after_phash = sum(m["n_after_phash"] for m in metas)
@@ -53,6 +55,12 @@ def build_report(cfg, store) -> str:
     final = sum(m["n_keyframes"] for m in metas)
     backfilled = sum(m.get("drops", {}).get("backfilled", 0) for m in metas)
     soft_backfilled = sum(m.get("drops", {}).get("soft_backfilled", 0) for m in metas)
+    temporal_only = sum(
+        m.get("drops", {}).get("quality_routed_temporal_only", 0) for m in metas
+    )
+    unresolved_coverage = sum(
+        m.get("drops", {}).get("coverage_unresolved_gaps", 0) for m in metas
+    )
     elapsed_h = sum(m["elapsed_s"] for m in metas) / 3600
     reduction = 100.0 * (1 - final / raw_frames) if raw_frames else 0.0
     density = final / total_h if total_h else 0.0
@@ -67,7 +75,15 @@ def build_report(cfg, store) -> str:
                 sbd_h += float(pd.read_parquet(p, columns=["sbd_elapsed_s"]).iloc[0, 0]) / 3600
             except (KeyError, IndexError):
                 pass
-    total_compute_h = elapsed_h + sbd_h
+    frame_manifest_h = 0.0
+    stats_path_factory = getattr(store, "frame_manifest_stats_path", None)
+    if callable(stats_path_factory):
+        for m in metas:
+            path = stats_path_factory(m["video_id"])
+            if path.exists():
+                stats = json.loads(path.read_text(encoding="utf-8"))
+                frame_manifest_h += float(stats.get("elapsed_s", 0.0)) / 3600
+    total_compute_h = frame_manifest_h + elapsed_h + sbd_h
 
     env = {}
     env_path = store.root / "env.json"
@@ -103,7 +119,7 @@ def build_report(cfg, store) -> str:
         "## Input",
         f"- Videos processed: **{n_videos}** (failed/corrupted skipped: {n_failed})",
         f"- Total duration: **{total_h:.2f} h**",
-        f"- Raw frames (est. from fps x duration): **{raw_frames:,}**",
+        f"- Raw frames (exact full-manifest count when available): **{raw_frames:,}**",
         "",
         "## Shot boundary detection",
         f"- Total shots: **{total_shots:,}** ({total_shots / n_videos:.1f} per video, "
@@ -115,21 +131,22 @@ def build_report(cfg, store) -> str:
         "|---|---:|---:|",
         f"| Raw frames | {raw_frames:,} | 100% |",
         f"| Adaptive sampling candidates | {candidates:,} | {100 * candidates / raw_frames if raw_frames else 0:.2f}% |",
-        f"| After quality filter | {after_quality:,} | {100 * after_quality / raw_frames if raw_frames else 0:.2f}% |",
+        f"| Retrieval-eligible after quality routing | {after_quality:,} | {100 * after_quality / raw_frames if raw_frames else 0:.2f}% |",
         f"| After dHash dedup | {after_phash:,} | {100 * after_phash / raw_frames if raw_frames else 0:.2f}% |",
         f"| After cosine dedup | {after_cosine:,} | {100 * after_cosine / raw_frames if raw_frames else 0:.2f}% |",
         f"| **Final keyframes (after coverage repair, +{backfilled:,} backfilled)** | **{final:,}** | **{100 * final / raw_frames if raw_frames else 0:.2f}%** |",
         "",
         f"- **Reduction: {raw_frames:,} frames -> {final:,} keyframes (-{reduction:.2f}%)**",
         f"- Keyframe density: **{density:.0f} keyframes/hour** (healthy: 1,500-4,000)",
-        f"- Dedup + filter removal after sampling: {dedup_rate:.1f}% (healthy: 30-60%)",
+        f"- Routing + dedup removal after sampling: {dedup_rate:.1f}% (healthy: 30-60%)",
         f"- Keyframe storage (WebP {cfg.webp_long_edge}px q{cfg.webp_quality}): {kf_bytes / 2**30:.2f} GB",
         "",
         "## Temporal coverage",
         f"- Videos with a keyframe gap > 10s: **{n_bad_cov} / {n_videos}**",
-        f"- Sub-threshold keyframes kept only to guarantee coverage (quality_ok=False): "
-        f"**{soft_backfilled:,}** ({100 * soft_backfilled / final if final else 0:.1f}% of final) "
-        f"— flagged in map-keyframes so retrieval can down-weight them",
+        f"- Sparse candidates routed to temporal-only (retained in the full manifest, excluded from index): "
+        f"**{temporal_only:,}**",
+        f"- Temporal-only frames promoted back into retrieval: **{soft_backfilled:,}** (must remain 0)",
+        f"- Coverage gaps unresolved without violating quality routing: **{unresolved_coverage:,}**",
     ]
     if len(worst):
         lines += ["- Worst 5 videos by max gap:", "",
@@ -142,14 +159,15 @@ def build_report(cfg, store) -> str:
         "",
         "## Throughput",
         f"- Hardware: **{hw}**" if env else "- Hardware: (env.json missing — re-run extract)",
+        f"- Full frame manifest + signals: {frame_manifest_h:.2f} h",
         f"- Pass A (shot detection): {sbd_h:.2f} h",
-        f"- Pass B (decode + filter + embed + write): {elapsed_h:.2f} h",
+        f"- Sparse retrieval decode + route + embed + write: {elapsed_h:.2f} h",
         f"- Total: {total_compute_h:.2f} h of compute for {total_h:.2f} h of video "
         f"= **{total_h / total_compute_h if total_compute_h else 0:.1f}x realtime** "
         f"(**{total_h / total_compute_h if total_compute_h else 0:.1f} hours of video per compute-hour**)",
         "",
         "## Dedup impact",
-        f"- Quality filter removed {candidates - after_quality:,} frames "
+        f"- Quality routing kept {candidates - after_quality:,} sparse candidates out of the embedding lane "
         f"({100 * (candidates - after_quality) / candidates if candidates else 0:.1f}% of candidates) "
         f"before any GPU work",
         f"- dHash (CPU) removed {after_quality - after_phash:,} near-duplicates "
@@ -200,6 +218,6 @@ def build_report(cfg, store) -> str:
         ]
 
     report = "\n".join(lines)
-    store.report_path.write_text(report, encoding="utf-8")
+    write_text_atomic(report, store.report_path)
     print(f"[report] written to {store.report_path}")
     return report

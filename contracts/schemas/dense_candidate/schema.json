@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/dense_candidate/schema.json",
+  "title": "DenseAlignmentCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_window_id",
+    "video_id",
+    "original_frame_id",
+    "timestamp_ms",
+    "decode_status"
+  ],
+  "properties": {
+    "event_window_id": { "type": "string", "minLength": 1 },
+    "video_id": { "type": "string", "minLength": 1 },
+    "original_frame_id": { "type": "integer", "minimum": 0 },
+    "timestamp_ms": { "type": "number", "minimum": 0 },
+    "decode_status": { "enum": ["success", "decode_error"] },
+    "quality_scores": { "type": "object" },
+    "event_score": { "type": ["number", "null"] },
+    "evidence": { "type": "object" }
+  }
+}

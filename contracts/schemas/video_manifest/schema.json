@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "contracts/schemas/video_manifest/schema.json",
   "title": "VideoManifest",
+  "description": "Canonical identity and immutable raw-video location. Legacy probe fields may accompany, but never replace, storage_uri, duration_ms, and exact fps_str.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -9,19 +10,65 @@
     "original_filename",
     "storage_uri",
     "duration_ms",
-    "fps",
+    "fps_str",
     "width",
-    "height",
-    "created_at"
+    "height"
   ],
   "properties": {
     "video_id": { "type": "string", "minLength": 1 },
     "original_filename": { "type": "string", "minLength": 1 },
-    "storage_uri": { "type": "string", "pattern": "^(s3|gs|azure|https?)://" },
+    "storage_uri": {
+      "type": "string",
+      "description": "Stable raw-video URI. Use file:// for local development and r2:// or s3:// for object storage; do not store signed query credentials.",
+      "oneOf": [
+        {
+          "description": "Absolute file URI with an optional localhost/UNC authority.",
+          "pattern": "^[Ff][Ii][Ll][Ee]://(?:localhost|[A-Za-z0-9][A-Za-z0-9._-]{0,254})?/(?:[^\\s%?#]|%[0-9A-Fa-f]{2})+$"
+        },
+        {
+          "description": "S3-compatible bucket URI with a non-empty, safely percent-encoded object key.",
+          "pattern": "^(?:[Ss]3|[Rr]2)://[A-Za-z0-9][A-Za-z0-9._-]{0,254}/(?:[^\\s%?#]|%[0-9A-Fa-f]{2})+$"
+        }
+      ]
+    },
     "duration_ms": { "type": "integer", "minimum": 0 },
-    "fps": { "type": "number", "exclusiveMinimum": 0 },
+    "fps_str": {
+      "type": "string",
+      "description": "Exact positive FPS fraction, retained without float rounding (for example 30000/1001).",
+      "pattern": "^[1-9][0-9]*/[1-9][0-9]*$"
+    },
     "width": { "type": "integer", "minimum": 1 },
     "height": { "type": "integer", "minimum": 1 },
-    "created_at": { "type": "string", "format": "date-time" }
+    "size_bytes": { "type": "integer", "minimum": 0 },
+    "sha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+    "etag": { "type": ["string", "null"], "minLength": 1 },
+    "version_id": { "type": ["string", "null"], "minLength": 1 },
+    "frame_count": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Exact decoded frame count when a full sequential decode has completed."
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "path": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "description": "Legacy probe/local-cache hint; storage_uri remains the canonical source identity."
+    },
+    "duration_s": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Legacy probe convenience value; duration_ms is canonical."
+    },
+    "fps": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Legacy probe convenience value; fps_str is canonical."
+    },
+    "codec": { "type": "string", "minLength": 1 },
+    "n_frames_est": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Legacy probe estimate; it must not be treated as an exact frame count."
+    }
   }
 }

@@ -2,7 +2,10 @@
 av
 opencv-python-headless
 open_clip_torch
+timm  # optional DINOv2 structural deduplication/clustering lane
 faiss-cpu
 pandas
 pyarrow
 pillow
+boto3  # S3-compatible/R2 raw-video byte-range access
+python-dotenv  # optional --env-file support

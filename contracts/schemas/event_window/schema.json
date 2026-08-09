@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/event_window/schema.json",
+  "title": "EventWindow",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_window_id",
+    "video_id",
+    "start_frame_id",
+    "end_frame_id",
+    "start_ms",
+    "end_ms",
+    "source"
+  ],
+  "properties": {
+    "event_window_id": { "type": "string", "minLength": 1 },
+    "video_id": { "type": "string", "minLength": 1 },
+    "start_frame_id": { "type": "integer", "minimum": 0 },
+    "end_frame_id": { "type": "integer", "minimum": 1 },
+    "start_ms": { "type": "number", "minimum": 0 },
+    "end_ms": { "type": "number", "minimum": 0 },
+    "source": { "enum": ["retrieval_hits", "manual", "task_handler"] },
+    "retrieval_score": { "type": ["number", "null"] },
+    "member_frame_ids": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 0 }
+    },
+    "peak_frame_id": { "type": ["integer", "null"], "minimum": 0 }
+  }
+}

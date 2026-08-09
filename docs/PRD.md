@@ -1068,7 +1068,7 @@ repo/
 │   ├── feature_extraction/{asr,captioning,object_detection,ocr,visual_embedding}/
 │   ├── fusion/{final_records,frame_mapping,modality_merging,segment_mapping}/
 │   ├── ingestion/{ingestion_logs,metadata_ingestion,vector_ingestion}/
-│   └── preprocessing/{deduplication,keyframe_sampling,metadata_extraction,quality_filtering,shot_detection,video_ingestion}/
+│   └── preprocessing/{keyframes,metadata_extraction,shot_detection,video_ingestion}/
 └── tests/
 ```
 
