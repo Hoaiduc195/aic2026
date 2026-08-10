@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/branch_result/schema.json",
+  "title": "BranchResult",
+  "description": "Normalized output of one isolated retrieval branch. Failed branches never publish partial candidates as completed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["query_id", "branch", "status", "query_variant", "candidates", "elapsed_ms", "deadline_ms", "index_version", "producer"],
+  "properties": {
+    "query_id": { "type": "string", "minLength": 1 },
+    "branch": { "type": "string", "enum": ["visual", "ocr_lexical", "ocr_semantic", "asr_lexical", "asr_semantic", "caption", "object", "temporal", "clip", "audio"] },
+    "status": { "type": "string", "enum": ["completed", "timed_out", "unavailable", "failed", "skipped_by_plan"] },
+    "query_variant": { "type": ["string", "null"] },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["segment_id", "video_id", "rank", "raw_score", "evidence_ids"],
+        "properties": {
+          "segment_id": { "type": "string", "minLength": 1 },
+          "video_id": { "type": "string", "minLength": 1 },
+          "rank": { "type": "integer", "minimum": 1 },
+          "raw_score": { "type": "number" },
+          "original_frame_id": { "type": ["integer", "null"], "minimum": 0 },
+          "evidence_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+          "matched_terms": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    },
+    "elapsed_ms": { "type": "integer", "minimum": 0 },
+    "deadline_ms": { "type": "integer", "minimum": 1 },
+    "index_version": { "type": "string", "minLength": 1 },
+    "producer": { "type": "string", "minLength": 1 },
+    "error": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "recoverable": { "type": "boolean" }
+      }
+    }
+  }
+}

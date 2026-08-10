@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/trake_alignment/schema.json",
+  "title": "TrakeAlignment",
+  "description": "Ordered semantic keyframes for Temporal Retrieval and Alignment of Key Events. Event order is a semantic invariant: frame_i < frame_(i+1).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["alignment_id", "query_id", "video_id", "status", "sequence_score", "ordering_valid", "events", "selector", "pipeline_version", "schema_version"],
+  "properties": {
+    "alignment_id": { "type": "string", "minLength": 1 },
+    "query_id": { "type": "string", "minLength": 1 },
+    "video_id": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["completed", "needs_more_evidence", "no_match", "abstained"] },
+    "sequence_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "ordering_valid": { "const": true },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event_id", "event_ordinal", "event_label", "event_window_id", "original_frame_id", "timestamp_ms", "selection_score", "evidence_ids"],
+        "properties": {
+          "event_id": { "type": "string", "minLength": 1 },
+          "event_ordinal": { "type": "integer", "minimum": 1 },
+          "event_label": { "type": "string", "minLength": 1 },
+          "event_window_id": { "type": "string", "minLength": 1 },
+          "original_frame_id": { "type": "integer", "minimum": 0 },
+          "frame_id": { "type": "string", "minLength": 1 },
+          "timestamp_ms": { "type": "integer", "minimum": 0 },
+          "selection_score": { "type": "number", "minimum": 0, "maximum": 1 },
+          "evidence_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+          "state_before": { "type": ["string", "null"] },
+          "state_after": { "type": ["string", "null"] },
+          "provenance": { "type": "object", "additionalProperties": true }
+        }
+      }
+    },
+    "selector": { "type": "string", "minLength": 1 },
+    "pipeline_version": { "type": "string", "minLength": 1 },
+    "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "warnings": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "completed" } } },
+      "then": { "properties": { "events": { "minItems": 1 } } }
+    }
+  ]
+}

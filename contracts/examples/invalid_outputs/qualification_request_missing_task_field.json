@@ -1,0 +1,8 @@
+{
+  "request_id": "req_qualification_0001",
+  "query_id": "q_qualification_0001",
+  "task": "vqa",
+  "dataset_version": "qualification-v1",
+  "top_k": 20,
+  "latency_budget_ms": 1500
+}

@@ -3,6 +3,13 @@
   "segment_id": "video_test_0001_seg_002",
   "asr_start_ms": 13500,
   "asr_end_ms": 16200,
+  "start_ms": 13500,
+  "end_ms": 16200,
   "text": "cho nay re phai roi di thang dung khong anh",
-  "confidence": 0.91
+  "text_raw": "cho nay re phai roi di thang dung khong anh",
+  "text_normalized": "cho nay re phai roi di thang dung khong anh",
+  "language": "vi",
+  "confidence": 0.91,
+  "producer": "asr:v1",
+  "model_version": "faster-whisper"
 }

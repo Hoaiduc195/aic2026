@@ -4,20 +4,34 @@
   "title": "Segment",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "video_id",
-    "segment_id",
-    "segment_start_ms",
-    "segment_end_ms",
-    "source",
-    "confidence"
-  ],
+  "description": "Canonical segment uses start_ms/end_ms with half-open interval semantics. Legacy segment_start_ms/segment_end_ms fields remain accepted during v1 migration.",
+  "required": ["video_id", "segment_id"],
   "properties": {
+    "dataset_id": { "type": "string", "minLength": 1 },
+    "dataset_version": { "type": "string", "minLength": 1 },
     "video_id": { "type": "string", "minLength": 1 },
     "segment_id": { "type": "string", "minLength": 1 },
+    "granularity": { "const": "segment" },
+    "start_ms": { "type": "integer", "minimum": 0 },
+    "end_ms": { "type": "integer", "minimum": 1 },
+    "start_frame_id": { "type": "integer", "minimum": 0 },
+    "end_frame_id": { "type": "integer", "minimum": 1 },
+    "segment_type": { "type": "string", "minLength": 1 },
+    "micro_event_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "context_window_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "representative_frame_ids": { "type": "array", "uniqueItems": true, "items": { "type": "integer", "minimum": 0 } },
+    "previous_segment_id": { "type": ["string", "null"], "minLength": 1 },
+    "next_segment_id": { "type": ["string", "null"], "minLength": 1 },
+    "interval_semantics": { "const": "half_open" },
     "segment_start_ms": { "type": "integer", "minimum": 0 },
     "segment_end_ms": { "type": "integer", "minimum": 0 },
     "source": { "type": "string", "minLength": 1 },
-    "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
-  }
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "pipeline_version": { "type": "string", "minLength": 1 },
+    "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
+  },
+  "anyOf": [
+    { "required": ["start_ms", "end_ms", "granularity"] },
+    { "required": ["segment_start_ms", "segment_end_ms", "source", "confidence"] }
+  ]
 }

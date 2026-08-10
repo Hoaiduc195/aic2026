@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/vqa_response/schema.json",
+  "title": "VqaResponse",
+  "description": "Evidence-grounded Q&A result. Insufficient evidence is explicit and never represented as a confident answer.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["result_id", "query_id", "video_id", "original_frame_id", "timestamp_ms", "answer_status", "answer", "normalized_answer", "evidence_ids", "confidence", "producer"],
+  "properties": {
+    "result_id": { "type": "string", "minLength": 1 },
+    "query_id": { "type": "string", "minLength": 1 },
+    "video_id": { "type": "string", "minLength": 1 },
+    "segment_id": { "type": ["string", "null"], "minLength": 1 },
+    "original_frame_id": { "type": "integer", "minimum": 0 },
+    "timestamp_ms": { "type": "integer", "minimum": 0 },
+    "answer_status": { "type": "string", "enum": ["answered", "needs_more_evidence", "abstained"] },
+    "answer": { "type": ["string", "null"] },
+    "normalized_answer": { "type": ["string", "null"] },
+    "evidence_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "confidence": { "type": "object", "additionalProperties": false, "required": ["level", "score"], "properties": { "level": { "type": "string", "enum": ["high", "medium", "low", "unknown"] }, "score": { "type": "number", "minimum": 0, "maximum": 1 } } },
+    "producer": { "type": "string", "minLength": 1 },
+    "model_version": { "type": ["string", "null"], "minLength": 1 },
+    "verification": { "type": "object", "additionalProperties": true }
+  }
+}

@@ -2,24 +2,36 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "contracts/schemas/caption_result/schema.json",
   "title": "CaptionResult",
+  "description": "Structured caption evidence attached to an exact source frame and segment.",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "video_id",
-    "segment_id",
-    "frame_id",
-    "timestamp_ms",
-    "caption_vi",
-    "caption_en",
-    "confidence"
-  ],
+  "required": ["video_id", "segment_id", "timestamp_ms", "caption_vi", "caption_en", "confidence"],
   "properties": {
+    "dataset_id": { "type": "string", "minLength": 1 },
+    "dataset_version": { "type": "string", "minLength": 1 },
     "video_id": { "type": "string", "minLength": 1 },
     "segment_id": { "type": "string", "minLength": 1 },
-    "frame_id": { "type": "string", "minLength": 1 },
+    "original_frame_id": { "type": "integer", "minimum": 0 },
+    "frame_id": { "type": "string", "minLength": 1, "description": "Optional legacy/adapter frame identity." },
     "timestamp_ms": { "type": "integer", "minimum": 0 },
     "caption_vi": { "type": "string" },
     "caption_en": { "type": "string" },
-    "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
-  }
+    "subjects": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "appearance": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "actions": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "objects": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "scene": { "type": ["string", "null"] },
+    "state_before": { "type": ["string", "null"] },
+    "state_after": { "type": ["string", "null"] },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "producer": { "type": "string", "minLength": 1 },
+    "model_version": { "type": ["string", "null"], "minLength": 1 },
+    "prompt_version": { "type": ["string", "null"], "minLength": 1 },
+    "pipeline_version": { "type": "string", "minLength": 1 },
+    "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
+  },
+  "anyOf": [
+    { "required": ["frame_id"] },
+    { "required": ["original_frame_id", "producer"] }
+  ]
 }

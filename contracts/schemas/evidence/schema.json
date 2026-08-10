@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/evidence/schema.json",
+  "title": "Evidence",
+  "description": "A provenance-bearing observation supporting retrieval, Q&A, or temporal alignment.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["evidence_id", "evidence_type", "video_id", "start_ms", "end_ms", "producer"],
+  "properties": {
+    "evidence_id": { "type": "string", "minLength": 1 },
+    "evidence_type": { "type": "string", "enum": ["frame", "ocr", "asr", "caption", "object", "track", "audio", "temporal"] },
+    "video_id": { "type": "string", "minLength": 1 },
+    "segment_id": { "type": ["string", "null"], "minLength": 1 },
+    "micro_event_id": { "type": ["string", "null"], "minLength": 1 },
+    "event_window_id": { "type": ["string", "null"], "minLength": 1 },
+    "original_frame_id": { "type": ["integer", "null"], "minimum": 0 },
+    "start_ms": { "type": "integer", "minimum": 0 },
+    "end_ms": { "type": "integer", "minimum": 1 },
+    "storage_uri": { "type": ["string", "null"], "pattern": "^(file|s3|r2|gs|azure|https?)://[^\\s?#]+$" },
+    "text": { "type": ["string", "null"] },
+    "language": { "type": ["string", "null"], "minLength": 1 },
+    "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "producer": { "type": "string", "minLength": 1 },
+    "model_version": { "type": ["string", "null"], "minLength": 1 },
+    "payload": { "type": "object", "additionalProperties": true }
+  }
+}

@@ -15,10 +15,19 @@
   "properties": {
     "event_window_id": { "type": "string", "minLength": 1 },
     "video_id": { "type": "string", "minLength": 1 },
+    "query_id": { "type": ["string", "null"], "minLength": 1 },
+    "event_id": { "type": ["string", "null"], "minLength": 1 },
+    "event_ordinal": { "type": ["integer", "null"], "minimum": 1 },
+    "event_label": { "type": ["string", "null"], "minLength": 1 },
     "original_frame_id": { "type": "integer", "minimum": 0 },
     "timestamp_ms": { "type": "number", "minimum": 0 },
-    "selection_score": { "type": "number" },
+    "selection_score": { "type": "number", "minimum": 0, "maximum": 1 },
     "selector": { "type": "string", "minLength": 1 },
-    "evidence": { "type": "object" }
+    "event_score": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "event_score_provenance": { "type": ["object", "null"], "additionalProperties": true },
+    "evidence_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "evidence": { "type": "object", "additionalProperties": true },
+    "pipeline_version": { "type": "string", "minLength": 1 },
+    "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
   }
 }

@@ -21,11 +21,20 @@
     "start_ms": { "type": "number", "minimum": 0 },
     "end_ms": { "type": "number", "minimum": 0 },
     "source": { "enum": ["retrieval_hits", "manual", "task_handler"] },
+    "dataset_id": { "type": "string", "minLength": 1 },
+    "dataset_version": { "type": "string", "minLength": 1 },
+    "query_id": { "type": ["string", "null"], "minLength": 1 },
+    "event_id": { "type": ["string", "null"], "minLength": 1 },
+    "event_label": { "type": ["string", "null"], "minLength": 1 },
+    "event_ordinal": { "type": ["integer", "null"], "minimum": 1 },
+    "interval_semantics": { "const": "half_open" },
     "retrieval_score": { "type": ["number", "null"] },
     "member_frame_ids": {
       "type": "array",
       "items": { "type": "integer", "minimum": 0 }
     },
-    "peak_frame_id": { "type": ["integer", "null"], "minimum": 0 }
+    "peak_frame_id": { "type": ["integer", "null"], "minimum": 0 },
+    "provenance": { "type": "object", "additionalProperties": true },
+    "workflow_fingerprint": { "type": "string", "minLength": 1 }
   }
 }

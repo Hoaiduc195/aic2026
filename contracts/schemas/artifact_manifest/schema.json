@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/artifact_manifest/schema.json",
+  "title": "ArtifactManifest",
+  "description": "Immutable, checksummed output published by a processing run.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifact_id", "run_id", "dataset_id", "dataset_version", "artifact_type", "uri", "sha256", "schema_name", "schema_version", "size_bytes", "record_count", "publication_state", "created_at"],
+  "properties": {
+    "artifact_id": { "type": "string", "minLength": 1 },
+    "run_id": { "type": "string", "minLength": 1 },
+    "dataset_id": { "type": "string", "minLength": 1 },
+    "dataset_version": { "type": "string", "minLength": 1 },
+    "artifact_type": { "type": "string", "minLength": 1 },
+    "uri": { "type": "string", "pattern": "^(file|s3|r2|gs|azure|https?)://[^\\s?#]+$" },
+    "sha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+    "schema_name": { "type": "string", "minLength": 1 },
+    "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "size_bytes": { "type": "integer", "minimum": 0 },
+    "record_count": { "type": "integer", "minimum": 0 },
+    "publication_state": { "type": "string", "enum": ["staged", "published", "quarantined", "retired"] },
+    "created_at": { "type": "string", "format": "date-time" },
+    "content_type": { "type": "string", "minLength": 1 },
+    "metadata": { "type": "object", "additionalProperties": true }
+  }
+}

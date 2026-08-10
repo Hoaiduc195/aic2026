@@ -1,15 +1,25 @@
 {
+  "request_id": "request_0001",
   "query_id": "query_0001",
-  "query": "tim doan co xe may truoc cua hang",
+  "task": "textual_kis",
+  "task_executor": "textual_kis_v1",
+  "dataset_version": "qualification-v1",
+  "pipeline_version": "pipe-v2",
+  "schema_version": "1.0.0",
+  "index_version": "idx-v1",
+  "degraded": false,
+  "unavailable_branches": [],
+  "confidence": {"level": "high", "score": 0.91},
   "results": [
     {
       "segment_id": "video_test_0001_seg_002",
       "video_id": "video_test_0001",
-      "timestamp_start_ms": 12000,
-      "timestamp_end_ms": 18000,
+      "start_ms": 12000,
+      "end_ms": 18000,
       "preview_uri": "s3://aic-multimedia-artifacts/keyframes/video_test_0001/frame_000385.webp",
       "score": 0.93,
-      "matched_modalities": ["embedding", "ocr", "caption"]
+      "evidence_ids": [],
+      "matched_modalities": ["visual"]
     }
   ]
 }

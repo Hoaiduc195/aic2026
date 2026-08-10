@@ -1,0 +1,27 @@
+{
+  "request_id": "req_qualification_0001",
+  "query_id": "q_qualification_0001",
+  "task": "vqa",
+  "status": "completed",
+  "dataset_version": "qualification-v1",
+  "pipeline_version": "pipe-v2",
+  "schema_version": "1.0.0",
+  "index_version": "idx-v1",
+  "degraded": false,
+  "confidence": {"level": "high", "score": 0.9},
+  "results": [
+    {
+      "result_type": "vqa",
+      "result_id": "qa_result_0001",
+      "video_id": "video_test_0001",
+      "original_frame_id": 385,
+      "timestamp_ms": 15400,
+      "answer_status": "answered",
+      "answer": "Màu xanh.",
+      "normalized_answer": "xanh",
+      "evidence_ids": ["ev_frame_01"],
+      "confidence": {"level": "high", "score": 0.9}
+    }
+  ],
+  "unavailable_branches": []
+}

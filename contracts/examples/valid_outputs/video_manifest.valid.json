@@ -1,4 +1,6 @@
 {
+  "dataset_id": "aic2026",
+  "dataset_version": "qualification-v1",
   "video_id": "video_test_0001",
   "original_filename": "street_scene_01.mp4",
   "storage_uri": "r2://aic-multimedia-artifacts/raw/videos/street_scene_01.mp4",
@@ -9,5 +11,9 @@
   "height": 1080,
   "size_bytes": 73400320,
   "sha256": "9c56cc51b374c3ba189210d5b6d4bf57790d351c96c47c02190ecf1e430635ab",
-  "created_at": "2026-06-22T09:00:00Z"
+  "created_at": "2026-06-22T09:00:00Z",
+  "pipeline_version": "probe-v1",
+  "schema_version": "1.0.0",
+  "decode_status": "success",
+  "processing_status": "success"
 }

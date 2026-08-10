@@ -1,0 +1,11 @@
+{
+  "request_id": "req_qualification_0001",
+  "query_id": "q_qualification_0001",
+  "task": "vqa",
+  "event_description": "một người đặt chai xuống bàn",
+  "question": "Chai có màu gì?",
+  "dataset_version": "qualification-v1",
+  "top_k": 20,
+  "latency_budget_ms": 1500,
+  "language": "vi"
+}

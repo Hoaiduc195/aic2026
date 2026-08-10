@@ -2,53 +2,105 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "contracts/schemas/search_response/schema.json",
   "title": "SearchResponse",
+  "description": "Version-coherent fused retrieval response. Legacy query/evidence fields remain accepted during v1 migration; qualification task outputs use qualification_response.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["query_id", "query", "results"],
+  "required": ["query_id", "results"],
   "properties": {
+    "request_id": { "type": "string", "minLength": 1 },
     "query_id": { "type": "string", "minLength": 1 },
     "query": { "type": "string", "minLength": 1 },
+    "session_id": { "type": ["string", "null"], "minLength": 1 },
+    "task": { "type": "string", "enum": ["textual_kis", "video_kis", "avs", "vqa", "trake", "kisc"] },
+    "task_executor": { "type": "string", "minLength": 1 },
+    "dataset_version": { "type": "string", "minLength": 1 },
+    "pipeline_version": { "type": "string", "minLength": 1 },
+    "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "index_version": { "type": "string", "minLength": 1 },
+    "degraded": { "type": "boolean" },
+    "unavailable_branches": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "score"],
+      "properties": {
+        "level": { "type": "string", "enum": ["high", "medium", "low", "unknown"] },
+        "score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "fallbacks_applied": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "action": { "type": "string", "enum": ["return", "expand", "clarify", "abstain"] }
+      }
+    },
     "results": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "segment_id",
-          "video_id",
-          "timestamp_start_ms",
-          "timestamp_end_ms",
-          "preview_uri",
-          "score",
-          "evidence",
-          "matched_modalities"
-        ],
+        "required": ["segment_id", "video_id", "preview_uri", "score", "matched_modalities"],
         "properties": {
           "segment_id": { "type": "string", "minLength": 1 },
           "video_id": { "type": "string", "minLength": 1 },
-          "timestamp_start_ms": { "type": "integer", "minimum": 0 },
-          "timestamp_end_ms": { "type": "integer", "minimum": 0 },
-          "preview_uri": { "type": "string", "pattern": "^(s3|gs|azure|https?)://" },
+          "start_ms": { "type": "integer", "minimum": 0 },
+          "end_ms": { "type": "integer", "minimum": 1 },
+          "timestamp_start_ms": { "type": "integer", "minimum": 0, "description": "Deprecated alias for start_ms." },
+          "timestamp_end_ms": { "type": "integer", "minimum": 1, "description": "Deprecated alias for end_ms." },
+          "preview_uri": { "type": "string", "pattern": "^(file|s3|r2|gs|azure|https?)://[^\\s?#]+$" },
           "score": { "type": "number" },
-          "evidence": {
-            "type": "object",
+          "representative_frame": {
+            "type": ["object", "null"],
             "additionalProperties": false,
+            "required": ["original_frame_id", "timestamp_ms"],
             "properties": {
-              "ocr_text": { "type": "string" },
-              "asr_text": { "type": "string" },
-              "caption": { "type": "string" },
-              "objects": {
-                "type": "array",
-                "items": { "type": "string" }
-              }
+              "original_frame_id": { "type": "integer", "minimum": 0 },
+              "timestamp_ms": { "type": "integer", "minimum": 0 },
+              "preview_uri": { "type": ["string", "null"], "pattern": "^(file|s3|r2|gs|azure|https?)://[^\\s?#]+$" }
             }
           },
-          "matched_modalities": {
-            "type": "array",
-            "items": { "type": "string" }
-          }
-        }
+          "evidence_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+          "evidence": {
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["evidence_id", "type", "producer"],
+                  "properties": {
+                    "evidence_id": { "type": "string", "minLength": 1 },
+                    "type": { "type": "string", "enum": ["frame", "ocr", "asr", "caption", "object", "track", "audio", "temporal"] },
+                    "start_ms": { "type": "integer", "minimum": 0 },
+                    "end_ms": { "type": "integer", "minimum": 1 },
+                    "snippet": { "type": ["string", "null"] },
+                    "producer": { "type": "string", "minLength": 1 }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "ocr_text": { "type": "string" },
+                  "asr_text": { "type": "string" },
+                  "caption": { "type": "string" },
+                  "objects": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+                }
+              }
+            ]
+          },
+          "matched_modalities": { "type": "array", "uniqueItems": true, "items": { "type": "string", "enum": ["embedding", "visual", "ocr", "asr", "caption", "object", "temporal", "audio"] } }
+        },
+        "anyOf": [
+          { "required": ["start_ms", "end_ms", "evidence_ids", "evidence"] },
+          { "required": ["timestamp_start_ms", "timestamp_end_ms", "evidence"] }
+        ]
       }
-    }
-  }
+    },
+    "timing": { "type": "object", "additionalProperties": true },
+    "warnings": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+  },
+  "anyOf": [
+    {
+      "required": ["request_id", "task", "task_executor", "dataset_version", "pipeline_version", "schema_version", "index_version", "degraded", "unavailable_branches", "confidence"]
+    },
+    { "required": ["query"] }
+  ]
 }

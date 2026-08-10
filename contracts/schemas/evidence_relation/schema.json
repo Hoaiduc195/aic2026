@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/evidence_relation/schema.json",
+  "title": "EvidenceRelation",
+  "description": "A typed, versioned edge between evidence or a temporal node.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["relation_id", "source_evidence_id", "relation", "confidence", "producer"],
+  "properties": {
+    "relation_id": { "type": "string", "minLength": 1 },
+    "source_evidence_id": { "type": "string", "minLength": 1 },
+    "target_evidence_id": { "type": "string", "minLength": 1 },
+    "target_node_id": { "type": "string", "minLength": 1 },
+    "relation": { "type": "string", "enum": ["supports", "before", "after", "contains", "overlaps", "same_entity", "derived_from", "adjacent"] },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "producer": { "type": "string", "minLength": 1 },
+    "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "provenance": { "type": "object", "additionalProperties": true }
+  },
+  "oneOf": [
+    { "required": ["target_evidence_id"] },
+    { "required": ["target_node_id"] }
+  ]
+}

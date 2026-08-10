@@ -33,6 +33,8 @@
     "text_change_score"
   ],
   "properties": {
+    "dataset_id": { "type": "string", "minLength": 1 },
+    "dataset_version": { "type": "string", "minLength": 1 },
     "video_id": { "type": "string", "minLength": 1 },
     "original_frame_id": { "type": "integer", "minimum": 0 },
     "decoded_frame_index": { "type": "integer", "minimum": 0 },
@@ -58,5 +60,14 @@
     "motion_score": { "type": "number", "minimum": 0 },
     "scene_change_score": { "type": "number", "minimum": 0 },
     "text_change_score": { "type": "number", "minimum": 0 }
+    ,"frame_id": { "type": "string", "minLength": 1 }
+    ,"segment_id": { "type": ["string", "null"], "minLength": 1 }
+    ,"micro_event_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+    ,"context_window_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+    ,"quality_tier": { "type": "string", "enum": ["high", "medium", "low", "temporal_only", "technical_failure"] }
+    ,"retrieval_roles": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+    ,"storage_uri": { "type": ["string", "null"], "pattern": "^(file|s3|r2|gs|azure|https?)://[^\\s?#]+$" }
+    ,"pipeline_version": { "type": "string", "minLength": 1 }
+    ,"schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
   }
 }

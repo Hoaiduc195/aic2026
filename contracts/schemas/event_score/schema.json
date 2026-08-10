@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/event_score/schema.json",
+  "title": "EventScore",
+  "description": "Query-specific score for one dense frame, with enough provenance to reproduce it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_score_id", "query_id", "event_id", "video_id", "event_window_id", "original_frame_id", "score", "score_type", "producer", "model_version", "computed_at"],
+  "properties": {
+    "event_score_id": { "type": "string", "minLength": 1 },
+    "query_id": { "type": "string", "minLength": 1 },
+    "event_id": { "type": "string", "minLength": 1 },
+    "video_id": { "type": "string", "minLength": 1 },
+    "event_window_id": { "type": "string", "minLength": 1 },
+    "original_frame_id": { "type": "integer", "minimum": 0 },
+    "score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "score_type": { "type": "string", "enum": ["event_match", "state_transition", "motion", "pose", "fused"] },
+    "producer": { "type": "string", "minLength": 1 },
+    "model_version": { "type": "string", "minLength": 1 },
+    "evidence_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "computed_at": { "type": "string", "format": "date-time" },
+    "features": { "type": "object", "additionalProperties": true }
+  }
+}

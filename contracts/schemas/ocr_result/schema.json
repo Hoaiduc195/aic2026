@@ -2,23 +2,23 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "contracts/schemas/ocr_result/schema.json",
   "title": "OcrResult",
+  "description": "Frame-level OCR evidence. original_frame_id is the authoritative source-frame reference.",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "video_id",
-    "segment_id",
-    "frame_id",
-    "timestamp_ms",
-    "text",
-    "boxes",
-    "confidence"
-  ],
+  "required": ["video_id", "segment_id", "timestamp_ms", "text", "boxes", "confidence"],
   "properties": {
+    "dataset_id": { "type": "string", "minLength": 1 },
+    "dataset_version": { "type": "string", "minLength": 1 },
     "video_id": { "type": "string", "minLength": 1 },
     "segment_id": { "type": "string", "minLength": 1 },
-    "frame_id": { "type": "string", "minLength": 1 },
+    "original_frame_id": { "type": "integer", "minimum": 0 },
+    "frame_id": { "type": "string", "minLength": 1, "description": "Optional legacy/adapter frame identity." },
     "timestamp_ms": { "type": "integer", "minimum": 0 },
+    "start_ms": { "type": "integer", "minimum": 0 },
+    "end_ms": { "type": "integer", "minimum": 1 },
     "text": { "type": "string" },
+    "normalized_text": { "type": "string" },
+    "language": { "type": ["string", "null"], "minLength": 1 },
     "boxes": {
       "type": "array",
       "items": {
@@ -27,21 +27,20 @@
         "required": ["text", "box", "confidence"],
         "properties": {
           "text": { "type": "string" },
-          "box": {
-            "type": "array",
-            "items": {
-              "type": "array",
-              "items": { "type": "number" },
-              "minItems": 2,
-              "maxItems": 2
-            },
-            "minItems": 4,
-            "maxItems": 4
-          },
+          "box": { "type": "array", "items": { "type": "array", "items": { "type": "number", "minimum": 0 }, "minItems": 2, "maxItems": 2 }, "minItems": 4, "maxItems": 4 },
           "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
         }
       }
     },
-    "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
-  }
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "producer": { "type": "string", "minLength": 1 },
+    "model_version": { "type": ["string", "null"], "minLength": 1 },
+    "track_id": { "type": ["string", "null"], "minLength": 1 },
+    "pipeline_version": { "type": "string", "minLength": 1 },
+    "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
+  },
+  "anyOf": [
+    { "required": ["frame_id"] },
+    { "required": ["original_frame_id", "producer"] }
+  ]
 }

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/micro_event/schema.json",
+  "title": "MicroEvent",
+  "description": "A precise action or state transition inside a segment. Intervals are half-open: [start_ms, end_ms).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["micro_event_id", "video_id", "segment_id", "start_ms", "end_ms", "event_type", "event_label", "confidence", "producer"],
+  "properties": {
+    "micro_event_id": { "type": "string", "minLength": 1 },
+    "video_id": { "type": "string", "minLength": 1 },
+    "segment_id": { "type": "string", "minLength": 1 },
+    "context_window_id": { "type": ["string", "null"], "minLength": 1 },
+    "start_ms": { "type": "integer", "minimum": 0 },
+    "end_ms": { "type": "integer", "minimum": 1 },
+    "start_frame_id": { "type": ["integer", "null"], "minimum": 0 },
+    "end_frame_id": { "type": ["integer", "null"], "minimum": 1 },
+    "event_type": { "type": "string", "enum": ["action", "appearance", "disappearance", "state_transition", "contact", "release", "take_off", "landing", "extreme_point", "unknown"] },
+    "event_label": { "type": "string", "minLength": 1 },
+    "event_ordinal": { "type": "integer", "minimum": 1 },
+    "state_before": { "type": ["string", "null"] },
+    "state_after": { "type": ["string", "null"] },
+    "sibling_event_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "evidence_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "producer": { "type": "string", "minLength": 1 },
+    "provenance": { "type": "object", "additionalProperties": true }
+  }
+}

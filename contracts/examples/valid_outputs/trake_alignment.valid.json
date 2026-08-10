@@ -1,0 +1,33 @@
+{
+  "alignment_id": "align_qualification_0001",
+  "query_id": "q_trake_0001",
+  "video_id": "video_test_0001",
+  "status": "completed",
+  "sequence_score": 0.84,
+  "ordering_valid": true,
+  "events": [
+    {
+      "event_id": "event_1",
+      "event_ordinal": 1,
+      "event_label": "pick_up",
+      "event_window_id": "window_1",
+      "original_frame_id": 385,
+      "timestamp_ms": 15400,
+      "selection_score": 0.81,
+      "evidence_ids": ["ev_event_1"]
+    },
+    {
+      "event_id": "event_2",
+      "event_ordinal": 2,
+      "event_label": "release",
+      "event_window_id": "window_2",
+      "original_frame_id": 430,
+      "timestamp_ms": 17200,
+      "selection_score": 0.93,
+      "evidence_ids": ["ev_event_2"]
+    }
+  ],
+  "selector": "viterbi:v1",
+  "pipeline_version": "pipe-v2",
+  "schema_version": "1.0.0"
+}
