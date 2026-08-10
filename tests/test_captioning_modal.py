@@ -54,7 +54,7 @@ class CaptioningPlanningTests(unittest.TestCase):
                 ("002.jpg", "010.jpg"),
             )
 
-    def test_caption_path_and_resume_only_accept_non_empty_text(self) -> None:
+    def test_caption_path_and_resume_skip_any_existing_txt_file(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             image_path = root / "frames" / "L21_V001" / "001.jpg"
@@ -67,12 +67,12 @@ class CaptioningPlanningTests(unittest.TestCase):
                 caption_path,
                 output_dir / "L21_V001" / "001.txt",
             )
-            self.assertFalse(captioning.is_complete_caption(caption_path))
+            self.assertFalse(captioning.caption_file_exists(caption_path))
             caption_path.parent.mkdir(parents=True)
-            caption_path.write_text("\n", encoding="utf-8")
-            self.assertFalse(captioning.is_complete_caption(caption_path))
+            caption_path.touch()
+            self.assertTrue(captioning.caption_file_exists(caption_path))
             caption_path.write_text("A person walks.\n", encoding="utf-8")
-            self.assertTrue(captioning.is_complete_caption(caption_path))
+            self.assertTrue(captioning.caption_file_exists(caption_path))
 
     def test_chunked_does_not_drop_or_mutate_items(self) -> None:
         items = tuple(range(5))
