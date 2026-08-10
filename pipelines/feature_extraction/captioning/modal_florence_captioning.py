@@ -143,6 +143,18 @@ def iter_video_ids(input_dir: Path) -> tuple[str, ...]:
     )
 
 
+def validate_directory_layout(input_dir: Path, output_dir: Path) -> None:
+    """Require output storage to be a sibling or external directory."""
+
+    input_root = input_dir.resolve()
+    output_root = output_dir.resolve()
+    if output_root == input_root or input_root in output_root.parents:
+        raise ValueError(
+            "output_dir không được trùng hoặc nằm bên trong input_dir; "
+            "hãy dùng một folder output riêng"
+        )
+
+
 def partition_video_ids(
     video_ids: Sequence[str], *, batch_index: int, num_batches: int
 ) -> tuple[str, ...]:
@@ -523,6 +535,7 @@ async def caption_directory(
     if max_images < 0:
         raise ValueError("max_images không được âm; dùng 0 để xử lý toàn bộ")
 
+    validate_directory_layout(input_dir, output_dir)
     video_ids = iter_video_ids(input_dir)
     selected_video_ids = partition_video_ids(
         video_ids, batch_index=batch_index, num_batches=num_batches

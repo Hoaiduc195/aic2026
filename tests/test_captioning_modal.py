@@ -107,6 +107,16 @@ class CaptioningPlanningTests(unittest.TestCase):
                 json.dumps({"relative_path": "../escape.jpg", "caption": "x"})
             )
 
+    def test_output_directory_cannot_be_inside_input_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            input_dir = Path(temporary_directory) / "frames"
+            input_dir.mkdir()
+
+            with self.assertRaises(ValueError):
+                captioning.validate_directory_layout(
+                    input_dir, input_dir / "captioning"
+                )
+
 
 class CaptioningValidationTests(unittest.TestCase):
     def test_validate_options_rejects_unsafe_or_empty_values(self) -> None:
