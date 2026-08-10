@@ -31,8 +31,8 @@ captioning/
 ```
 
 The script also appends local progress records to
-`run_batch_<index>_of_<count>.jsonl`. Existing non-empty `.txt` files are
-resumed automatically.
+`run_batch_<index>_of_<count>.jsonl`. Existing `.txt` files are resumed
+automatically, including empty files.
 
 ## Installation
 
@@ -83,8 +83,9 @@ sample of the English captions before processing the full batch. The default
 greedy decoding (`--num-beams 1`) is chosen for throughput; use
 `--num-beams 3` only if the pilot shows a quality problem.
 
-Rerunning the same command is safe: non-empty caption files are skipped. Use
-`--overwrite` only when intentionally regenerating completed captions.
+Rerunning the same command is safe: any existing `.txt` caption file is
+skipped, including an empty file. Use `--overwrite` when intentionally
+regenerating completed or empty captions.
 
 ## Cost and throughput controls
 

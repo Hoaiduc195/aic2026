@@ -8,7 +8,7 @@ conversation. The main journeys are:
 - A team member selects one deterministic 291-video partition from 873 videos.
 - A local input folder is streamed to one Modal T4 worker and captions are
   written to a separate local output folder.
-- Rerunning a job skips non-empty captions, retains a JSONL progress manifest,
+- Rerunning a job skips existing caption files, retains a JSONL progress manifest,
   isolates malformed images, and stops at a configured cost estimate.
 
 ## Evidence

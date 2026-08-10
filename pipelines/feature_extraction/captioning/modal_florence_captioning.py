@@ -13,7 +13,7 @@ Example::
         --batch-index 0 --num-batches 3 --budget-usd 25
 
 The three team members should use batch indexes 0, 1, and 2.  Existing
-non-empty ``.txt`` files are skipped unless ``--overwrite`` is supplied.
+``.txt`` files are skipped unless ``--overwrite`` is supplied.
 """
 
 from __future__ import annotations
@@ -220,13 +220,10 @@ def caption_path_for(input_dir: Path, output_dir: Path, image_path: Path) -> Pat
     return (output_dir / relative_path).with_suffix(".txt")
 
 
-def is_complete_caption(caption_path: Path) -> bool:
-    """Return true only for a readable, non-empty caption file."""
+def caption_file_exists(caption_path: Path) -> bool:
+    """Return true for any existing caption file, including an empty file."""
 
-    try:
-        return bool(caption_path.read_text(encoding="utf-8").strip())
-    except (OSError, UnicodeError):
-        return False
+    return caption_path.is_file()
 
 
 def chunked(items: Sequence[T], size: int) -> Iterator[tuple[T, ...]]:
@@ -558,7 +555,9 @@ async def caption_directory(
     pending_images = tuple(
         path
         for path in all_images
-        if overwrite or not is_complete_caption(caption_path_for(input_dir, output_dir, path))
+        if overwrite or not caption_file_exists(
+            caption_path_for(input_dir, output_dir, path)
+        )
     )
     if max_images:
         pending_images = pending_images[:max_images]
