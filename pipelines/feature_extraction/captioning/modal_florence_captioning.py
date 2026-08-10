@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import sys
 import time
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, replace
@@ -56,6 +57,19 @@ MAX_RETRIES = 5
 
 IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".webp", ".bmp"})
 T = TypeVar("T")
+
+
+def safe_print(message: str) -> None:
+    """Print logs without crashing on a non-Unicode Windows console."""
+
+    try:
+        print(message)
+    except UnicodeEncodeError:
+        encoding = sys.stdout.encoding or "utf-8"
+        fallback = message.encode(encoding, errors="backslashreplace").decode(
+            encoding
+        )
+        print(fallback)
 
 
 @dataclass(frozen=True, slots=True)
@@ -550,16 +564,16 @@ async def caption_directory(
         pending_images = pending_images[:max_images]
 
     manifest_path = output_dir / f"run_batch_{batch_index}_of_{num_batches}.jsonl"
-    print(
+    safe_print(
         f"[plan] videos={len(selected_video_ids)}/{len(video_ids)} "
         f"frames={len(all_images)} pending={len(pending_images)} "
         f"batch_index={batch_index}"
     )
     if dry_run:
-        print("[dry-run] Không khởi tạo Modal và không ghi caption.")
+        safe_print("[dry-run] Không khởi tạo Modal và không ghi caption.")
         return
     if not pending_images:
-        print("[done] Không có frame mới cần caption.")
+        safe_print("[done] Không có frame mới cần caption.")
         return
     if Captioner is None:
         raise RuntimeError(
@@ -579,7 +593,7 @@ async def caption_directory(
         pending_images, max_items=batch_size, max_bytes=MAX_WINDOW_BYTES
     ):
         if tracker.over_budget:
-            print(
+            safe_print(
                 f"[stop] Đạt budget ước tính ${tracker.estimated_cost_usd:.2f}; "
                 "chạy lại để resume phần còn lại."
             )
@@ -662,13 +676,13 @@ async def caption_directory(
         ):
             raise RuntimeError(f"Modal inference thất bại: {_error_text(remote_error)}")
 
-        print(
+        safe_print(
             f"[progress] completed={completed} failed={failed} "
             f"estimated_gpu_cost=${tracker.estimated_cost_usd:.2f} "
             f"remaining={len(pending_images) - completed - failed}"
         )
 
-    print(
+    safe_print(
         f"[done] completed={completed} failed={failed} "
         f"estimated_gpu_cost=${tracker.estimated_cost_usd:.2f}"
     )
@@ -752,7 +766,7 @@ if modal is not None:
             ).to(self.device)
             self.model.eval()
             model_cache.commit()
-            print(f"Loaded {MODEL_NAME} on {self.device}")
+            safe_print(f"Loaded {MODEL_NAME} on {self.device}")
 
         @modal.batched(
             max_batch_size=GPU_BATCH_SIZE,

@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from pipelines.feature_extraction.captioning import (
     modal_florence_captioning as captioning,
@@ -116,6 +117,27 @@ class CaptioningPlanningTests(unittest.TestCase):
                 captioning.validate_directory_layout(
                     input_dir, input_dir / "captioning"
                 )
+
+    def test_safe_print_does_not_crash_on_narrow_windows_console(self) -> None:
+        class AsciiStream:
+            encoding = "ascii"
+
+            def __init__(self) -> None:
+                self.value = ""
+
+            def write(self, value: str) -> int:
+                value.encode(self.encoding)
+                self.value += value
+                return len(value)
+
+            def flush(self) -> None:
+                return None
+
+        stream = AsciiStream()
+        with mock.patch("sys.stdout", stream):
+            captioning.safe_print("Không khởi tạo Modal")
+
+        self.assertIn(r"Kh\xf4ng", stream.value)
 
 
 class CaptioningValidationTests(unittest.TestCase):
