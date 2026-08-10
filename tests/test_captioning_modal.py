@@ -5,7 +5,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pipelines.feature_extraction.captioning import modal_florence_captioning as captioning
+from pipelines.feature_extraction.captioning import (
+    modal_florence_captioning as captioning,
+)
 
 
 class CaptioningPlanningTests(unittest.TestCase):
