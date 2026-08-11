@@ -65,3 +65,6 @@ database/indexes/*.faiss
 !artifacts/captions/.gitkeep
 !artifacts/objects/.gitkeep
 !artifacts/fused/.gitkeep
+
+# Python environments
+venv/

@@ -1,0 +1,5 @@
+# Local English-to-Vietnamese caption translation.
+# The model is downloaded once from Hugging Face and then runs locally.
+torch
+transformers>=4.49,<5
+sentencepiece

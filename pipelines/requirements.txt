@@ -19,6 +19,10 @@ faiss-cpu
 open_clip_torch
 timm
 
+# Local English-to-Vietnamese caption translation.
+transformers>=4.49,<5
+sentencepiece
+
 # ASR backends. The CLI selects one at runtime; transcript-json mode does not
 # require either backend.
 faster-whisper

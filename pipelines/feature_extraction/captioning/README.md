@@ -47,6 +47,52 @@ Florence-2, PyTorch, Transformers, Accelerate, and Pillow are installed in the
 remote Modal image. The model is loaded once per container and requests are
 dynamic-batched on the T4.
 
+## Translate captions to Vietnamese
+
+The generated captions are English. Translate them locally without a
+per-request API by using the pinned `Helsinki-NLP/opus-mt-en-vi` model. The
+translator keeps the English files unchanged, mirrors their directory layout,
+deduplicates identical captions before inference, and resumes from existing
+Vietnamese output files.
+
+Install the local translation dependencies from this directory:
+
+```powershell
+python -m pip install -r requirements-translation.txt
+```
+
+Run it with explicit input and output folders:
+
+```powershell
+python -m pipelines.feature_extraction.captioning.translate_captions `
+  --input-dir E:\aic2026\captioning `
+  --output-dir E:\aic2026\captioning_vi `
+  --batch-size 64 `
+  --device auto
+```
+
+The output preserves the input layout:
+
+```text
+captioning/L21_V001/001.txt
+captioning_vi/L21_V001/001.txt
+```
+
+Use `--overwrite` to regenerate existing Vietnamese files. For a large
+dataset, deterministic partitions can be run separately:
+
+```powershell
+python -m pipelines.feature_extraction.captioning.translate_captions `
+  --input-dir E:\aic2026\captioning `
+  --output-dir E:\aic2026\captioning_vi `
+  --batch-index 0 --num-batches 3
+```
+
+Repeat with indexes `1` and `2`. The model uses CUDA automatically when it is
+available and falls back to CPU otherwise. `--batch-size` controls the number
+of unique caption strings sent to the model per inference call; repeated
+caption files are written from one translated result.
+
 ## Three-way split
 
 The input directory currently contains 873 video directories. The script
