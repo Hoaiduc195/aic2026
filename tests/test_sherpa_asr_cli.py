@@ -1,9 +1,7 @@
 import json
-import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from pipelines.feature_extraction.asr.config import (
     SherpaAsrConfig,
@@ -15,8 +13,16 @@ from pipelines.feature_extraction.asr.installer import (
     install_sherpa_core,
 )
 from pipelines.feature_extraction.asr.io import write_canonical_asr_jsonl
-from pipelines.feature_extraction.asr.models import QualityInfo, TranscriptChunk, WordTiming
+from pipelines.feature_extraction.asr.models import (
+    QualityInfo,
+    TranscriptChunk,
+    WordTiming,
+)
 from pipelines.feature_extraction.asr.runner import batch_transcribe, transcribe_file
+from pipelines.feature_extraction.asr.sherpa_backend import (
+    _chunks_from_result,
+    _pipeline_config,
+)
 
 
 class FakeBackend:
@@ -38,7 +44,13 @@ class SherpaAsrCliTest(unittest.TestCase):
             core = source / "core"
             core.mkdir(parents=True)
             for filename in CORE_SOURCE_FILES:
-                (core / filename).write_text(f"# {filename}\n", encoding="utf-8")
+                content = f"# {filename}\n"
+                if filename == "punctuation_restorer_improved.py":
+                    content = (
+                        "import os\n"
+                        "base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\n"
+                    )
+                (core / filename).write_text(content, encoding="utf-8")
             (source / "app.py").write_text("from PyQt6 import QtWidgets\n", encoding="utf-8")
             (core / "audio_analyzer.py").write_text(
                 "from PyQt6.QtCore import QThread\n", encoding="utf-8"
@@ -81,7 +93,12 @@ class SherpaAsrCliTest(unittest.TestCase):
             self.assertEqual(config.cpu_threads, 6)
             self.assertFalse(config.punctuation)
             self.assertTrue(config.quality)
-            self.assertEqual(resolve_model_path(models, config.model_name), models / "custom-model")
+            for filename in ("encoder-test.onnx", "decoder-test.onnx", "joiner-test.onnx", "tokens.txt"):
+                (models / "custom-model" / filename).write_text("asset", encoding="utf-8")
+            self.assertEqual(
+                resolve_model_path(models, config.model_name),
+                (models / "custom-model").resolve(),
+            )
 
     def test_canonical_jsonl_contains_timestamps_words_confidence_and_quality(self):
         chunk = TranscriptChunk(
@@ -127,7 +144,7 @@ class SherpaAsrCliTest(unittest.TestCase):
             result = transcribe_file(media, output, backend=backend)
             skipped = transcribe_file(media, output, backend=backend)
 
-            self.assertEqual(result, output)
+            self.assertEqual(result, output.resolve())
             self.assertIsNone(skipped)
             self.assertEqual(len(backend.calls), 1)
             self.assertEqual(len(output.read_text(encoding="utf-8").splitlines()), 1)
@@ -167,6 +184,47 @@ class SherpaAsrCliTest(unittest.TestCase):
 
             with self.assertRaisesRegex(FileNotFoundError, "model"):
                 resolve_model_path(models, "missing")
+
+    def test_sherpa_result_conversion_keeps_word_timestamps_and_quality(self):
+        chunks = _chunks_from_result(
+            {
+                "asr_confidence": 0.82,
+                "quality_info": {
+                    "dnsmos_sig": 3.1,
+                    "dnsmos_bak": 3.4,
+                    "dnsmos_ovrl": 3.2,
+                },
+                "segments": [
+                    {
+                        "start": 1.25,
+                        "end": 2.5,
+                        "text": "Xin chào.",
+                        "raw_words": [
+                            {"text": "Xin", "start": 1.25, "end": 1.6, "prob": 0.8},
+                            {"text": "chào", "start": 1.61, "end": 2.2, "prob": 0.84},
+                        ],
+                    }
+                ],
+            },
+            language="vi",
+            include_quality=True,
+        )
+
+        self.assertEqual(len(chunks), 1)
+        self.assertEqual((chunks[0].start_ms, chunks[0].end_ms), (1250, 2500))
+        self.assertEqual(chunks[0].words[1].start_ms, 1610)
+        self.assertAlmostEqual(chunks[0].confidence, 0.82)
+        self.assertEqual(chunks[0].quality.dnsmos_ovrl, 3.2)
+
+    def test_pipeline_config_disables_unsupported_gui_features(self):
+        runtime = _pipeline_config(
+            SherpaAsrConfig(model_dir=Path("models"), punctuation=True, quality=True)
+        )
+
+        self.assertTrue(runtime["restore_punctuation"])
+        self.assertTrue(runtime["auto_analyze_quality"])
+        self.assertFalse(runtime["speaker_diarization"])
+        self.assertFalse(runtime["overlap_separation"])
 
 
 if __name__ == "__main__":

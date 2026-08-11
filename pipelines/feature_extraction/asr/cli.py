@@ -1,22 +1,131 @@
-"""Command-line entrypoint for ASR preprocessing."""
+"""CLI for legacy transcript mapping and headless Sherpa transcription."""
 
 from __future__ import annotations
 
 import argparse
 import re
+import sys
+from dataclasses import replace
 from pathlib import Path
 
+from pipelines.feature_extraction.asr.config import (
+    SherpaAsrConfig,
+    config_from_environment,
+    load_sherpa_config,
+)
 from pipelines.feature_extraction.asr.io import (
     read_segments_json,
     write_asr_results_json,
     write_asr_results_jsonl,
     write_asr_results_parquet,
 )
+from pipelines.feature_extraction.asr.runner import batch_transcribe, transcribe_file
 from pipelines.feature_extraction.asr.segment_mapping import map_transcripts_to_segments
-from pipelines.feature_extraction.asr.transcriber import JsonTranscriptBackend, WhisperBackend, demux_audio_to_wav
+from pipelines.feature_extraction.asr.sherpa_backend import (
+    SherpaBackend,
+    check_sherpa_runtime,
+)
+from pipelines.feature_extraction.asr.transcriber import (
+    JsonTranscriptBackend,
+    WhisperBackend,
+    demux_audio_to_wav,
+)
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> int | None:
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if not arguments or arguments[0].startswith("-"):
+        return _legacy_main(arguments)
+
+    parser = _build_sherpa_parser()
+    args = parser.parse_args(arguments)
+    try:
+        config = _config_from_args(args)
+        if args.command == "check":
+            details = check_sherpa_runtime(config)
+            for key, value in details.items():
+                print(f"{key}: {value}")
+            return 0
+
+        backend = SherpaBackend(config)
+        if args.command == "transcribe":
+            output = args.output or args.input.with_suffix(".asr.jsonl")
+            result = transcribe_file(
+                args.input,
+                output,
+                backend=backend,
+                overwrite=args.overwrite,
+            )
+            if result is None:
+                print(f"skip: {output}")
+            else:
+                print(f"written: {result}")
+            return 0
+
+        written = batch_transcribe(
+            args.input_dir,
+            args.output_dir,
+            backend=backend,
+            recursive=args.recursive,
+            overwrite=args.overwrite,
+        )
+        print(f"written: {len(written)} file(s)")
+        return 0
+    except (FileNotFoundError, NotADirectoryError, RuntimeError, ValueError) as exc:
+        parser.error(str(exc))
+        return 2
+
+
+def _build_sherpa_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m pipelines.feature_extraction.asr.cli",
+        description="Headless Vietnamese Sherpa ASR CLI",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    for command in ("check", "transcribe", "batch"):
+        command_parser = subparsers.add_parser(command)
+        _add_runtime_arguments(command_parser)
+
+    transcribe_parser = subparsers.choices["transcribe"]
+    transcribe_parser.add_argument("input", type=Path)
+    transcribe_parser.add_argument("--output", type=Path)
+    transcribe_parser.add_argument("--overwrite", action="store_true")
+
+    batch_parser = subparsers.choices["batch"]
+    batch_parser.add_argument("input_dir", type=Path)
+    batch_parser.add_argument("--output-dir", type=Path, required=True)
+    batch_parser.add_argument("--recursive", action="store_true")
+    batch_parser.add_argument("--overwrite", action="store_true")
+    return parser
+
+
+def _add_runtime_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--model-dir", type=Path)
+    parser.add_argument("--model-name")
+    parser.add_argument("--ffmpeg-dir", type=Path)
+    parser.add_argument("--config", type=Path)
+    parser.add_argument("--cpu-threads", type=int)
+    parser.add_argument("--language")
+    parser.add_argument("--device", dest="execution_provider")
+    parser.add_argument("--disable-punctuation", action="store_true")
+    parser.add_argument("--disable-quality", action="store_true")
+
+
+def _config_from_args(args: argparse.Namespace) -> SherpaAsrConfig:
+    config = config_from_environment(load_sherpa_config(args.config))
+    updates = {}
+    for field_name in ("model_dir", "model_name", "ffmpeg_dir", "cpu_threads", "language", "execution_provider"):
+        value = getattr(args, field_name, None)
+        if value is not None:
+            updates[field_name] = value
+    if args.disable_punctuation:
+        updates["punctuation"] = False
+    if args.disable_quality:
+        updates["quality"] = False
+    return replace(config, **updates)
+
+
+def _legacy_main(argv: list[str]) -> None:
     parser = argparse.ArgumentParser(description="Run ASR and emit contract-compatible rows.")
     parser.add_argument("--video-id", required=True)
     parser.add_argument("--segments", type=Path, required=True)
@@ -24,13 +133,17 @@ def main() -> None:
     parser.add_argument("--audio", type=Path)
     parser.add_argument("--video", type=Path)
     parser.add_argument("--workdir", type=Path, default=Path("data/tmp/asr"))
-    parser.add_argument("--backend", choices=["transcript-json", "faster-whisper", "openai-whisper"], default="faster-whisper")
+    parser.add_argument(
+        "--backend",
+        choices=["transcript-json", "faster-whisper", "openai-whisper"],
+        default="faster-whisper",
+    )
     parser.add_argument("--transcript-json", type=Path)
     parser.add_argument("--model-name", default="small")
     parser.add_argument("--language", default="vi")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--format", choices=["jsonl", "json", "parquet"], default="jsonl")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     backend = _build_backend(args)
     audio_path = (
@@ -57,7 +170,7 @@ def _resolve_audio_path(
     workdir: Path,
 ) -> Path:
     if re.fullmatch(r"[A-Za-z0-9_-]+", video_id) is None:
-        raise ValueError("video_id may contain only letters, numbers, '_' and '-'")
+        raise ValueError("video_id may contain only letters, numbers, '_' and '-' ")
     if audio_path is not None:
         return audio_path
     if video_path is None:
@@ -83,4 +196,4 @@ def _build_backend(args: argparse.Namespace) -> JsonTranscriptBackend | WhisperB
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main() or 0)

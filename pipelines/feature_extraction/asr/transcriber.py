@@ -7,7 +7,7 @@ import math
 import os
 import subprocess
 import tempfile
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -76,7 +76,7 @@ class JsonTranscriptBackend:
         raw = json.loads(self.transcript_path.read_text(encoding="utf-8"))
         rows = raw["segments"] if isinstance(raw, dict) and "segments" in raw else raw
         if not isinstance(rows, list):
-            raise ValueError("transcript JSON must be a list or an object with segments")
+            raise TypeError("transcript JSON must be a list or an object with segments")
         return [_chunk_from_json(row) for row in rows]
 
 
@@ -158,7 +158,7 @@ class WhisperBackend:
 
 def _chunk_from_json(row: Any) -> TranscriptChunk:
     if not isinstance(row, dict):
-        raise ValueError("transcript segment must be an object")
+        raise TypeError("transcript segment must be an object")
 
     start_ms = _timestamp_to_ms(row, "start_ms", "start")
     end_ms = _timestamp_to_ms(row, "end_ms", "end")
@@ -181,7 +181,7 @@ def _timestamp_to_ms(row: dict[str, Any], ms_key: str, seconds_key: str) -> int:
 
 
 def _seconds_to_ms(value: float) -> int:
-    return int(round(value * 1000))
+    return round(value * 1000)
 
 
 def _probe_duration_seconds(media_path: Path, timeout_seconds: float) -> float:

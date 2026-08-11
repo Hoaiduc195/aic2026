@@ -8,10 +8,50 @@ multimodal search, fusion, and database ingestion.
 ## Responsibilities
 
 - Extract mono 16 kHz WAV audio from a video with `ffmpeg`.
-- Run ASR with Whisper-compatible backends.
+- Run ASR with Whisper-compatible backends or the GUI-free Vietnamese Sherpa
+  runtime cloned from the local portable distribution.
 - Load precomputed transcript JSON for tests, debugging, or checkpoint reuse.
 - Map transcript chunks to segment IDs by temporal overlap.
 - Write ASR results as JSONL, JSON, or Parquet.
+
+## Headless Sherpa CLI
+
+The Sherpa adapter has no PyQt/PWA dependency. Install only the pure-Python
+core from the local distribution; model files, FFmpeg, and Python packages are
+kept outside the repository:
+
+```powershell
+python scripts/install_sherpa_asr.py `
+  --source E:\aic2026\sherpa-vietnamese-asr-2.6.3
+python -m pip install -r pipelines/feature_extraction/asr/requirements-sherpa.txt
+```
+
+Check the external runtime and model assets:
+
+```powershell
+python -m pipelines.feature_extraction.asr.cli check `
+  --model-dir E:\aic2026\sherpa-vietnamese-asr-2.6.3\models `
+  --ffmpeg-dir E:\aic2026\sherpa-vietnamese-asr-2.6.3
+```
+
+Transcribe one file or a directory batch:
+
+```powershell
+python -m pipelines.feature_extraction.asr.cli transcribe input.mp4 `
+  --output output\input.asr.jsonl `
+  --model-dir E:\aic2026\sherpa-vietnamese-asr-2.6.3\models
+
+python -m pipelines.feature_extraction.asr.cli batch videos `
+  --output-dir artifacts\asr `
+  --model-dir E:\aic2026\sherpa-vietnamese-asr-2.6.3\models `
+  --recursive
+```
+
+The CLI skips an existing `<stem>.asr.jsonl` unless `--overwrite` is passed.
+Each line follows `contracts/schemas/asr_result/schema.json`, including
+millisecond timestamps, raw/normalized text, word confidence, and the optional
+headless DNSMOS quality summary. Diarization and overlap separation are
+intentionally disabled in this first CLI version.
 
 ASR is run once per audio stream, not once per frame. The transcript is then
 projected onto the segment timeline so spoken content can be retrieved at the
