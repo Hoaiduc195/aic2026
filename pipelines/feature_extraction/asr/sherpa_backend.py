@@ -45,6 +45,9 @@ class SherpaBackend:
         self.pipeline_version = config.pipeline_version
 
     def transcribe(self, audio_path: Path) -> list[TranscriptChunk]:
+        _validate_runtime_assets(
+            self.config, _runtime_root(self.model_path).resolve()
+        )
         pipeline_class = _load_pipeline_class(self.model_path)
         runtime_config = _pipeline_config(self.config)
         progress_callback = _progress_callback
@@ -74,6 +77,7 @@ def check_sherpa_runtime(config: SherpaAsrConfig) -> dict[str, str]:
         raise FileNotFoundError(
             f"headless Sherpa core not installed at {vendor_core}; run install_sherpa_asr.py"
         )
+    _validate_runtime_assets(config, _runtime_root(model_path).resolve())
     _validate_ffmpeg_tools(config.ffmpeg_dir)
     return {
         "model": os.fspath(model_path),
@@ -136,6 +140,46 @@ def _runtime_root(model_path: Path) -> Path:
     if model_parent.name.lower() == "models":
         return model_parent.parent
     return model_parent
+
+
+def _validate_runtime_assets(config: SherpaAsrConfig, runtime_root: Path) -> None:
+    """Validate auxiliary assets required by the enabled headless stages."""
+
+    models_root = runtime_root / "models"
+    missing: list[str] = []
+
+    if not config.bypass_vad and not _has_any_file(
+        models_root / "silero-vad",
+        ("silero_vad_16k_op15.onnx", "silero_vad.onnx"),
+    ):
+        missing.append(os.fspath(models_root / "silero-vad" / "silero_vad*.onnx"))
+
+    if config.quality and not (models_root / "dnsmos" / "sig_bak_ovr.onnx").is_file():
+        missing.append(os.fspath(models_root / "dnsmos" / "sig_bak_ovr.onnx"))
+
+    if config.punctuation:
+        punctuation_model_dir = models_root / "vibert-capu"
+        if not _has_any_file(
+            punctuation_model_dir,
+            ("vibert-capu.int8.onnx", "vibert-capu.onnx"),
+        ):
+            missing.append(os.fspath(punctuation_model_dir / "vibert-capu*.onnx"))
+
+        vocabulary_dir = runtime_root / "vocabulary"
+        for filename in ("d_tags.txt", "labels.txt", "non_padded_namespaces.txt"):
+            if not (vocabulary_dir / filename).is_file():
+                missing.append(os.fspath(vocabulary_dir / filename))
+        if not (runtime_root / "verb-form-vocab.txt").is_file():
+            missing.append(os.fspath(runtime_root / "verb-form-vocab.txt"))
+
+    if missing:
+        raise FileNotFoundError(
+            "Sherpa runtime asset(s) missing: " + ", ".join(missing)
+        )
+
+
+def _has_any_file(directory: Path, filenames: tuple[str, ...]) -> bool:
+    return any((directory / filename).is_file() for filename in filenames)
 
 
 def _pipeline_config(config: SherpaAsrConfig) -> dict[str, Any]:

@@ -24,6 +24,7 @@ from pipelines.feature_extraction.asr.sherpa_backend import (
     _chunks_from_result,
     _pipeline_config,
     _validate_ffmpeg_tools,
+    _validate_runtime_assets,
 )
 
 
@@ -53,6 +54,11 @@ class SherpaAsrCliTest(unittest.TestCase):
                         "import os\n"
                         "base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\n"
                     )
+                if filename == "vocabulary.py":
+                    content = (
+                        "from pathlib import Path\n"
+                        "VOCAB_DIR = Path(__file__).resolve().parent.parent\n"
+                    )
                 (core / filename).write_text(content, encoding="utf-8")
             (source / "app.py").write_text("from PyQt6 import QtWidgets\n", encoding="utf-8")
             (core / "audio_analyzer.py").write_text(
@@ -68,6 +74,33 @@ class SherpaAsrCliTest(unittest.TestCase):
             self.assertFalse((target / "app.py").exists())
             self.assertNotIn("PyQt6", (target / "audio_analyzer.py").read_text(encoding="utf-8"))
             self.assertTrue((target / "install-manifest.json").exists())
+
+    def test_installer_rebases_vocabulary_lookup_to_external_runtime_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "sherpa"
+            core = source / "core"
+            core.mkdir(parents=True)
+            for filename in CORE_SOURCE_FILES:
+                content = f"# {filename}\n"
+                if filename == "vocabulary.py":
+                    content = (
+                        "from pathlib import Path\n"
+                        "VOCAB_DIR = Path(__file__).resolve().parent.parent\n"
+                    )
+                if filename == "punctuation_restorer_improved.py":
+                    content = (
+                        "import os\n"
+                        "base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\n"
+                    )
+                (core / filename).write_text(content, encoding="utf-8")
+
+            target = Path(directory) / "vendor" / "core"
+            install_sherpa_core(source, target)
+
+            installed = (target / "vocabulary.py").read_text(encoding="utf-8")
+            self.assertIn("from core.config import BASE_DIR", installed)
+            self.assertIn("VOCAB_DIR = Path(BASE_DIR)", installed)
+            self.assertNotIn("Path(__file__).resolve().parent.parent", installed)
 
     def test_installer_rejects_source_without_asr_engine(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -270,6 +303,28 @@ class SherpaAsrCliTest(unittest.TestCase):
         self.assertTrue(runtime["auto_analyze_quality"])
         self.assertFalse(runtime["speaker_diarization"])
         self.assertFalse(runtime["overlap_separation"])
+
+    def test_runtime_check_requires_enabled_external_auxiliary_assets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime_root = Path(directory)
+            model_root = runtime_root / "models"
+            (model_root / "silero-vad").mkdir(parents=True)
+            (model_root / "dnsmos").mkdir()
+            (model_root / "vibert-capu").mkdir()
+            (runtime_root / "vocabulary").mkdir()
+            (model_root / "silero-vad" / "silero_vad.onnx").touch()
+            (model_root / "dnsmos" / "sig_bak_ovr.onnx").touch()
+            (model_root / "vibert-capu" / "vibert-capu.int8.onnx").touch()
+            for filename in ("d_tags.txt", "labels.txt", "non_padded_namespaces.txt"):
+                (runtime_root / "vocabulary" / filename).touch()
+            (runtime_root / "verb-form-vocab.txt").touch()
+
+            config = SherpaAsrConfig(model_dir=model_root)
+            _validate_runtime_assets(config, runtime_root)
+
+            (runtime_root / "verb-form-vocab.txt").unlink()
+            with self.assertRaisesRegex(FileNotFoundError, "verb-form-vocab.txt"):
+                _validate_runtime_assets(config, runtime_root)
 
     def test_ffmpeg_check_invokes_both_tools(self):
         with tempfile.TemporaryDirectory() as directory:

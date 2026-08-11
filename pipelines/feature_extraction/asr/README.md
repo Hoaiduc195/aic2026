@@ -26,6 +26,44 @@ python scripts/install_sherpa_asr.py `
 python -m pip install -r pipelines/feature_extraction/asr/requirements-sherpa.txt
 ```
 
+### Headless Sherpa requirements
+
+The headless Sherpa CLI requires Python 3.10 or newer and the packages listed
+in `requirements-sherpa.txt`:
+
+- `numpy>=1.24`
+- `onnxruntime>=1.17`
+- `soundfile>=0.12`
+- `kaldi-native-fbank>=1.20`
+- `scipy>=1.10`
+- `psutil>=5.9`
+- `filelock>=3.13`
+- `transformers>=4.49,<5`
+
+To recreate the Python environment after cloning the repository:
+
+```powershell
+python -m pip install --upgrade pip
+python -m pip install -r pipelines/feature_extraction/asr/requirements-sherpa.txt
+```
+
+The CLI also needs a compatible local Sherpa distribution. The current
+distribution is `E:\aic2026\sherpa-vietnamese-asr-2.6.3`; it provides the
+headless source, ASR model files, Silero VAD, DNSMOS, ViBERT punctuation,
+vocabulary files, `ffmpeg.exe`, and `ffprobe.exe`. Install the headless core
+from that distribution with:
+
+```powershell
+python scripts/install_sherpa_asr.py `
+  --source E:\aic2026\sherpa-vietnamese-asr-2.6.3
+```
+
+The installer copies only the CLI-compatible core into
+`pipelines/feature_extraction/asr/vendor/core`; GUI/PyQt files are not needed.
+Models are not downloaded from Hugging Face automatically and remain outside
+the repository. If the source distribution is moved, pass the new path to
+`--source` and use its `models` directory with `--model-dir`.
+
 Check the external runtime and model assets:
 
 ```powershell

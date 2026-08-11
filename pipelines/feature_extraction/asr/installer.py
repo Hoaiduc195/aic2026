@@ -64,6 +64,8 @@ def install_sherpa_core(source_dir: Path, target_dir: Path | None = None) -> Ins
         text = source_path.read_text(encoding="utf-8")
         if filename == "punctuation_restorer_improved.py":
             text = _make_punctuation_headless(text)
+        elif filename == "vocabulary.py":
+            text = _make_vocabulary_headless(text)
         target_path.write_text(text, encoding="utf-8", newline="\n")
         copied.append(filename)
 
@@ -108,6 +110,16 @@ def _make_punctuation_headless(text: str) -> str:
     replacement = "from core.config import BASE_DIR as base_dir"
     if old not in text:
         raise ValueError("punctuation_restorer_improved.py has unexpected base path")
+    return text.replace(old, replacement, 1)
+
+
+def _make_vocabulary_headless(text: str) -> str:
+    """Resolve the external verb vocabulary through the runtime root."""
+
+    old = "VOCAB_DIR = Path(__file__).resolve().parent.parent"
+    replacement = "from core.config import BASE_DIR\nVOCAB_DIR = Path(BASE_DIR)"
+    if old not in text:
+        raise ValueError("vocabulary.py has unexpected vocabulary path")
     return text.replace(old, replacement, 1)
 
 

@@ -1,6 +1,9 @@
 # Headless Sherpa ASR runtime. Models and FFmpeg remain external to the repo.
 numpy>=1.24
 onnxruntime>=1.17
+soundfile>=0.12
+kaldi-native-fbank>=1.20
+scipy>=1.10
 psutil>=5.9
 filelock>=3.13
-transformers>=4.38
+transformers>=4.49,<5
