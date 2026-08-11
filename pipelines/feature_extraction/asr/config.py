@@ -83,7 +83,11 @@ def config_from_environment(config: SherpaAsrConfig) -> SherpaAsrConfig:
     """Apply the documented environment overrides to an immutable config."""
 
     model_dir = _optional_path(os.environ.get("ASR_MODEL_DIR")) or config.model_dir
-    ffmpeg_dir = _optional_path(os.environ.get("ASR_FFMPEG_DIR")) or config.ffmpeg_dir
+    ffmpeg_dir = (
+        _optional_path(os.environ.get("ASR_FFMPEG_DIR"))
+        or _optional_path(os.environ.get("ASR_FFMPEG"))
+        or config.ffmpeg_dir
+    )
     model_name = os.environ.get("ASR_MODEL_NAME", config.model_name).strip()
     threads = os.environ.get("ASR_CPU_THREADS")
     cpu_threads = (

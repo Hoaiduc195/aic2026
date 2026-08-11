@@ -34,7 +34,13 @@ from pipelines.feature_extraction.asr.transcriber import (
 
 def main(argv: list[str] | None = None) -> int | None:
     arguments = list(sys.argv[1:] if argv is None else argv)
-    if not arguments or arguments[0].startswith("-"):
+    if not arguments:
+        _build_sherpa_parser().print_help()
+        return 0
+    if arguments[0] in {"-h", "--help"}:
+        _build_sherpa_parser().print_help()
+        return 0
+    if arguments[0] not in {"check", "transcribe", "batch"}:
         return _legacy_main(arguments)
 
     parser = _build_sherpa_parser()
