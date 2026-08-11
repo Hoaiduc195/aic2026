@@ -28,6 +28,7 @@ def transcribe_file(
     *,
     backend: ChunkBackend,
     overwrite: bool = False,
+    video_id: str | None = None,
 ) -> Path | None:
     """Transcribe one file; return ``None`` when an existing output is skipped."""
 
@@ -42,8 +43,9 @@ def transcribe_file(
     write_canonical_asr_jsonl(
         chunks,
         output,
-        video_id=_video_id(source.stem),
+        video_id=_video_id(video_id or source.stem),
         model_version=getattr(backend, "model_version", "unknown"),
+        pipeline_version=getattr(backend, "pipeline_version", "asr-cli-v1"),
     )
     return output
 
@@ -76,11 +78,13 @@ def batch_transcribe(
         relative = media_path.relative_to(source_root)
         output_relative = relative.with_suffix(".asr.jsonl")
         output_path = target_root / output_relative
+        video_id = relative.with_suffix("").as_posix()
         result = transcribe_file(
             media_path,
             output_path,
             backend=backend,
             overwrite=overwrite,
+            video_id=video_id,
         )
         if result is not None:
             written.append(result)

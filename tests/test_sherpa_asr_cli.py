@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from pipelines.feature_extraction.asr.config import (
     SherpaAsrConfig,
@@ -22,11 +23,13 @@ from pipelines.feature_extraction.asr.runner import batch_transcribe, transcribe
 from pipelines.feature_extraction.asr.sherpa_backend import (
     _chunks_from_result,
     _pipeline_config,
+    _validate_ffmpeg_tools,
 )
 
 
 class FakeBackend:
     model_version = "test-model"
+    pipeline_version = "test-pipeline-v2"
 
     def __init__(self, chunks_by_name):
         self.chunks_by_name = chunks_by_name
@@ -93,6 +96,7 @@ class SherpaAsrCliTest(unittest.TestCase):
             self.assertEqual(config.cpu_threads, 6)
             self.assertFalse(config.punctuation)
             self.assertTrue(config.quality)
+            self.assertEqual(config.pipeline_version, "asr-cli-v1")
             for filename in ("encoder-test.onnx", "decoder-test.onnx", "joiner-test.onnx", "tokens.txt"):
                 (models / "custom-model" / filename).write_text("asset", encoding="utf-8")
             self.assertEqual(
@@ -131,6 +135,16 @@ class SherpaAsrCliTest(unittest.TestCase):
         self.assertEqual(row["words"][0]["confidence"], 0.9)
         self.assertEqual(row["quality"]["dnsmos_ovrl"], 3.6)
         self.assertEqual(row["producer"], "sherpa-vietnamese-asr")
+        self.assertEqual(row["pipeline_version"], "asr-cli-v1")
+
+        try:
+            import jsonschema
+        except ImportError:
+            self.skipTest("jsonschema is not installed")
+        schema = json.loads(
+            Path("contracts/schemas/asr_result/schema.json").read_text(encoding="utf-8")
+        )
+        jsonschema.Draft202012Validator(schema).validate(row)
 
     def test_transcribe_file_writes_sidecar_and_skips_existing_output(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -148,6 +162,10 @@ class SherpaAsrCliTest(unittest.TestCase):
             self.assertIsNone(skipped)
             self.assertEqual(len(backend.calls), 1)
             self.assertEqual(len(output.read_text(encoding="utf-8").splitlines()), 1)
+            self.assertEqual(
+                json.loads(output.read_text(encoding="utf-8"))["pipeline_version"],
+                "test-pipeline-v2",
+            )
 
     def test_batch_processes_direct_media_and_can_recurse(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -176,6 +194,33 @@ class SherpaAsrCliTest(unittest.TestCase):
             self.assertEqual(len(recursive), 2)
             self.assertEqual(len(backend.calls), 3)
             self.assertTrue((root / "recursive-outputs" / "nested" / "second.asr.jsonl").exists())
+
+    def test_batch_ids_are_unique_for_duplicate_basenames(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            left = root / "left"
+            right = root / "right"
+            left.mkdir()
+            right.mkdir()
+            (left / "clip.mp4").touch()
+            (right / "clip.mp4").touch()
+            backend = FakeBackend(
+                {
+                    "clip.mp4": [TranscriptChunk(0, 500, "same")],
+                }
+            )
+
+            outputs = batch_transcribe(root, root / "outputs", backend=backend, recursive=True)
+            rows = [
+                json.loads(path.read_text(encoding="utf-8"))
+                for path in outputs
+            ]
+
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(
+                len({row["video_id"] for row in rows}),
+                2,
+            )
 
     def test_model_resolution_rejects_missing_assets(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -225,6 +270,19 @@ class SherpaAsrCliTest(unittest.TestCase):
         self.assertTrue(runtime["auto_analyze_quality"])
         self.assertFalse(runtime["speaker_diarization"])
         self.assertFalse(runtime["overlap_separation"])
+
+    def test_ffmpeg_check_invokes_both_tools(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "ffmpeg.exe").touch()
+            (root / "ffprobe.exe").touch()
+            with patch(
+                "pipelines.feature_extraction.asr.sherpa_backend.subprocess.run"
+            ) as run:
+                _validate_ffmpeg_tools(root)
+
+            self.assertEqual(run.call_count, 2)
+            self.assertTrue(all(call.kwargs["check"] for call in run.call_args_list))
 
 
 if __name__ == "__main__":

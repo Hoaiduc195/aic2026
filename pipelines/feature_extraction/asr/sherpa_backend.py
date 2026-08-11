@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib
 import math
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 from collections.abc import Iterator
@@ -25,10 +27,14 @@ class SherpaRuntimeError(RuntimeError):
     """Raised when the vendored core or its external runtime is unavailable."""
 
 
+_LOADED_RUNTIME_ROOT: str | None = None
+
+
 class SherpaBackend:
     """Use Sherpa's headless ``TranscriberPipeline`` as a chunk backend."""
 
     model_version: str
+    pipeline_version: str
 
     def __init__(self, config: SherpaAsrConfig) -> None:
         if config.model_dir is None:
@@ -36,11 +42,13 @@ class SherpaBackend:
         self.config = config
         self.model_path = resolve_model_path(config.model_dir, config.model_name)
         self.model_version = config.model_name
+        self.pipeline_version = config.pipeline_version
 
     def transcribe(self, audio_path: Path) -> list[TranscriptChunk]:
         pipeline_class = _load_pipeline_class(self.model_path)
         runtime_config = _pipeline_config(self.config)
         progress_callback = _progress_callback
+        _validate_ffmpeg_tools(self.config.ffmpeg_dir)
         with _prepend_path(self.config.ffmpeg_dir):
             try:
                 pipeline = pipeline_class(
@@ -66,8 +74,7 @@ def check_sherpa_runtime(config: SherpaAsrConfig) -> dict[str, str]:
         raise FileNotFoundError(
             f"headless Sherpa core not installed at {vendor_core}; run install_sherpa_asr.py"
         )
-    if config.ffmpeg_dir is not None:
-        _validate_ffmpeg_dir(config.ffmpeg_dir)
+    _validate_ffmpeg_tools(config.ffmpeg_dir)
     return {
         "model": os.fspath(model_path),
         "vendor_core": os.fspath(vendor_core),
@@ -88,10 +95,10 @@ def _load_pipeline_class(model_path: Path) -> Any:
         sys.path.insert(0, vendor_text)
     importlib.invalidate_caches()
 
-    _evict_foreign_core(vendor_text)
+    runtime_root = _runtime_root(model_path).resolve()
+    _evict_stale_core(vendor_text, os.fspath(runtime_root))
     try:
         config_module = importlib.import_module("core.config")
-        runtime_root = _runtime_root(model_path)
         config_module.BASE_DIR = os.fspath(runtime_root)
         config_module.CONFIG_FILE = os.fspath(runtime_root / "config.ini")
         engine_module = importlib.import_module("core.asr_engine")
@@ -105,19 +112,23 @@ def _load_pipeline_class(model_path: Path) -> Any:
     pipeline_class._phase_file = os.path.join(
         tempfile.gettempdir(), f"aic-sherpa-asr-{os.getpid()}.phase"
     )
+    global _LOADED_RUNTIME_ROOT
+    _LOADED_RUNTIME_ROOT = os.fspath(runtime_root)
     return pipeline_class
 
 
-def _evict_foreign_core(vendor_root: str) -> None:
+def _evict_stale_core(vendor_root: str, runtime_root: str) -> None:
     loaded = sys.modules.get("core")
     if loaded is None:
         return
     loaded_path = getattr(loaded, "__path__", [])
-    if any(os.fspath(path).startswith(vendor_root) for path in loaded_path):
+    is_vendor_core = any(os.fspath(path).startswith(vendor_root) for path in loaded_path)
+    if is_vendor_core and _LOADED_RUNTIME_ROOT == runtime_root:
         return
-    for name in tuple(sys.modules):
-        if name == "core" or name.startswith("core."):
-            del sys.modules[name]
+    if is_vendor_core or loaded is not None:
+        for name in tuple(sys.modules):
+            if name == "core" or name.startswith("core."):
+                del sys.modules[name]
 
 
 def _runtime_root(model_path: Path) -> Path:
@@ -269,7 +280,8 @@ def _prepend_path(directory: Path | None) -> Iterator[None]:
     if directory is None:
         yield
         return
-    _validate_ffmpeg_dir(directory)
+    _resolve_ffmpeg_tool("ffmpeg", directory)
+    _resolve_ffmpeg_tool("ffprobe", directory)
     old_path = os.environ.get("PATH", "")
     os.environ["PATH"] = os.fspath(Path(directory).resolve()) + os.pathsep + old_path
     try:
@@ -278,15 +290,39 @@ def _prepend_path(directory: Path | None) -> Iterator[None]:
         os.environ["PATH"] = old_path
 
 
-def _validate_ffmpeg_dir(directory: Path) -> None:
-    path = Path(directory).expanduser().resolve()
-    if not path.is_dir():
-        raise NotADirectoryError(path)
-    names = {"ffmpeg", "ffprobe", "ffmpeg.exe", "ffprobe.exe"}
-    if not any((path / name).is_file() for name in names if name.startswith("ffmpeg")):
-        raise FileNotFoundError(f"ffmpeg not found in {path}")
-    if not any((path / name).is_file() for name in names if name.startswith("ffprobe")):
-        raise FileNotFoundError(f"ffprobe not found in {path}")
+def _validate_ffmpeg_tools(directory: Path | None) -> None:
+    for name in ("ffmpeg", "ffprobe"):
+        binary = _resolve_ffmpeg_tool(name, directory)
+        try:
+            subprocess.run(
+                [os.fspath(binary), "-version"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise RuntimeError(f"{name} is not executable: {binary}") from exc
+
+
+def _resolve_ffmpeg_tool(name: str, directory: Path | None) -> Path:
+    if directory is not None:
+        path = Path(directory).expanduser().resolve()
+        if not path.is_dir():
+            raise NotADirectoryError(path)
+        candidates = [path / name]
+        if os.name == "nt":
+            candidates.insert(0, path / f"{name}.exe")
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        raise FileNotFoundError(f"{name} not found in {path}")
+
+    resolved = shutil.which(name)
+    if resolved is None:
+        raise FileNotFoundError(f"{name} was not found on PATH")
+    return Path(resolved).resolve()
 
 
 def _progress_callback(message: str) -> None:

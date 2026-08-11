@@ -15,8 +15,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--source",
         type=Path,
-        default=Path(r"E:\aic2026\sherpa-vietnamese-asr-2.6.3"),
-        help="Sherpa distribution directory",
+        required=True,
+        help="Sherpa distribution directory, for example E:\\aic2026\\sherpa-vietnamese-asr-2.6.3",
     )
     parser.add_argument(
         "--target",

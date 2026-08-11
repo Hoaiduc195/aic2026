@@ -37,6 +37,8 @@ class SherpaAsrConfig:
             raise ValueError("language must be non-empty")
         if not self.execution_provider.strip():
             raise ValueError("execution_provider must be non-empty")
+        if not self.pipeline_version.strip():
+            raise ValueError("pipeline_version must be non-empty")
 
     def with_runtime_paths(
         self, *, model_dir: Path | None = None, ffmpeg_dir: Path | None = None
@@ -76,6 +78,9 @@ def load_sherpa_config(path: Path | None = None) -> SherpaAsrConfig:
             section.get("preprocess_rms_normalize", "false"),
             "preprocess_rms_normalize",
         ),
+        pipeline_version=section.get(
+            "pipeline_version", DEFAULT_PIPELINE_VERSION
+        ).strip(),
     )
 
 
@@ -89,6 +94,9 @@ def config_from_environment(config: SherpaAsrConfig) -> SherpaAsrConfig:
         or config.ffmpeg_dir
     )
     model_name = os.environ.get("ASR_MODEL_NAME", config.model_name).strip()
+    pipeline_version = os.environ.get(
+        "ASR_PIPELINE_VERSION", config.pipeline_version
+    ).strip()
     threads = os.environ.get("ASR_CPU_THREADS")
     cpu_threads = (
         _parse_positive_int(threads, "ASR_CPU_THREADS")
@@ -101,6 +109,7 @@ def config_from_environment(config: SherpaAsrConfig) -> SherpaAsrConfig:
         ffmpeg_dir=ffmpeg_dir,
         model_name=model_name,
         cpu_threads=cpu_threads,
+        pipeline_version=pipeline_version,
     )
 
 
