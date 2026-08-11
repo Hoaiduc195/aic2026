@@ -6,6 +6,7 @@ import importlib
 import math
 import os
 import sys
+import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -101,6 +102,9 @@ def _load_pipeline_class(model_path: Path) -> Any:
     pipeline_class = getattr(engine_module, "TranscriberPipeline", None)
     if pipeline_class is None:
         raise SherpaRuntimeError("vendored Sherpa core has no TranscriberPipeline")
+    pipeline_class._phase_file = os.path.join(
+        tempfile.gettempdir(), f"aic-sherpa-asr-{os.getpid()}.phase"
+    )
     return pipeline_class
 
 
