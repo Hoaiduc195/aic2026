@@ -702,6 +702,8 @@ if modal is not None:
             "transformers==4.49.0",
             "accelerate>=0.26,<1",
             "Pillow>=10,<13",
+            "einops",
+            "timm",
         )
         .env(
             {
