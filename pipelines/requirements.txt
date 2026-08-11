@@ -1,0 +1,29 @@
+# Shared pipeline runtime dependencies.
+# ffmpeg and ffprobe are required on PATH for video probing and ASR audio
+# extraction; they are system tools and are not installed by pip.
+av
+boto3
+numpy
+opencv-python
+pandas
+Pillow
+pyarrow
+python-dotenv
+
+# Contract validation used by pipeline checks.
+jsonschema
+
+# Retrieval, shot-detection, and optional GPU/model lanes.
+torch
+faiss-cpu
+open_clip_torch
+timm
+
+# ASR backends. The CLI selects one at runtime; transcript-json mode does not
+# require either backend.
+faster-whisper
+openai-whisper
+
+# Local CLI dependency for the Modal captioning pipeline. Florence-2's
+# torch/Transformers/Pillow runtime is installed in the remote Modal image.
+modal>=1.0,<2
