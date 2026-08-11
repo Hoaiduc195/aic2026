@@ -112,7 +112,10 @@ def _add_runtime_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def _config_from_args(args: argparse.Namespace) -> SherpaAsrConfig:
-    config = config_from_environment(load_sherpa_config(args.config))
+    config_path = args.config or Path(__file__).with_name("config.ini")
+    config = config_from_environment(
+        load_sherpa_config(config_path if config_path.is_file() else None)
+    )
     updates = {}
     for field_name in ("model_dir", "model_name", "ffmpeg_dir", "cpu_threads", "language", "execution_provider"):
         value = getattr(args, field_name, None)
