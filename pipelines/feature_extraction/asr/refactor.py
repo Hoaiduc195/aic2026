@@ -16,10 +16,11 @@ import os
 import tempfile
 import unicodedata
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any
 
 ASR_SPAN_COLUMNS = (
     "video_id",
@@ -110,7 +111,7 @@ def _seconds_to_ms(
         raise RefactorValidationError(
             [_issue(source_file, "invalid_timestamp", f"{field_name} must be finite and non-negative", source_segment_index)]
         )
-    return int(round(float(value) * 1000))
+    return round(float(value) * 1000)
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -342,6 +343,16 @@ def _artifact_metadata(path: Path, name: str, rows: int | None = None) -> dict[s
     return artifact
 
 
+def _temporary_path(output_dir: Path, prefix: str, suffix: str = ".tmp") -> Path:
+    with tempfile.NamedTemporaryFile(
+        dir=output_dir,
+        prefix=prefix,
+        suffix=suffix,
+        delete=False,
+    ) as handle:
+        return Path(handle.name)
+
+
 def _write_json_atomic(payload: dict[str, Any], path: Path) -> Path:
     temporary_path: Path | None = None
     try:
@@ -489,25 +500,8 @@ def refactor_dataset(
         import pyarrow as pa
         import pyarrow.parquet as pq
 
-        parquet_tmp = Path(
-            tempfile.NamedTemporaryFile(
-                dir=output_dir,
-                prefix=".asr_spans.parquet.",
-                suffix=".tmp",
-                delete=False,
-            ).name
-        )
-        jsonl_tmp = Path(
-            tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                newline="\n",
-                dir=output_dir,
-                prefix=".asr_spans.jsonl.",
-                suffix=".tmp",
-                delete=False,
-            ).name
-        )
+        parquet_tmp = _temporary_path(output_dir, ".asr_spans.parquet.")
+        jsonl_tmp = _temporary_path(output_dir, ".asr_spans.jsonl.")
         temporary_paths.extend([parquet_tmp, jsonl_tmp])
         parquet_writer = pq.ParquetWriter(parquet_tmp, _parquet_schema(), compression="snappy")
         batch: list[dict[str, Any]] = []
@@ -625,14 +619,7 @@ def refactor_dataset(
 
 
 def _temporary_json_path(output_dir: Path, name: str) -> Path:
-    handle = tempfile.NamedTemporaryFile(
-        dir=output_dir,
-        prefix=f".{name}.",
-        suffix=".tmp",
-        delete=False,
-    )
-    handle.close()
-    return Path(handle.name)
+    return _temporary_path(output_dir, f".{name}.")
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/asr_span/schema.json",
+  "title": "AsrRetrievalSpan",
+  "type": "object",
+  "additionalProperties": false,
+  "description": "Canonical offline ASR interval used by the retrieval pipeline. Confidence and word-level timing are intentionally omitted from this competition dataset.",
+  "required": [
+    "video_id",
+    "segment_id",
+    "start_ms",
+    "end_ms",
+    "text_raw",
+    "text_normalized",
+    "language",
+    "producer",
+    "model_version",
+    "pipeline_version",
+    "schema_version",
+    "source_file",
+    "source_segment_index",
+    "duration_ms"
+  ],
+  "properties": {
+    "video_id": { "type": "string", "minLength": 1 },
+    "segment_id": { "type": "string", "minLength": 1 },
+    "start_ms": { "type": "integer", "minimum": 0 },
+    "end_ms": { "type": "integer", "minimum": 1 },
+    "text_raw": { "type": "string", "minLength": 1 },
+    "text_normalized": { "type": "string", "minLength": 1 },
+    "language": { "type": "string", "minLength": 1 },
+    "producer": { "type": "string", "minLength": 1 },
+    "model_version": { "type": "string", "minLength": 1 },
+    "pipeline_version": { "type": "string", "minLength": 1 },
+    "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "source_file": { "type": "string", "minLength": 1 },
+    "source_segment_index": { "type": "integer", "minimum": 0 },
+    "duration_ms": { "type": "integer", "minimum": 1 }
+  }
+}

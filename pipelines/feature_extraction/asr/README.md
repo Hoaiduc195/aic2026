@@ -271,6 +271,35 @@ Output:
 - `--format json`: JSON array.
 - `--format parquet`: Parquet file, requires `pandas` and `pyarrow`.
 
+## Refactor the official retrieval dataset
+
+The competition retrieval dataset currently contains one legacy
+`<video_id>.asr.json` file per video under `data/asr`. Keep those source files
+unchanged and create the derived span dataset with:
+
+```powershell
+python -m pipelines.feature_extraction.asr.refactor `
+  --source-dir data/asr `
+  --output-dir data/asr_refactored
+```
+
+The converter fails closed when a source file or timestamp is invalid. It
+writes the following artifacts only after the complete dataset validates:
+
+```text
+data/asr_refactored/
+├── asr_spans.parquet       # Snappy-compressed retrieval table
+├── asr_spans.jsonl         # One canonical span per line
+├── manifest.json            # Counts, versions, checksums, and provenance
+└── quality_report.json      # Validation summary and anomaly counts
+```
+
+The derived contract is defined in
+`contracts/schemas/asr_span/schema.json`. It stores segment-level intervals,
+raw and whitespace/Unicode-normalized text, and source provenance. It does not
+invent confidence values or retain word-level timestamps because this artifact
+is for offline retrieval rather than ASR training.
+
 ## Python Usage
 
 ```python
