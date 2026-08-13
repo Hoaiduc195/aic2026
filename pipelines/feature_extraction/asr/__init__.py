@@ -11,13 +11,6 @@ from pipelines.feature_extraction.asr.models import (
     TranscriptChunk,
     WordTiming,
 )
-from pipelines.feature_extraction.asr.refactor import (
-    ASR_SPAN_COLUMNS,
-    RefactorValidationError,
-    normalize_text,
-    parse_legacy_file,
-    refactor_dataset,
-)
 from pipelines.feature_extraction.asr.segment_mapping import map_transcripts_to_segments
 from pipelines.feature_extraction.asr.transcriber import (
     JsonTranscriptBackend,
@@ -25,17 +18,12 @@ from pipelines.feature_extraction.asr.transcriber import (
 )
 
 __all__ = [
-    "ASR_SPAN_COLUMNS",
     "AsrResult",
     "JsonTranscriptBackend",
     "QualityInfo",
-    "RefactorValidationError",
     "Segment",
     "TranscriptChunk",
     "WhisperBackend",
     "WordTiming",
     "map_transcripts_to_segments",
-    "normalize_text",
-    "parse_legacy_file",
-    "refactor_dataset",
 ]
