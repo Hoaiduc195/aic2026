@@ -1,0 +1,135 @@
+import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+
+import { loadConfig } from './common/config';
+import {
+  APP_CONFIG, DATABASE, EVIDENCE_REPOSITORY, MEDIA_REPOSITORY, OBJECT_STORAGE, RETRIEVAL_BRANCHES,
+  QUERY_EMBEDDER, RETRIEVAL_STORE, TASK_EXECUTOR_REGISTRY,
+} from './common/tokens';
+import { HttpQueryEmbeddingProvider, type QueryEmbeddingProvider, UnavailableQueryEmbeddingProvider } from './compute/model-ports';
+import type { DatabaseClient } from './database/database.client';
+import { PostgresDatabase } from './database/postgres.database';
+import { HealthController } from './health/health.controller';
+import { ManualController } from './manual/manual.controller';
+import { SubmissionController } from './manual/submission.controller';
+import { MediaController } from './media/media.controller';
+import { PostgresMediaRepository, UnavailableMediaRepository } from './media/media.repository';
+import { MediaService } from './media/media.service';
+import { UnavailableRetrievalBranch, type RetrievalBranch } from './retrieval/branch';
+import { PostgresObjectBranch, PostgresTextBranch } from './retrieval/postgres-branches';
+import { PostgresClipBranch } from './retrieval/postgres-clip.branch';
+import { RetrievalService } from './retrieval/retrieval.service';
+import { PostgresRetrievalStore, UnavailableRetrievalStore } from './retrieval/retrieval.store';
+import { EmptyEvidenceRepository, PostgresEvidenceRepository } from './retrieval/evidence.repository';
+import { SearchController } from './search/search.controller';
+import { TextualKisExecutor } from './tasks/textual-kis/textual-kis.executor';
+import { TaskExecutorRegistry } from './tasks/task-registry';
+import { TrakeExecutor } from './tasks/trake/trake.executor';
+import { VqaExecutor } from './tasks/vqa/vqa.executor';
+import { R2ObjectStorage } from './storage/r2-object-storage';
+import { UnavailableObjectStorage } from './storage/object-storage';
+
+function createBranches(database: DatabaseClient, embedder: QueryEmbeddingProvider): RetrievalBranch[] {
+  if (database.isConfigured) {
+    return [
+      new UnavailableRetrievalBranch('visual', 'visual query encoder is not configured'),
+      new PostgresTextBranch('ocr_lexical', 'ocr', database),
+      new UnavailableRetrievalBranch('ocr_semantic', 'OCR text embedding index is not configured'),
+      new PostgresTextBranch('asr_lexical', 'asr', database),
+      new UnavailableRetrievalBranch('asr_semantic', 'ASR text embedding index is not configured'),
+      new PostgresTextBranch('caption', 'caption', database),
+      new PostgresObjectBranch(database),
+      new UnavailableRetrievalBranch('temporal', 'temporal aligner is not configured'),
+      embedder.isConfigured
+        ? new PostgresClipBranch(database, embedder)
+        : new UnavailableRetrievalBranch('clip', 'CLIP query encoder is not configured'),
+      new UnavailableRetrievalBranch('audio', 'audio query encoder is not configured'),
+    ];
+  }
+  return [
+    new UnavailableRetrievalBranch('visual'),
+    new UnavailableRetrievalBranch('ocr_lexical'),
+    new UnavailableRetrievalBranch('ocr_semantic'),
+    new UnavailableRetrievalBranch('asr_lexical'),
+    new UnavailableRetrievalBranch('asr_semantic'),
+    new UnavailableRetrievalBranch('caption'),
+    new UnavailableRetrievalBranch('object'),
+    new UnavailableRetrievalBranch('temporal'),
+    new UnavailableRetrievalBranch('clip'),
+    new UnavailableRetrievalBranch('audio'),
+  ];
+}
+
+function createTaskRegistry(config: ReturnType<typeof loadConfig>): TaskExecutorRegistry {
+  const registry = new TaskExecutorRegistry();
+  registry.register(new TextualKisExecutor());
+  registry.register(new VqaExecutor(config));
+  registry.register(new TrakeExecutor());
+  return registry;
+}
+
+@Module({
+  imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }])],
+  controllers: [HealthController, SearchController, MediaController, ManualController, SubmissionController],
+  providers: [
+    { provide: APP_CONFIG, useFactory: loadConfig },
+    {
+      provide: DATABASE,
+      useFactory: (config: ReturnType<typeof loadConfig>) => new PostgresDatabase(config.databaseUrl),
+      inject: [APP_CONFIG],
+    },
+    {
+      provide: QUERY_EMBEDDER,
+      useFactory: (config: ReturnType<typeof loadConfig>) => config.embeddingServiceUrl
+        ? new HttpQueryEmbeddingProvider(config.embeddingServiceUrl, 512, config.embeddingServiceToken)
+        : new UnavailableQueryEmbeddingProvider(512),
+      inject: [APP_CONFIG],
+    },
+    { provide: RETRIEVAL_BRANCHES, useFactory: createBranches, inject: [DATABASE, QUERY_EMBEDDER] },
+    {
+      provide: OBJECT_STORAGE,
+      useFactory: (config: ReturnType<typeof loadConfig>) => {
+        if (!config.r2EndpointUrl || !config.r2Bucket || !config.r2AccessKeyId || !config.r2SecretAccessKey) {
+          return new UnavailableObjectStorage();
+        }
+        return new R2ObjectStorage({
+          endpoint: config.r2EndpointUrl, bucket: config.r2Bucket, region: config.r2Region,
+          accessKeyId: config.r2AccessKeyId, secretAccessKey: config.r2SecretAccessKey,
+          signedUrlTtlSeconds: config.signedUrlTtlSeconds,
+        });
+      },
+      inject: [APP_CONFIG],
+    },
+    {
+      provide: MEDIA_REPOSITORY,
+      useFactory: (database: DatabaseClient) => database.isConfigured
+        ? new PostgresMediaRepository(database)
+        : new UnavailableMediaRepository(),
+      inject: [DATABASE],
+    },
+    {
+      provide: RETRIEVAL_STORE,
+      useFactory: (database: DatabaseClient, config: ReturnType<typeof loadConfig>) => database.isConfigured
+        ? new PostgresRetrievalStore(database, config.datasetVersion)
+        : new UnavailableRetrievalStore(),
+      inject: [DATABASE, APP_CONFIG],
+    },
+    {
+      provide: EVIDENCE_REPOSITORY,
+      useFactory: (database: DatabaseClient) => database.isConfigured
+        ? new PostgresEvidenceRepository(database)
+        : new EmptyEvidenceRepository(),
+      inject: [DATABASE],
+    },
+    {
+      provide: TASK_EXECUTOR_REGISTRY,
+      useFactory: createTaskRegistry,
+      inject: [APP_CONFIG],
+    },
+    RetrievalService,
+    MediaService,
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
+})
+export class AppModule {}

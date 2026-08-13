@@ -1,0 +1,9 @@
+export const APP_CONFIG = Symbol('APP_CONFIG');
+export const RETRIEVAL_BRANCHES = Symbol('RETRIEVAL_BRANCHES');
+export const TASK_EXECUTOR_REGISTRY = Symbol('TASK_EXECUTOR_REGISTRY');
+export const DATABASE = Symbol('DATABASE');
+export const OBJECT_STORAGE = Symbol('OBJECT_STORAGE');
+export const MEDIA_REPOSITORY = Symbol('MEDIA_REPOSITORY');
+export const RETRIEVAL_STORE = Symbol('RETRIEVAL_STORE');
+export const QUERY_EMBEDDER = Symbol('QUERY_EMBEDDER');
+export const EVIDENCE_REPOSITORY = Symbol('EVIDENCE_REPOSITORY');

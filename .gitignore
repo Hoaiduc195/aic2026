@@ -70,3 +70,7 @@ database/indexes/*.faiss
 
 # Python environments
 venv/
+tmp/*
+!tmp/
+!tmp/migrate_r2_videos.py
+!tmp/.env.example
