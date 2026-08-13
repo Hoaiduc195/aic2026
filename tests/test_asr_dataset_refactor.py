@@ -117,6 +117,39 @@ class AsrDatasetRefactorTest(unittest.TestCase):
         self.assertEqual(quality["invalid_segment_count"], 0)
         self.assertEqual(quality["anomaly_counts"]["timestamp_clip"], 0)
 
+    def test_small_end_overflow_is_clipped_and_reported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            output = root / "output"
+            source.mkdir()
+            _write_legacy_file(
+                source,
+                "L01_EDGE",
+                duration_sec=4.5,
+                segments=[
+                    {
+                        "type": "text",
+                        "text": "boundary",
+                        "start_time": 4.0,
+                        "segment_id": 0,
+                        "partials": [{"timestamp": 4.501}],
+                    }
+                ],
+            )
+
+            refactor_dataset(source, output)
+
+            row = json.loads(
+                (output / "asr_spans.jsonl").read_text(encoding="utf-8").strip()
+            )
+            quality = json.loads(
+                (output / "quality_report.json").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(row["end_ms"], 4500)
+        self.assertEqual(quality["anomaly_counts"]["timestamp_clip"], 1)
+
     def test_invalid_segment_fails_without_leaving_partial_artifacts(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

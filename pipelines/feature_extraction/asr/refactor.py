@@ -44,6 +44,7 @@ DATASET_VERSION = "asr-retrieval-v1"
 PIPELINE_VERSION = "asr-dataset-refactor-v1"
 PRODUCER = "legacy-asr-json"
 SOURCE_GLOB = "*.asr.json"
+TIMESTAMP_CLIP_TOLERANCE_MS = 100
 
 
 class RefactorValidationError(ValueError):
@@ -70,6 +71,7 @@ class ParsedLegacyFile:
     duration_ms: int
     model_version: str
     rows: tuple[dict[str, Any], ...]
+    anomaly_counts: tuple[tuple[str, int], ...] = ()
 
 
 def normalize_text(value: str) -> str:
@@ -178,7 +180,7 @@ def _segment_row(
     model_version: str,
     language: str,
     pipeline_version: str,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], tuple[str, ...]]:
     if not isinstance(segment, dict):
         raise RefactorValidationError(
             [_issue(source_file, "invalid_segment", "segment must be an object", source_segment_index)]
@@ -211,33 +213,41 @@ def _segment_row(
         field_name="end_time",
         source_segment_index=source_segment_index,
     )
+    anomalies: list[str] = []
+    if end_ms > duration_ms:
+        overflow_ms = end_ms - duration_ms
+        if overflow_ms > TIMESTAMP_CLIP_TOLERANCE_MS:
+            raise RefactorValidationError(
+                [_issue(source_file, "duration_mismatch", "segment end exceeds video duration", source_segment_index)]
+            )
+        end_ms = duration_ms
+        anomalies.append("timestamp_clip")
     if end_ms <= start_ms:
         raise RefactorValidationError(
             [_issue(source_file, "invalid_interval", "end timestamp must be greater than start", source_segment_index)]
         )
-    if end_ms > duration_ms:
-        raise RefactorValidationError(
-            [_issue(source_file, "duration_mismatch", "segment end exceeds video duration", source_segment_index)]
-        )
     if not isinstance(language, str) or not language.strip():
         raise ValueError("language must be a non-empty string")
 
-    return {
-        "video_id": video_id,
-        "segment_id": f"{video_id}_asr_{source_segment_index:06d}",
-        "start_ms": start_ms,
-        "end_ms": end_ms,
-        "text_raw": text_raw,
-        "text_normalized": normalize_text(text_raw),
-        "language": language.strip(),
-        "producer": PRODUCER,
-        "model_version": model_version,
-        "pipeline_version": pipeline_version,
-        "schema_version": SCHEMA_VERSION,
-        "source_file": source_file,
-        "source_segment_index": source_segment_index,
-        "duration_ms": duration_ms,
-    }
+    return (
+        {
+            "video_id": video_id,
+            "segment_id": f"{video_id}_asr_{source_segment_index:06d}",
+            "start_ms": start_ms,
+            "end_ms": end_ms,
+            "text_raw": text_raw,
+            "text_normalized": normalize_text(text_raw),
+            "language": language.strip(),
+            "producer": PRODUCER,
+            "model_version": model_version,
+            "pipeline_version": pipeline_version,
+            "schema_version": SCHEMA_VERSION,
+            "source_file": source_file,
+            "source_segment_index": source_segment_index,
+            "duration_ms": duration_ms,
+        },
+        tuple(anomalies),
+    )
 
 
 def parse_legacy_file(
@@ -266,20 +276,21 @@ def parse_legacy_file(
 
     rows: list[dict[str, Any]] = []
     issues: list[dict[str, Any]] = []
+    anomaly_counts: Counter[str] = Counter()
     for index, segment in enumerate(segments):
         try:
-            rows.append(
-                _segment_row(
-                    segment,
-                    video_id=video_id,
-                    source_file=source_file,
-                    source_segment_index=index,
-                    duration_ms=duration_ms,
-                    model_version=model_version,
-                    language=language,
-                    pipeline_version=pipeline_version,
-                )
+            row, row_anomalies = _segment_row(
+                segment,
+                video_id=video_id,
+                source_file=source_file,
+                source_segment_index=index,
+                duration_ms=duration_ms,
+                model_version=model_version,
+                language=language,
+                pipeline_version=pipeline_version,
             )
+            rows.append(row)
+            anomaly_counts.update(row_anomalies)
         except RefactorValidationError as exc:
             issues.extend(exc.issues)
     if issues:
@@ -291,6 +302,7 @@ def parse_legacy_file(
         duration_ms=duration_ms,
         model_version=model_version,
         rows=tuple(rows),
+        anomaly_counts=tuple(sorted(anomaly_counts.items())),
     )
 
 
@@ -529,6 +541,8 @@ def refactor_dataset(
                 total_duration_ms += parsed.duration_ms
                 model_counts[parsed.model_version] += 1
                 duration_by_video[parsed.video_id] = parsed.duration_ms
+                for code, count in parsed.anomaly_counts:
+                    anomaly_counts[code] += count
                 for row in parsed.rows:
                     batch.append(row)
                     if len(batch) >= batch_size:
