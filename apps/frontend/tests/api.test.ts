@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { getVideoFrames, getVideoPlayback, parseSearchResponse, searchMedia } from '@/lib/api';
+import {
+  createSubmissionPreview,
+  getVideoFrames,
+  getVideoPlayback,
+  parseSearchResponse,
+  saveSelection,
+  searchMedia,
+} from '@/lib/api';
 import type { SearchResponse } from '@/lib/contracts';
 
 const validResponse: SearchResponse = {
@@ -226,6 +233,53 @@ describe('search API boundary', () => {
         headers: expect.objectContaining({ 'x-operator-token': 'operator-secret' }),
       }),
     );
+  });
+
+  it('maps the frontend Q&A task to the backend vqa task when saving selection', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({
+        selection_id: 'selection_01',
+        query_id: 'query_01',
+        revision: 2,
+        task: 'vqa',
+        answers: [{ video_id: 'video_01', frame_id: 385, answer: 'Rẽ phải' }],
+        note: null,
+      }), { status: 200 }),
+    );
+
+    await saveSelection('query_01', 'qa', [{ video_id: 'video_01', frame_id: 385, answer: 'Rẽ phải' }]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/queries/query_01/selection',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({
+          task: 'vqa',
+          answers: [{ video_id: 'video_01', frame_id: 385, answer: 'Rẽ phải' }],
+        }),
+      }),
+    );
+  });
+
+  it('creates and validates a submission preview through the BFF', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({
+        query_id: 'query_01',
+        task: 'textual_kis',
+        answer_count: 1,
+        answers: [{ video_id: 'video_01', frame_id: 385 }],
+        csv: 'video_id,frame_id\r\nvideo_01,385\r\n',
+        submittable: false,
+        warnings: ['preview_only'],
+      }), { status: 200 }),
+    );
+
+    await expect(createSubmissionPreview(
+      'query_01',
+      'textual_kis',
+      [{ video_id: 'video_01', frame_id: 385 }],
+    )).resolves.toMatchObject({ answer_count: 1, submittable: false });
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/submissions/preview');
   });
 
   it('handles empty tokens and API error envelopes', async () => {

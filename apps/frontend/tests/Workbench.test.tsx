@@ -74,14 +74,22 @@ function renderWorkbench({
   searchResponse = response,
   loadPlayback = vi.fn(async () => playback),
   loadFrames = vi.fn(async () => frameContext),
+  saveSelection = vi.fn(async () => ({ revision: 1 })),
+  createPreview = vi.fn(async () => ({ answer_count: 1, submittable: false, warnings: [] })),
 } = {}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = render(
     <QueryClientProvider client={queryClient}>
-      <Workbench search={async () => searchResponse} loadPlayback={loadPlayback} loadFrames={loadFrames} />
+      <Workbench
+        search={async () => searchResponse}
+        loadPlayback={loadPlayback}
+        loadFrames={loadFrames}
+        saveSelection={saveSelection}
+        createPreview={createPreview}
+      />
     </QueryClientProvider>,
   );
-  return { ...view, loadPlayback, loadFrames };
+  return { ...view, loadPlayback, loadFrames, saveSelection, createPreview };
 }
 
 describe('qualification frame-first workbench', () => {
@@ -148,6 +156,35 @@ describe('qualification frame-first workbench', () => {
     expect(screen.getByText('Chưa có đáp án.')).toBeInTheDocument();
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: 'Hàng đợi đáp án' })).not.toBeInTheDocument();
+  });
+
+  it('saves the answer queue and creates a backend preview', async () => {
+    const user = userEvent.setup();
+    const saveSelection = vi.fn(async () => ({ revision: 3 }));
+    const createPreview = vi.fn(async () => ({ answer_count: 1, submittable: false, warnings: ['preview_only'] }));
+    renderWorkbench({ saveSelection, createPreview });
+
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+    await user.click(await screen.findByRole('button', { name: 'Chọn frame video_01 · 385' }));
+    await user.click(screen.getByRole('button', { name: 'Thêm vào đáp án' }));
+    await user.click(screen.getByRole('button', { name: 'Đáp án (1)' }));
+
+    await user.click(screen.getByRole('button', { name: 'Lưu đáp án' }));
+    expect(saveSelection).toHaveBeenCalledWith(
+      'query_0001',
+      'textual_kis',
+      [{ video_id: 'video_01', frame_id: 385 }],
+    );
+    expect(await screen.findByText('Đã lưu revision 3')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Tạo preview' }));
+    expect(createPreview).toHaveBeenCalledWith(
+      'query_0001',
+      'textual_kis',
+      [{ video_id: 'video_01', frame_id: 385 }],
+    );
+    expect(await screen.findByText('Preview đã tạo cho 1 đáp án')).toBeInTheDocument();
   });
 
   it('requires a short answer for Q&A before queueing the selected evidence frame', async () => {
