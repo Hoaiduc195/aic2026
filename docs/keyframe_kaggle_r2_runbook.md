@@ -96,6 +96,41 @@ The notebook's resume and upload cells are prefix-scoped. They must never list,
 download, or upload the entire bucket root because raw video and unrelated runs
 may share the bucket.
 
+## Uploading keyframes to the canonical prefix
+
+For a completed local or Kaggle run, use the checked-in uploader to publish only
+the generated keyframe images. It maps each file relative to the keyframe
+directory, so `outputs/keyframes/L21_V001/0001.webp` becomes
+`keyframes/L21_V001/0001.webp` in R2.
+
+Run a dry-run first:
+
+```powershell
+python tmp/upload_keyframes_r2.py `
+  --input-dir outputs/keyframes `
+  --bucket YOUR_BUCKET `
+  --report tmp/keyframes_upload_report.json
+```
+
+After reviewing the report, add `--apply` to upload. The uploader uses a
+parallel worker pool, retries transient failures, and never deletes objects:
+
+```powershell
+python tmp/upload_keyframes_r2.py `
+  --input-dir outputs/keyframes `
+  --bucket YOUR_BUCKET `
+  --workers 16 `
+  --retries 3 `
+  --apply `
+  --report tmp/keyframes_upload_report.json
+```
+
+Use `--skip-existing` when resuming an interrupted upload. It performs one HEAD
+request per candidate, so omit it for a clean first upload when overwriting is
+acceptable. On Kaggle, use `/kaggle/working/outputs/keyframes` as the input
+directory and provide the R2 variables through Kaggle Secrets or the runtime
+environment; never commit `.env`.
+
 ## Source change checklist
 
 Before pushing a preprocessing change:
