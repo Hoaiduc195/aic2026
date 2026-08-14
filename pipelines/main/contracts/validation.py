@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 
 def schema_path(schema_name: str, schema_root: Path | None = None) -> Path:
@@ -36,3 +37,16 @@ def validate_record(
     except ImportError:
         return
     validate_record_semantics(schema_name, record)
+
+
+def validate_records(
+    schema_name: str,
+    records: list[Mapping[str, Any]],
+    *,
+    schema_root: Path | None = None,
+) -> None:
+    for index, record in enumerate(records):
+        try:
+            validate_record(schema_name, record, schema_root=schema_root)
+        except Exception as error:
+            raise ValueError(f"invalid {schema_name} record at index {index}: {error}") from error

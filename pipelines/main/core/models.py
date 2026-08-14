@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 
 class RunStatus(StrEnum):
@@ -66,11 +67,11 @@ class NodeResult:
     errors: tuple[Mapping[str, Any], ...] = ()
 
     @classmethod
-    def completed(cls, task_name: str, provider: str, **kwargs: Any) -> "NodeResult":
+    def completed(cls, task_name: str, provider: str, **kwargs: Any) -> NodeResult:
         return cls(task_name, provider, NodeStatus.COMPLETED, **kwargs)
 
     @classmethod
-    def skipped(cls, task_name: str, provider: str, **kwargs: Any) -> "NodeResult":
+    def skipped(cls, task_name: str, provider: str, **kwargs: Any) -> NodeResult:
         return cls(task_name, provider, NodeStatus.SKIPPED, **kwargs)
 
     @classmethod
@@ -83,7 +84,7 @@ class NodeResult:
         *,
         recoverable: bool = True,
         **kwargs: Any,
-    ) -> "NodeResult":
+    ) -> NodeResult:
         error = {"code": code, "message": message, "recoverable": recoverable}
         return cls(task_name, provider, NodeStatus.FAILED, errors=(error,), **kwargs)
 

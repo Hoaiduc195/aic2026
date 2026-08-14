@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import unittest
 
+from pipelines.main.contracts.validation import validate_record
 from pipelines.main.tasks.normalization.records import (
     FrameIdentity,
     normalize_detection,
+    normalize_detections,
     normalize_ocr,
 )
 
@@ -43,6 +45,11 @@ class NormalizationTests(unittest.TestCase):
         self.assertEqual(record["text"], "")
         self.assertEqual(record["boxes"], [])
         self.assertEqual(record["segment_id"], "video-1-seg-0001")
+
+    def test_normalized_object_record_validates_against_repository_contract(self) -> None:
+        record = normalize_detections(self.identity, [], model_version="yolo26n.pt")
+        validate_record("object_result", record)
+        self.assertEqual(record["objects"], [])
 
 
 if __name__ == "__main__":

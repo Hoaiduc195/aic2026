@@ -60,6 +60,9 @@ class LocalArtifactStore:
             created_at=datetime.now(timezone.utc).isoformat(),
         )
         manifest["content_type"] = content_type
+        from pipelines.main.contracts.validation import validate_record
+
+        validate_record("artifact_manifest", manifest)
         manifest_path = self.root / "manifests" / f"{artifact_id}.json"
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         temporary_manifest = manifest_path.with_name(f".{manifest_path.name}.tmp")

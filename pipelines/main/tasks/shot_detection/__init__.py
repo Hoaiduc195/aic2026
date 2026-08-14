@@ -1,0 +1,1 @@
+"""Shot detection task."""

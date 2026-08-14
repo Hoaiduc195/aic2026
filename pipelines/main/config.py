@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-
 SUPPORTED_BACKENDS = frozenset({"local", "modal"})
 SUPPORTED_PROFILES = frozenset({"local", "modal", "hybrid"})
 DEFAULT_TASKS = (
@@ -35,9 +34,9 @@ class NodeConfig:
         if self.backend not in SUPPORTED_BACKENDS:
             raise ValueError(f"backend must be one of {sorted(SUPPORTED_BACKENDS)}")
         if not isinstance(self.enabled, bool):
-            raise ValueError("enabled must be a boolean")
+            raise TypeError("enabled must be a boolean")
         if not isinstance(self.options, dict):
-            raise ValueError("options must be an object")
+            raise TypeError("options must be an object")
 
 
 @dataclass(frozen=True)
@@ -73,7 +72,7 @@ class PipelineConfig:
         if self.max_concurrency < 1:
             raise ValueError("max_concurrency must be positive")
         if not isinstance(self.fail_fast, bool):
-            raise ValueError("fail_fast must be a boolean")
+            raise TypeError("fail_fast must be a boolean")
         if not self.tasks:
             raise ValueError("tasks must not be empty")
         if len(set(self.tasks)) != len(self.tasks):
@@ -84,7 +83,7 @@ class PipelineConfig:
             node.validate()
 
     @classmethod
-    def from_toml(cls, path: str | Path) -> "PipelineConfig":
+    def from_toml(cls, path: str | Path) -> PipelineConfig:
         import tomllib
 
         config_path = Path(path)

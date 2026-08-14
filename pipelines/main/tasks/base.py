@@ -18,7 +18,7 @@ class TaskNode(PipelineNode):
     def options(self) -> dict[str, Any]:
         return dict(self._options)
 
-    def configure(self, options: dict[str, Any]) -> "TaskNode":
+    def configure(self, options: dict[str, Any]) -> TaskNode:
         self._options = dict(options)
         return self
 

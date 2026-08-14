@@ -1,0 +1,36 @@
+profile = "local"
+pipeline_version = "main-v1.0.0"
+schema_version = "1.0.0"
+dataset_id = "video-features"
+dataset_version = "local"
+output_dir = "outputs"
+max_concurrency = 1
+fail_fast = false
+tasks = ["ingestion", "frame_manifest", "shot_detection", "segmentation", "keyframes", "visual_embedding", "asr", "ocr", "object_detection", "captioning", "normalization"]
+
+[nodes.shot_detection.options]
+scene_change_threshold = 0.35
+min_frames = 8
+
+[nodes.visual_embedding]
+backend = "local"
+
+[nodes.visual_embedding.options]
+model = "ViT-B-16-SigLIP"
+pretrained = "webli"
+batch_size = 32
+
+[nodes.object_detection]
+backend = "local"
+
+[nodes.object_detection.options]
+model = "yolo26n.pt"
+image_size = 640
+confidence_threshold = 0.25
+
+[nodes.ocr.options]
+language = "vi"
+
+[nodes.asr.options]
+model = "small"
+language = "vi"

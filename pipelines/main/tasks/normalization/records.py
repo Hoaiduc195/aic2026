@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
-
+from typing import Any
 
 PIPELINE_VERSION = "main-v1.0.0"
 SCHEMA_VERSION = "1.0.0"
@@ -51,6 +51,31 @@ def normalize_detection(
     }
 
 
+def normalize_detections(
+    identity: FrameIdentity,
+    detections: list[Mapping[str, Any]],
+    *,
+    model_version: str,
+) -> dict[str, Any]:
+    """Create one object evidence row for one frame, including empty results."""
+
+    objects = []
+    for detection in detections:
+        single = normalize_detection(identity, detection, model_version=model_version)
+        objects.extend(single["objects"])
+    return {
+        "video_id": identity.video_id,
+        "segment_id": identity.segment_id,
+        "timestamp_ms": identity.timestamp_ms,
+        "original_frame_id": identity.original_frame_id,
+        "objects": objects,
+        "producer": "object-detection:main",
+        "model_version": model_version,
+        "pipeline_version": PIPELINE_VERSION,
+        "schema_version": SCHEMA_VERSION,
+    }
+
+
 def normalize_ocr(
     identity: FrameIdentity,
     result: Mapping[str, Any],
@@ -66,10 +91,13 @@ def normalize_ocr(
         box = item.get("box", [])
         if len(box) != 4:
             raise ValueError("OCR box must contain four points")
+        confidence_value = float(item.get("confidence", 0.0))
+        if not 0.0 <= confidence_value <= 1.0:
+            raise ValueError("OCR box confidence must be between 0 and 1")
         boxes.append({
             "text": str(item.get("text", "")),
             "box": [[float(point[0]), float(point[1])] for point in box],
-            "confidence": float(item.get("confidence", 0.0)),
+            "confidence": confidence_value,
         })
     return {
         "video_id": identity.video_id,

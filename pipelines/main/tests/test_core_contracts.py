@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import tempfile
 import unittest
 from dataclasses import replace
@@ -9,9 +8,16 @@ from pathlib import Path
 from urllib.parse import unquote
 
 from pipelines.main.config import NodeConfig, PipelineConfig
-from pipelines.main.core.models import NodeContext, NodeResult, PipelineRequest, RunStatus
-from pipelines.main.core.registry import NodeRegistry
 from pipelines.main.core.dag import PipelineGraph
+from pipelines.main.core.models import (
+    NodeContext,
+    NodeResult,
+    PipelineRequest,
+    RunStatus,
+)
+from pipelines.main.core.node import PipelineNode
+from pipelines.main.core.registry import NodeRegistry
+from pipelines.main.service import PipelineService
 from pipelines.main.storage.local_store import LocalArtifactStore
 
 
@@ -26,6 +32,18 @@ class _Node:
 
     async def run(self, context: NodeContext) -> NodeResult:
         return NodeResult.completed(self.task_name, self.provider)
+
+
+class _ServiceNode(PipelineNode):
+    def __init__(self, name: str, dependencies: tuple[str, ...] = ()) -> None:
+        self.task_name = name
+        self.provider = "local"
+        self.dependencies = dependencies
+        self.calls = 0
+
+    async def run(self, context: NodeContext) -> NodeResult:
+        self.calls += 1
+        return NodeResult.completed(self.task_name, self.provider, metrics={"calls": self.calls})
 
 
 class CoreContractTests(unittest.TestCase):
@@ -97,6 +115,29 @@ class CoreContractTests(unittest.TestCase):
         result = NodeResult.failed("ocr", "local", "missing_dependency", "PaddleOCR missing")
         self.assertEqual(result.status, RunStatus.FAILED)
         self.assertTrue(result.errors)
+
+    def test_service_resumes_completed_nodes_from_fingerprinted_checkpoints(self) -> None:
+        import asyncio
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            video = root / "video.mp4"
+            video.write_bytes(b"fixture")
+            probe = _ServiceNode("probe")
+            feature = _ServiceNode("feature", ("probe",))
+            registry = NodeRegistry((probe, feature))
+            config = PipelineConfig(tasks=("probe", "feature"), output_dir=root / "outputs")
+            service = PipelineService(config, registry=registry)
+            request = PipelineRequest((video,), root / "outputs", tasks=("probe", "feature"))
+
+            first = asyncio.run(service.run(request))
+            second = asyncio.run(service.run(replace(request, run_id=first.run_id)))
+
+            self.assertEqual(first.status, RunStatus.COMPLETED)
+            self.assertEqual(second.status, RunStatus.COMPLETED)
+            self.assertEqual(probe.calls, 1)
+            self.assertEqual(feature.calls, 1)
+            self.assertEqual(second.node_results["video:probe"].status.value, "skipped")
 
 
 if __name__ == "__main__":

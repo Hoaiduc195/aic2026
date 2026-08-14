@@ -1,0 +1,1 @@
+"""Sparse keyframe selection task."""
