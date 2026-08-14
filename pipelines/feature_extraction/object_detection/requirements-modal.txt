@@ -1,0 +1,3 @@
+# Local dependency for `modal run`; Ultralytics and GPU dependencies are built
+# into the remote Modal image declared by modal_yolo.py.
+modal>=1.0,<2
