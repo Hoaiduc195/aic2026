@@ -22,7 +22,10 @@
         "required": ["class", "box", "confidence"],
         "properties": {
           "class": { "type": "string", "minLength": 1 },
+          "class_id": { "type": "integer", "minimum": 0 },
+          "canonical_label": { "type": "string", "minLength": 1 },
           "box": { "type": "array", "items": { "type": "number", "minimum": 0 }, "minItems": 4, "maxItems": 4 },
+          "normalized_box": { "type": "array", "items": { "type": "number", "minimum": 0, "maximum": 1 }, "minItems": 4, "maxItems": 4 },
           "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
           "track_id": { "type": ["string", "null"], "minLength": 1 },
           "attributes": { "type": "object", "additionalProperties": true }

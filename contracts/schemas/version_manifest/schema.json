@@ -5,17 +5,29 @@
   "description": "The compatibility tuple every indexed response must identify.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["dataset_id", "dataset_version", "pipeline_version", "schema_version", "index_version", "model_versions", "created_at", "status"],
+  "required": ["dataset_id", "dataset_version", "pipeline_version", "schema_version", "index_version", "artifact_versions", "model_versions", "created_at", "status"],
   "properties": {
     "dataset_id": { "type": "string", "minLength": 1 },
     "dataset_version": { "type": "string", "minLength": 1 },
     "pipeline_version": { "type": "string", "minLength": 1 },
     "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
     "index_version": { "type": "string", "minLength": 1 },
+    "artifact_versions": { "type": "object", "minProperties": 1, "additionalProperties": { "type": "string", "minLength": 1 } },
     "model_versions": { "type": "object", "additionalProperties": { "type": "string", "minLength": 1 } },
+    "checksums": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+    },
     "compatible_schema_versions": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" } },
     "created_at": { "type": "string", "format": "date-time" },
     "status": { "type": "string", "enum": ["staged", "active", "retired"] },
     "build_config": { "type": "object", "additionalProperties": true }
-  }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "active" } }, "required": ["status"] },
+      "then": { "required": ["checksums"] }
+    }
+  ]
 }

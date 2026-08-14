@@ -86,10 +86,28 @@
               }
             ]
           },
-          "matched_modalities": { "type": "array", "uniqueItems": true, "items": { "type": "string", "enum": ["embedding", "visual", "ocr", "asr", "caption", "object", "temporal", "audio"] } }
+          "matched_modalities": { "type": "array", "uniqueItems": true, "items": { "type": "string", "enum": ["embedding", "visual", "ocr", "asr", "caption", "object", "temporal", "audio"] } },
+          "fusion_trace": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["branch", "channel_rank", "channel_weight", "rrf_contribution", "aggregated_raw_score", "occurrence_count", "evidence_ids", "matched_terms"],
+              "properties": {
+                "branch": { "type": "string", "enum": ["visual", "ocr_lexical", "ocr_semantic", "asr_lexical", "asr_semantic", "caption", "object", "temporal", "clip", "audio"] },
+                "channel_rank": { "type": "integer", "minimum": 1 },
+                "channel_weight": { "type": "number", "exclusiveMinimum": 0 },
+                "rrf_contribution": { "type": "number", "exclusiveMinimum": 0 },
+                "aggregated_raw_score": { "type": "number" },
+                "occurrence_count": { "type": "integer", "minimum": 1 },
+                "evidence_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+                "matched_terms": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+              }
+            }
+          }
         },
         "anyOf": [
-          { "required": ["start_ms", "end_ms", "evidence_ids", "evidence"] },
+          { "required": ["start_ms", "end_ms", "evidence_ids", "evidence", "fusion_trace"] },
           { "required": ["timestamp_start_ms", "timestamp_end_ms", "evidence"] }
         ]
       }

@@ -82,7 +82,7 @@ export class PostgresRetrievalStore implements RetrievalStore {
         rank: row.rank, segment_id: row.segment_id, video_id: row.video_id,
         original_frame_id: row.original_frame_id, start_ms: row.start_ms, end_ms: row.end_ms,
         preview_uri: row.preview_uri ?? undefined, score: Number(row.score),
-        evidence_ids: row.evidence_ids, matched_modalities: row.matched_modalities,
+        evidence_ids: row.evidence_ids, matched_modalities: row.matched_modalities, fusion_trace: [],
       })),
     };
   }

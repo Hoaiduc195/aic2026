@@ -1,0 +1,24 @@
+{
+  "dataset_id": "aic2026",
+  "dataset_version": "local",
+  "pipeline_version": "preprocessing-artifacts",
+  "schema_version": "1.0.0",
+  "index_version": "not-configured",
+  "artifact_versions": {
+    "retrieval_input": "preprocessing-artifacts"
+  },
+  "model_versions": {
+    "visual": "dimension-awaiting-database-decision",
+    "caption": "florence-2-base",
+    "object": "yolo26n-coco"
+  },
+  "checksums": {
+    "query_plan_schema": "sha256:405746968c76fd77a089bd7a224174e3f8980fb85581b731e9d08e41cfc0b670",
+    "object_result_schema": "sha256:f9271b7ab0aab93e66e1ea821112bb5689a29d1063dfa7c1e43f66e851dab49a"
+  },
+  "created_at": "2026-08-15T00:00:00Z",
+  "status": "staged",
+  "build_config": {
+    "activation_blocker": "database/index and visual embedding dimension must be agreed with the team"
+  }
+}

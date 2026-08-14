@@ -17,10 +17,13 @@ function optionalOverrides(value: unknown): RetrievalOverrides | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) throw new BadRequestException('retrieval must be an object');
 
-  const overrides: { branch_k?: number; fusion_k?: number; display_k?: number } = {};
+  const overrides: { branch_k?: number; fusion_k?: number; display_k?: number; latency_budget_ms?: number } = {};
   if (value.branch_k !== undefined) overrides.branch_k = boundedInteger(value.branch_k, 'retrieval.branch_k', 1, 10000);
   if (value.fusion_k !== undefined) overrides.fusion_k = boundedInteger(value.fusion_k, 'retrieval.fusion_k', 1, 10000);
   if (value.display_k !== undefined) overrides.display_k = boundedInteger(value.display_k, 'retrieval.display_k', 1, 1000);
+  if (value.latency_budget_ms !== undefined) {
+    overrides.latency_budget_ms = boundedInteger(value.latency_budget_ms, 'retrieval.latency_budget_ms', 10, 30000);
+  }
   return overrides;
 }
 

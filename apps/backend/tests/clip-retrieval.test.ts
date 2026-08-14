@@ -24,10 +24,14 @@ describe('PostgresClipBranch', () => {
     const branch = new PostgresClipBranch(database, encoder);
     const plan = {
       query_id: 'q', task: 'textual_kis', language: 'en', original_query: 'a bicycle',
-      query_variants: ['a bicycle'], concepts: [], text_constraints: [], audio_concepts: [], temporal_relations: [],
+      query_variants: ['a bicycle'], concepts: ['bicycle'], query_atoms: [], negative_concepts: [],
+      text_constraints: [], audio_concepts: [], object_terms: ['bicycle'],
+      object_constraints: { class_filters: ['bicycle'], excluded_classes: [], min_confidence: 0.25, counts: {}, spatial: [] },
+      query_views: { clip: 'a bicycle' }, channel_weights: { clip: 1 }, temporal_relations: [],
       target_granularities: ['frame'], branches: ['clip'], top_k_per_branch: 10, fusion_k: 10,
       display_k: 10, latency_budget_ms: 5000, fallback_policy: 'none', planner_version: 'test',
       fusion: 'rrf', index_version: 'v1',
+      hard_filters: {}, transformations: ['unicode_nfkc'],
     } satisfies RetrievalExecutionPlan;
 
     const result = await branch.search('a bicycle', plan);

@@ -16,6 +16,7 @@ import type {
 import type { BackendConfig } from '../common/config';
 import { fuseBranchResults } from './fusion';
 import type { RetrievalBranch } from './branch';
+import { buildDeterministicPlan, queryForBranch } from './query-planner';
 import type { TaskExecutorInput } from '../tasks/task-executor';
 import { TaskExecutorRegistry } from '../tasks/task-registry';
 import type { RetrievalStore } from './retrieval.store';
@@ -25,29 +26,6 @@ import type { ObjectStorage } from '../storage/object-storage';
 const DEFAULT_BRANCH_K = 200;
 const DEFAULT_FUSION_K = 500;
 const DEFAULT_DISPLAY_K = 100;
-
-function detectLanguage(query: string): RetrievalExecutionPlan['language'] {
-  const hasVietnamese = /[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(query);
-  const hasLatin = /[a-z]/i.test(query);
-  if (hasVietnamese) return 'vi';
-  if (hasLatin) return 'en';
-  return 'unknown';
-}
-
-function queryVariants(request: SearchRequest): string[] {
-  if (request.task === 'trake') {
-    const events = request.query.split(/\r?\n/)
-      .map((line) => line.replace(/^\s*\d+[.)]\s*/, '').trim())
-      .filter(Boolean)
-      .slice(0, 20);
-    return events.length > 1 ? events : [request.query];
-  }
-  if (request.task === 'vqa') {
-    const parts = request.query.split(/\r?\n(?:câu hỏi|question)\s*:\s*/i).map((part) => part.trim()).filter(Boolean);
-    return parts.length > 1 ? parts : [request.query];
-  }
-  return [request.query];
-}
 
 @Injectable()
 export class RetrievalService {
@@ -66,40 +44,24 @@ export class RetrievalService {
     const displayK = request.retrieval?.display_k ?? request.top_k ?? DEFAULT_DISPLAY_K;
     const fusionK = Math.max(request.retrieval?.fusion_k ?? DEFAULT_FUSION_K, displayK);
     const branchK = Math.max(request.retrieval?.branch_k ?? DEFAULT_BRANCH_K, fusionK > DEFAULT_FUSION_K ? displayK : 1);
-    const targetGranularities = request.task === 'trake'
-      ? ['frame', 'micro_event', 'context_window'] as const
-      : request.task === 'vqa'
-        ? ['frame', 'context_window'] as const
-        : ['frame', 'segment'] as const;
-
-    return {
-      query_id: randomUUID(),
-      task: request.task,
-      language: detectLanguage(request.query),
-      original_query: request.query,
-      query_variants: queryVariants(request),
-      concepts: [],
-      text_constraints: [],
-      audio_concepts: [],
-      temporal_relations: request.task === 'trake' ? ['sequence'] : [],
-      target_granularities: [...targetGranularities],
-      branches: this.branches.map((branch) => branch.name),
-      top_k_per_branch: Math.min(branchK, 10000),
-      fusion_k: Math.min(fusionK, 10000),
-      display_k: Math.min(displayK, 1000),
-      latency_budget_ms: 5000,
-      fallback_policy: request.task === 'vqa' ? 'expand_then_abstain' : 'expand_then_clarify',
-      planner_version: 'static-all-branches-v1',
-      fusion: 'rrf',
-      index_version: this.config.indexVersion,
-    };
+    const plan = buildDeterministicPlan(
+      request,
+      randomUUID(),
+      this.config.indexVersion,
+      this.branches,
+      { branchK, fusionK, displayK, latencyBudgetMs: request.retrieval?.latency_budget_ms ?? 5000 },
+    );
+    this.logger.debug(JSON.stringify({ event: 'query_plan_created', plan }));
+    return plan;
   }
 
   async search(request: SearchRequest): Promise<SearchResponse> {
     const plan = this.createPlan(request);
     const startedAt = performance.now();
     const branchResults = await Promise.all(
-      this.branches.map((branch) => this.runBranchVariants(branch, plan)),
+      this.branches
+        .filter((branch) => plan.branches.includes(branch.name))
+        .map((branch) => this.runBranchVariants(branch, plan)),
     );
     const fusedCandidates = fuseBranchResults(branchResults, plan);
     const warnings: string[] = [];
@@ -154,8 +116,23 @@ export class RetrievalService {
     plan: RetrievalExecutionPlan,
   ): Promise<BranchResult> {
     const startedAt = performance.now();
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
     try {
-      const result = await branch.search(query, plan);
+      const timeout = new Promise<BranchResult>((resolve) => {
+        timeoutHandle = setTimeout(() => resolve({
+          query_id: plan.query_id,
+          branch: branch.name,
+          status: 'timed_out',
+          query_variant: query,
+          candidates: [],
+          elapsed_ms: plan.latency_budget_ms,
+          deadline_ms: plan.latency_budget_ms,
+          index_version: plan.index_version,
+          producer: 'retrieval-core-timeout',
+          error: { code: 'BRANCH_TIMEOUT', message: 'retrieval branch exceeded its deadline', recoverable: true },
+        }), plan.latency_budget_ms);
+      });
+      const result = await Promise.race([branch.search(query, plan), timeout]);
       return { ...result, elapsed_ms: Math.max(result.elapsed_ms, Math.round(performance.now() - startedAt)) };
     } catch (error) {
       this.logger.warn(`${branch.name} branch failed: ${error instanceof Error ? error.message : 'unknown error'}`);
@@ -175,11 +152,15 @@ export class RetrievalService {
           recoverable: true,
         },
       };
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
     }
   }
 
   private async runBranchVariants(branch: RetrievalBranch, plan: RetrievalExecutionPlan): Promise<BranchResult> {
-    const results = await Promise.all(plan.query_variants.map((variant) => this.runBranch(branch, variant, plan)));
+    const results = await Promise.all(plan.query_variants.map((variant) => (
+      this.runBranch(branch, queryForBranch(plan, branch.name, variant), plan)
+    )));
     if (results.length === 1) return results[0];
     const completed = results.filter((result) => result.status === 'completed');
     if (completed.length === 0) return { ...results[0], query_variant: null };
@@ -187,7 +168,7 @@ export class RetrievalService {
     const candidates = new Map<string, BranchResult['candidates'][number]>();
     for (const result of completed) {
       for (const candidate of result.candidates) {
-        const key = `${candidate.video_id}:${candidate.original_frame_id ?? candidate.segment_id}`;
+        const key = `${candidate.video_id}:${candidate.segment_id}`;
         const current = candidates.get(key);
         candidates.set(key, current
           ? {

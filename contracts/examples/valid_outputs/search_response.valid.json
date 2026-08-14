@@ -54,7 +54,39 @@
           "producer": "visual:v1"
         }
       ],
-      "matched_modalities": ["visual", "ocr", "asr"]
+      "matched_modalities": ["visual", "ocr", "asr"],
+      "fusion_trace": [
+        {
+          "branch": "visual",
+          "channel_rank": 1,
+          "channel_weight": 1.0,
+          "rrf_contribution": 0.0163934426,
+          "aggregated_raw_score": 0.93,
+          "occurrence_count": 1,
+          "evidence_ids": ["ev_frame_01"],
+          "matched_terms": []
+        },
+        {
+          "branch": "ocr_lexical",
+          "channel_rank": 2,
+          "channel_weight": 1.2,
+          "rrf_contribution": 0.0193548387,
+          "aggregated_raw_score": 0.88,
+          "occurrence_count": 1,
+          "evidence_ids": ["ev_ocr_01"],
+          "matched_terms": ["Cua Hang Tap Hoa Co Vy"]
+        },
+        {
+          "branch": "asr_lexical",
+          "channel_rank": 4,
+          "channel_weight": 1.2,
+          "rrf_contribution": 0.01875,
+          "aggregated_raw_score": 0.81,
+          "occurrence_count": 1,
+          "evidence_ids": ["ev_asr_01"],
+          "matched_terms": []
+        }
+      ]
     }
   ]
 }

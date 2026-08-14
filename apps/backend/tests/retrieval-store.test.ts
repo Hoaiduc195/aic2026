@@ -17,7 +17,7 @@ describe('PostgresRetrievalStore', () => {
     } as RetrievalExecutionPlan;
     await store.saveRun({ query: 'question', task: 'vqa' }, plan, [{
       segment_id: 's', video_id: 'v', original_frame_id: 1, start_ms: 10, end_ms: 11,
-      score: 0.5, evidence_ids: ['e'], matched_modalities: ['caption'],
+      score: 0.5, evidence_ids: ['e'], matched_modalities: ['caption'], fusion_trace: [],
     }]);
     const [sql, params] = vi.mocked(db.query).mock.calls[0];
     expect(sql).toContain('jsonb_array_elements');

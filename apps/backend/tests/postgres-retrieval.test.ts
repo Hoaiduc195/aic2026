@@ -11,8 +11,14 @@ const plan: RetrievalExecutionPlan = {
   original_query: 'người đi xe đạp',
   query_variants: ['người đi xe đạp'],
   concepts: [],
+  query_atoms: [],
+  negative_concepts: [],
   text_constraints: [],
   audio_concepts: [],
+  object_terms: ['person', 'bicycle'],
+  object_constraints: { class_filters: ['person', 'bicycle'], excluded_classes: [], min_confidence: 0.25, counts: {}, spatial: [] },
+  query_views: { caption: 'người đi xe đạp', object: 'person bicycle' },
+  channel_weights: { caption: 1, object: 1.2 },
   temporal_relations: [],
   target_granularities: ['frame'],
   branches: ['caption'],
@@ -24,6 +30,8 @@ const plan: RetrievalExecutionPlan = {
   planner_version: 'test',
   fusion: 'rrf',
   index_version: 'index-1',
+  hard_filters: {},
+  transformations: ['unicode_nfkc'],
 };
 
 function database(rows: readonly unknown[]): DatabaseClient {
@@ -68,6 +76,6 @@ describe('Postgres retrieval branches', () => {
     expect(result.candidates[0].matched_terms).toEqual(['bicycle']);
     const [sql, parameters] = vi.mocked(db.query).mock.calls[0];
     expect(sql).toContain('similarity');
-    expect(parameters).toEqual(['bicycle', 20]);
+    expect(parameters).toEqual([['bicycle'], 0.25, 20]);
   });
 });

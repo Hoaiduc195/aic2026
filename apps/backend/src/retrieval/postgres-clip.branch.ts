@@ -18,6 +18,7 @@ interface ClipRow extends QueryResultRow {
 
 export class PostgresClipBranch implements RetrievalBranch {
   readonly name = 'clip' as const;
+  readonly available = true;
 
   constructor(private readonly database: DatabaseClient, private readonly encoder: QueryEmbeddingProvider) {}
 

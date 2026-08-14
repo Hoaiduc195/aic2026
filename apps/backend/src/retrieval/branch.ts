@@ -2,10 +2,12 @@ import type { BranchName, BranchResult, RetrievalExecutionPlan } from '../common
 
 export interface RetrievalBranch {
   readonly name: BranchName;
+  readonly available?: boolean;
   search(query: string, plan: RetrievalExecutionPlan): Promise<BranchResult>;
 }
 
 export class UnavailableRetrievalBranch implements RetrievalBranch {
+  readonly available = false;
   constructor(
     public readonly name: BranchName,
     private readonly reason = 'retrieval index adapter is not configured',

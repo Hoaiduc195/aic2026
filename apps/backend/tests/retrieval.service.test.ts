@@ -88,7 +88,7 @@ describe('RetrievalService', () => {
     ];
     const service = new RetrievalService(loadConfig(), branches, createRegistry());
 
-    const response = await service.search({ query: 'what is happening?', task: 'vqa', top_k: 10 });
+    const response = await service.search({ query: 'a person holding a bottle', task: 'vqa', top_k: 10 });
 
     expect(response.results).toHaveLength(1);
     expect(response.results[0].video_id).toBe('L21_V001');
@@ -115,6 +115,27 @@ describe('RetrievalService', () => {
     expect(response.degraded).toBe(true);
     expect(response.unavailable_branches).toEqual(['audio']);
     expect(response.warnings).toContain('retrieval_persistence_failed');
+  });
+
+  it('enforces the branch deadline and returns a recoverable timeout', async () => {
+    const slowBranch: RetrievalBranch = {
+      name: 'caption',
+      async search(_query, plan) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return {
+          query_id: plan.query_id, branch: 'caption', status: 'completed', query_variant: plan.original_query,
+          candidates: [], elapsed_ms: 100, deadline_ms: plan.latency_budget_ms,
+          index_version: plan.index_version, producer: 'slow-test',
+        };
+      },
+    };
+    const service = new RetrievalService(loadConfig(), [slowBranch], createRegistry());
+    const response = await service.search({
+      query: 'a person running', task: 'textual_kis', retrieval: { latency_budget_ms: 10 },
+    });
+    expect(response.degraded).toBe(true);
+    expect(response.unavailable_branches).toEqual(['caption']);
+    expect(response.timing).toMatchObject({ branch_status: { caption: 'timed_out' } });
   });
 
   it('signs R2 previews and hydrates evidence for the workbench', async () => {

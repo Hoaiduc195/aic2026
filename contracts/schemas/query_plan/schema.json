@@ -5,7 +5,7 @@
   "description": "Deterministic, inspectable plan produced before branch retrieval.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["query_id", "task", "language", "original_query", "query_variants", "concepts", "text_constraints", "audio_concepts", "temporal_relations", "target_granularities", "branches", "top_k_per_branch", "latency_budget_ms", "fallback_policy", "planner_version"],
+  "required": ["query_id", "task", "language", "original_query", "query_variants", "concepts", "query_atoms", "negative_concepts", "text_constraints", "audio_concepts", "object_terms", "object_constraints", "query_views", "channel_weights", "temporal_relations", "target_granularities", "branches", "top_k_per_branch", "fusion_k", "display_k", "latency_budget_ms", "fallback_policy", "planner_version", "fusion", "index_version", "hard_filters", "transformations"],
   "properties": {
     "query_id": { "type": "string", "minLength": 1 },
     "task": { "type": "string", "enum": ["textual_kis", "vqa", "trake"] },
@@ -13,15 +13,67 @@
     "original_query": { "type": "string", "minLength": 1 },
     "query_variants": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
     "concepts": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "query_atoms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "value", "weight"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "type": { "type": "string", "enum": ["visual_concept", "visible_text", "spoken_text", "object", "temporal", "negative"] },
+          "value": { "type": "string", "minLength": 1 },
+          "weight": { "type": "number", "exclusiveMinimum": 0 }
+        }
+      }
+    },
+    "negative_concepts": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
     "text_constraints": { "type": "array", "items": { "type": "string", "minLength": 1 } },
     "audio_concepts": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "object_terms": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "object_constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class_filters", "excluded_classes", "min_confidence", "counts", "spatial"],
+      "properties": {
+        "class_filters": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "excluded_classes": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "min_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "counts": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 1 } },
+        "spatial": { "type": "array", "uniqueItems": true, "items": { "type": "string", "enum": ["left", "right", "top", "bottom", "inside", "near"] } }
+      }
+    },
+    "query_views": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "visual": { "type": "string" }, "ocr_lexical": { "type": "string" }, "ocr_semantic": { "type": "string" },
+        "asr_lexical": { "type": "string" }, "asr_semantic": { "type": "string" }, "caption": { "type": "string" },
+        "object": { "type": "string" }, "temporal": { "type": "string" }, "clip": { "type": "string" }, "audio": { "type": "string" }
+      }
+    },
+    "channel_weights": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "visual": { "type": "number", "exclusiveMinimum": 0 }, "ocr_lexical": { "type": "number", "exclusiveMinimum": 0 },
+        "ocr_semantic": { "type": "number", "exclusiveMinimum": 0 }, "asr_lexical": { "type": "number", "exclusiveMinimum": 0 },
+        "asr_semantic": { "type": "number", "exclusiveMinimum": 0 }, "caption": { "type": "number", "exclusiveMinimum": 0 },
+        "object": { "type": "number", "exclusiveMinimum": 0 }, "temporal": { "type": "number", "exclusiveMinimum": 0 },
+        "clip": { "type": "number", "exclusiveMinimum": 0 }, "audio": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
     "temporal_relations": { "type": "array", "items": { "type": "string", "enum": ["before", "after", "during", "overlaps", "near", "sequence"] } },
     "target_granularities": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "enum": ["frame", "micro_event", "segment", "context_window"] } },
     "branches": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "enum": ["visual", "ocr_lexical", "ocr_semantic", "asr_lexical", "asr_semantic", "caption", "object", "temporal", "clip", "audio"] } },
     "top_k_per_branch": { "type": "integer", "minimum": 1, "maximum": 10000 },
+    "fusion_k": { "type": "integer", "minimum": 1, "maximum": 10000 },
+    "display_k": { "type": "integer", "minimum": 1, "maximum": 1000 },
     "latency_budget_ms": { "type": "integer", "minimum": 1 },
     "fallback_policy": { "type": "string", "enum": ["none", "expand_then_clarify", "expand_then_abstain", "clarify_then_abstain"] },
     "planner_version": { "type": "string", "minLength": 1 },
+    "fusion": { "type": "string", "enum": ["rrf"] },
+    "index_version": { "type": "string", "minLength": 1 },
     "hard_filters": { "type": "object", "additionalProperties": true },
     "transformations": { "type": "array", "items": { "type": "string", "minLength": 1 } }
   }

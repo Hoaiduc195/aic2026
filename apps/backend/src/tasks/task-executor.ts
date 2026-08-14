@@ -50,6 +50,7 @@ export function toSearchResults(
         .map((evidenceId) => evidenceById.get(evidenceId))
         .filter((evidence): evidence is EvidenceView => Boolean(evidence)),
       matched_modalities: candidate.matched_modalities,
+      fusion_trace: candidate.fusion_trace,
     };
   });
 }
@@ -89,6 +90,8 @@ export function buildSearchResponse(
     timing: {
       elapsed_ms: input.elapsedMs,
       branch_status: Object.fromEntries(input.branchResults.map((result) => [result.branch, result.status])),
+      branch_elapsed_ms: Object.fromEntries(input.branchResults.map((result) => [result.branch, result.elapsed_ms])),
+      branch_candidate_counts: Object.fromEntries(input.branchResults.map((result) => [result.branch, result.candidates.length])),
     },
     warnings,
   };

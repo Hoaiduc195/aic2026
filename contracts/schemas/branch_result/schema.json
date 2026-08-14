@@ -23,6 +23,9 @@
           "rank": { "type": "integer", "minimum": 1 },
           "raw_score": { "type": "number" },
           "original_frame_id": { "type": ["integer", "null"], "minimum": 0 },
+          "start_ms": { "type": "integer", "minimum": 0 },
+          "end_ms": { "type": "integer", "minimum": 1 },
+          "preview_uri": { "type": "string", "pattern": "^(file|s3|r2|gs|azure|https?)://[^\\s?#]+$" },
           "evidence_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
           "matched_terms": { "type": "array", "items": { "type": "string", "minLength": 1 } }
         }
@@ -32,6 +35,17 @@
     "deadline_ms": { "type": "integer", "minimum": 1 },
     "index_version": { "type": "string", "minLength": 1 },
     "producer": { "type": "string", "minLength": 1 },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["retrieval_mode", "normalized_query", "candidate_count", "scoring_components"],
+      "properties": {
+        "retrieval_mode": { "type": "string", "minLength": 1 },
+        "normalized_query": { "type": "string" },
+        "candidate_count": { "type": "integer", "minimum": 0 },
+        "scoring_components": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
     "error": {
       "type": ["object", "null"],
       "additionalProperties": false,
