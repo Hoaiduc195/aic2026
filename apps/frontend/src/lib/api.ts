@@ -1,10 +1,15 @@
 import type {
   EvidenceType,
+  CandidatePage,
+  QualificationAnswer,
+  QualificationTask,
   SearchEvidence,
   SearchRequest,
   SearchResponse,
   SearchResult,
   SearchTask,
+  SelectionRevision,
+  SubmissionPreview,
   VideoFrame,
   VideoFramesResponse,
   VideoPlayback,
@@ -27,17 +32,11 @@ export class ApiError extends Error {
 
 export async function searchMedia(
   request: SearchRequest,
-  operatorToken = '',
   signal?: AbortSignal,
 ): Promise<SearchResponse> {
-  const headers: Record<string, string> = { 'content-type': 'application/json' };
-  if (operatorToken.trim()) {
-    headers['x-operator-token'] = operatorToken.trim();
-  }
-
   const response = await fetch(`${API_BASE}/v1/search`, {
     method: 'POST',
-    headers,
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify(request),
     signal,
   });
@@ -73,6 +72,68 @@ export async function getVideoFrames(
   return parseVideoFramesResponse(payload);
 }
 
+export async function getCandidates(
+  queryId: string,
+  limit = 100,
+  offset = 0,
+  signal?: AbortSignal,
+): Promise<CandidatePage> {
+  const response = await fetch(
+    `${API_BASE}/v1/queries/${encodeURIComponent(queryId)}/candidates?limit=${limit}&offset=${offset}`,
+    { signal },
+  );
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw apiError(payload, response.status, 'Không thể tải candidates.');
+  return parseCandidatePage(payload);
+}
+
+export async function getLatestSelection(queryId: string, signal?: AbortSignal): Promise<SelectionRevision | null> {
+  const response = await fetch(`${API_BASE}/v1/queries/${encodeURIComponent(queryId)}/selection`, { signal });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw apiError(payload, response.status, 'Không thể tải selection.');
+  return payload === null ? null : parseSelectionRevision(payload);
+}
+
+export async function saveSelection(
+  queryId: string,
+  task: QualificationTask,
+  answers: readonly QualificationAnswer[],
+  note?: string,
+  signal?: AbortSignal,
+): Promise<SelectionRevision> {
+  const body = {
+    task: toBackendTask(task),
+    answers: [...answers],
+    ...(note?.trim() ? { note: note.trim() } : {}),
+  };
+  const response = await fetch(`${API_BASE}/v1/queries/${encodeURIComponent(queryId)}/selection`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw apiError(payload, response.status, 'Không thể lưu selection.');
+  return parseSelectionRevision(payload);
+}
+
+export async function createSubmissionPreview(
+  queryId: string,
+  task: QualificationTask,
+  answers: readonly QualificationAnswer[],
+  signal?: AbortSignal,
+): Promise<SubmissionPreview> {
+  const response = await fetch(`${API_BASE}/v1/submissions/preview`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query_id: queryId, task: toBackendTask(task), answers: [...answers] }),
+    signal,
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw apiError(payload, response.status, 'Không thể tạo submission preview.');
+  return parseSubmissionPreview(payload);
+}
+
 export function parseVideoPlayback(value: unknown): VideoPlayback {
   if (!isObject(value)) throw new Error('playback response phải là object');
   const videoId = requiredText(value.video_id, 'video_id');
@@ -97,6 +158,48 @@ export function parseVideoFramesResponse(value: unknown): VideoFramesResponse {
     video_id: requiredText(value.video_id, 'video_id'),
     center_frame_id: integer(value.center_frame_id, 'center_frame_id'),
     frames: value.frames.map(parseVideoFrame),
+  };
+}
+
+export function parseCandidatePage(value: unknown): CandidatePage {
+  if (!isObject(value)) throw new Error('candidates response phải là object');
+  if (!Array.isArray(value.candidates)) throw new Error('candidates phải là array');
+  return {
+    query_id: requiredText(value.query_id, 'query_id'),
+    total: nonNegativeInteger(value.total, 'total'),
+    limit: positiveInteger(value.limit, 'limit'),
+    offset: nonNegativeInteger(value.offset, 'offset'),
+    candidates: value.candidates.map(parseCandidate),
+  };
+}
+
+export function parseSelectionRevision(value: unknown): SelectionRevision {
+  if (!isObject(value)) throw new Error('selection response phải là object');
+  const task = parseQualificationTask(value.task, 'task');
+  if (!Array.isArray(value.answers)) throw new Error('answers phải là array');
+  return {
+    selection_id: requiredText(value.selection_id, 'selection_id'),
+    query_id: requiredText(value.query_id, 'query_id'),
+    revision: positiveInteger(value.revision, 'revision'),
+    task,
+    answers: value.answers.map((answer, index) => parseQualificationAnswer(answer, task, index)),
+    note: value.note === null ? null : optionalText(value.note) ?? null,
+    created_at: value.created_at === undefined ? undefined : requiredText(value.created_at, 'created_at'),
+  };
+}
+
+export function parseSubmissionPreview(value: unknown): SubmissionPreview {
+  if (!isObject(value)) throw new Error('submission preview phải là object');
+  const task = parseQualificationTask(value.task, 'task');
+  if (!Array.isArray(value.answers)) throw new Error('answers phải là array');
+  return {
+    query_id: requiredText(value.query_id, 'query_id'),
+    task,
+    answer_count: nonNegativeInteger(value.answer_count, 'answer_count'),
+    answers: value.answers.map((answer, index) => parseQualificationAnswer(answer, task, index)),
+    csv: requiredText(value.csv, 'csv'),
+    submittable: requiredBoolean(value.submittable, 'submittable'),
+    warnings: stringArray(value.warnings ?? [], 'warnings'),
   };
 }
 
@@ -220,6 +323,47 @@ function parseVideoFrame(value: unknown, index: number): VideoFrame {
   };
 }
 
+function parseCandidate(value: unknown, index: number): CandidatePage['candidates'][number] {
+  if (!isObject(value)) throw new Error(`candidates[${index}] phải là object`);
+  return {
+    rank: positiveInteger(value.rank, `candidates[${index}].rank`),
+    segment_id: requiredText(value.segment_id, `candidates[${index}].segment_id`),
+    video_id: requiredText(value.video_id, `candidates[${index}].video_id`),
+    original_frame_id: value.original_frame_id === null ? null : nonNegativeInteger(value.original_frame_id, `candidates[${index}].original_frame_id`),
+    start_ms: nonNegativeInteger(value.start_ms, `candidates[${index}].start_ms`),
+    end_ms: positiveInteger(value.end_ms, `candidates[${index}].end_ms`),
+    preview_uri: value.preview_uri === undefined ? undefined : requiredUri(value.preview_uri, `candidates[${index}].preview_uri`),
+    score: finite(value.score, `candidates[${index}].score`),
+    evidence_ids: stringArray(value.evidence_ids, `candidates[${index}].evidence_ids`),
+    matched_modalities: stringArray(value.matched_modalities, `candidates[${index}].matched_modalities`),
+  };
+}
+
+function parseQualificationTask(value: unknown, field: string): QualificationTask {
+  if (value === 'textual_kis' || value === 'trake') return value;
+  if (value === 'vqa') return 'qa';
+  throw new Error(`${field} không hợp lệ`);
+}
+
+function parseQualificationAnswer(value: unknown, task: QualificationTask, index: number): QualificationAnswer {
+  if (!isObject(value)) throw new Error(`answers[${index}] phải là object`);
+  const videoId = requiredText(value.video_id, `answers[${index}].video_id`);
+  if (task === 'trake') {
+    if (!Array.isArray(value.frame_ids) || value.frame_ids.length < 1) throw new Error(`answers[${index}].frame_ids không hợp lệ`);
+    return {
+      video_id: videoId,
+      frame_ids: value.frame_ids.map((frameId, frameIndex) => nonNegativeInteger(frameId, `answers[${index}].frame_ids[${frameIndex}]`)),
+    };
+  }
+  const frameId = nonNegativeInteger(value.frame_id, `answers[${index}].frame_id`);
+  if (task === 'qa') return { video_id: videoId, frame_id: frameId, answer: requiredText(value.answer, `answers[${index}].answer`) };
+  return { video_id: videoId, frame_id: frameId };
+}
+
+function toBackendTask(task: QualificationTask): 'textual_kis' | 'vqa' | 'trake' {
+  return task === 'qa' ? 'vqa' : task;
+}
+
 function parseConfidence(value: unknown): SearchResponse['confidence'] {
   if (!isObject(value)) {
     throw new Error('confidence phải là object');
@@ -288,6 +432,16 @@ function optionalText(value: unknown): string | undefined {
 function integer(value: unknown, field: string): number {
   if (!Number.isSafeInteger(value) || (value as number) < 0) throw new Error(`${field} phải là số nguyên không âm`);
   return value as number;
+}
+
+function nonNegativeInteger(value: unknown, field: string): number {
+  return integer(value, field);
+}
+
+function positiveInteger(value: unknown, field: string): number {
+  const parsed = integer(value, field);
+  if (parsed <= 0) throw new Error(`${field} phải lớn hơn 0`);
+  return parsed;
 }
 
 function finite(value: unknown, field: string): number {

@@ -58,4 +58,19 @@ describe('search proxy route', () => {
     expect(response.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledOnce();
   });
+
+  it('returns a safe 502 when the backend cannot be reached', async () => {
+    process.env.BACKEND_API_URL = 'http://backend.internal';
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('socket details'); }));
+
+    const request = new NextRequest('http://localhost/api/v1/search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: 'cửa hàng', task: 'textual_kis', top_k: 20 }),
+    });
+    const response = await POST(request);
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ message: 'Không thể kết nối tới backend tìm kiếm.' });
+  });
 });

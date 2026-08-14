@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { Workbench } from '@/components/Workbench';
-import type { SearchResponse, VideoFramesResponse, VideoPlayback } from '@/lib/contracts';
+import type { SearchResponse, SelectionRevision, SubmissionPreview, VideoFramesResponse, VideoPlayback } from '@/lib/contracts';
 
 const response: SearchResponse = {
   request_id: 'request_0001',
@@ -74,8 +74,13 @@ function renderWorkbench({
   searchResponse = response,
   loadPlayback = vi.fn(async () => playback),
   loadFrames = vi.fn(async () => frameContext),
-  saveSelection = vi.fn(async () => ({ revision: 1 })),
-  createPreview = vi.fn(async () => ({ answer_count: 1, submittable: false, warnings: [] })),
+  saveSelection = vi.fn(async (): Promise<SelectionRevision> => ({
+    selection_id: 'selection_01', query_id: 'query_0001', revision: 1, task: 'textual_kis',
+    answers: [], note: null,
+  })),
+  createPreview = vi.fn(async (): Promise<SubmissionPreview> => ({
+    query_id: 'query_0001', task: 'textual_kis', answer_count: 1, answers: [], csv: '', submittable: false, warnings: [],
+  })),
 } = {}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = render(
@@ -160,8 +165,13 @@ describe('qualification frame-first workbench', () => {
 
   it('saves the answer queue and creates a backend preview', async () => {
     const user = userEvent.setup();
-    const saveSelection = vi.fn(async () => ({ revision: 3 }));
-    const createPreview = vi.fn(async () => ({ answer_count: 1, submittable: false, warnings: ['preview_only'] }));
+    const saveSelection = vi.fn(async (): Promise<SelectionRevision> => ({
+      selection_id: 'selection_03', query_id: 'query_0001', revision: 3, task: 'textual_kis',
+      answers: [], note: null,
+    }));
+    const createPreview = vi.fn(async (): Promise<SubmissionPreview> => ({
+      query_id: 'query_0001', task: 'textual_kis', answer_count: 1, answers: [], csv: '', submittable: false, warnings: ['preview_only'],
+    }));
     renderWorkbench({ saveSelection, createPreview });
 
     await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');

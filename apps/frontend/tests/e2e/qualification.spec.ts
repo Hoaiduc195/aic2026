@@ -112,6 +112,38 @@ async function mockFrameFirstApis(page: Page) {
     });
   });
 
+  await page.route('**/api/v1/queries/query_0001/selection', async (route) => {
+    if (route.request().method() !== 'PUT') return route.continue();
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json; charset=utf-8',
+      body: JSON.stringify({
+        selection_id: 'selection_0001',
+        query_id: 'query_0001',
+        revision: 1,
+        task: 'textual_kis',
+        answers: [{ video_id: 'video_01', frame_id: 351 }],
+        note: null,
+      }),
+    });
+  });
+
+  await page.route('**/api/v1/submissions/preview', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json; charset=utf-8',
+      body: JSON.stringify({
+        query_id: 'query_0001',
+        task: 'textual_kis',
+        answer_count: 1,
+        answers: [{ video_id: 'video_01', frame_id: 351 }],
+        csv: 'video_id,frame_id\r\nvideo_01,351\r\n',
+        submittable: false,
+        warnings: ['preview_only'],
+      }),
+    });
+  });
+
   return requests;
 }
 
@@ -163,5 +195,10 @@ test.describe('qualification frame-first workbench', () => {
     await page.getByRole('button', { name: 'Đáp án (1)' }).click();
     await expect(page.getByRole('dialog', { name: 'Hàng đợi đáp án' })).toBeVisible();
     await expect(page.getByText('video_01 · frame 351')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Lưu đáp án' }).click();
+    await expect(page.getByText('Đã lưu revision 1')).toBeVisible();
+    await page.getByRole('button', { name: 'Tạo preview' }).click();
+    await expect(page.getByText('Preview đã tạo cho 1 đáp án')).toBeVisible();
   });
 });

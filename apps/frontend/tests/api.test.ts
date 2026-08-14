@@ -219,18 +219,18 @@ describe('search API boundary', () => {
     ).toEqual([]);
   });
 
-  it('sends the typed request and operator token to the API', async () => {
+  it('sends the typed request without exposing an operator token to the browser', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify(validResponse), { status: 200 }),
     );
 
-    await searchMedia({ query: 'cửa hàng', task: 'textual_kis', top_k: 20 }, 'operator-secret');
+    await searchMedia({ query: 'cửa hàng', task: 'textual_kis', top_k: 20 });
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/v1/search',
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({ 'x-operator-token': 'operator-secret' }),
+        headers: { 'content-type': 'application/json' },
       }),
     );
   });
@@ -289,7 +289,7 @@ describe('search API boundary', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ message: 'Token hết hạn.' }), { status: 401 }))
       .mockResolvedValueOnce(new Response('not-json', { status: 503 }));
 
-    await searchMedia({ query: 'cảnh', task: 'textual_kis', top_k: 20 }, '   ');
+    await searchMedia({ query: 'cảnh', task: 'textual_kis', top_k: 20 });
     expect(fetchMock.mock.calls[0][1]).toEqual(expect.objectContaining({ headers: { 'content-type': 'application/json' } }));
 
     await expect(searchMedia({ query: 'cảnh', task: 'textual_kis', top_k: 20 })).rejects.toMatchObject({

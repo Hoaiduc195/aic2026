@@ -6,10 +6,13 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import type {
   FrameCandidate,
   QaAnswer,
+  QualificationAnswer,
   QualificationEventInput,
   QualificationTask,
   SearchRequest,
   SearchResponse,
+  SelectionRevision,
+  SubmissionPreview,
   TextualKisAnswer,
   TrakeAnswer,
   VideoFrame,
@@ -24,21 +27,21 @@ import { FrameInspector } from './workbench/FrameInspector';
 import { SearchSidebar } from './workbench/SearchSidebar';
 
 interface Props {
-  search: (request: SearchRequest, operatorToken?: string) => Promise<SearchResponse>;
+  search: (request: SearchRequest) => Promise<SearchResponse>;
   loadPlayback: (videoId: string, frameId: number) => Promise<VideoPlayback>;
   loadFrames: (videoId: string, centerFrameId: number, limit: number) => Promise<VideoFramesResponse>;
+  saveSelection: (queryId: string, task: QualificationTask, answers: readonly QualificationAnswer[]) => Promise<SelectionRevision>;
+  createPreview: (queryId: string, task: QualificationTask, answers: readonly QualificationAnswer[]) => Promise<SubmissionPreview>;
 }
 
 function initialEvents(): QualificationEventInput[] {
   return [{ event_id: 'event-1', event_ordinal: 1, description: '' }];
 }
 
-export function Workbench({ search, loadPlayback, loadFrames }: Props) {
+export function Workbench({ search, loadPlayback, loadFrames, saveSelection, createPreview }: Props) {
   const task = useWorkbenchStore((state) => state.task);
   const answers = useWorkbenchStore((state) => state.answers);
-  const operatorToken = useWorkbenchStore((state) => state.operatorToken);
   const setTask = useWorkbenchStore((state) => state.setTask);
-  const setOperatorToken = useWorkbenchStore((state) => state.setOperatorToken);
   const addAnswer = useWorkbenchStore((state) => state.addAnswer);
   const removeAnswer = useWorkbenchStore((state) => state.removeAnswer);
   const moveAnswer = useWorkbenchStore((state) => state.moveAnswer);
@@ -55,10 +58,9 @@ export function Workbench({ search, loadPlayback, loadFrames }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const searchMutation = useMutation({
-    mutationFn: ({ request, token }: { request: SearchRequest; token: string }) => search(request, token),
+    mutationFn: (request: SearchRequest) => search(request),
   });
   const normalized = useMemo(
     () => response ? toFrameCandidates(response) : { frames: [], skipped: 0 },
@@ -102,10 +104,7 @@ export function Workbench({ search, loadPlayback, loadFrames }: Props) {
     setSelectedAnchor(null);
     setActiveFrame(null);
     try {
-      const next = await searchMutation.mutateAsync({
-        request: { query, task: backendTask, top_k: 20 },
-        token: operatorToken,
-      });
+      const next = await searchMutation.mutateAsync({ query, task: backendTask, top_k: 20 });
       setResponse(next);
     } catch (reason) {
       setError(readError(reason, 'Tìm kiếm thất bại.'));
@@ -194,23 +193,8 @@ export function Workbench({ search, loadPlayback, loadFrames }: Props) {
               {response.degraded ? 'Suy giảm' : 'Tin cậy'} · {Math.round(response.confidence.score * 100)}%
             </span>
           )}
-          <button type="button" className="quiet-button" onClick={() => setSettingsOpen((open) => !open)}>Cài đặt</button>
           <button type="button" className="answer-badge" onClick={() => setDrawerOpen(true)}>Đáp án ({answers.length})</button>
         </div>
-        {settingsOpen && (
-          <div className="settings-popover">
-            <label>
-              <span>Khóa vận hành</span>
-              <input
-                type="password"
-                autoComplete="current-password"
-                value={operatorToken}
-                maxLength={256}
-                onChange={(event) => setOperatorToken(event.target.value)}
-              />
-            </label>
-          </div>
-        )}
       </header>
 
       <div className="workbench-layout" id="main-workspace">
@@ -275,6 +259,8 @@ export function Workbench({ search, loadPlayback, loadFrames }: Props) {
         task={task}
         queryId={response?.query_id ?? 'draft-query'}
         answers={answers}
+        saveSelection={saveSelection}
+        createPreview={createPreview}
         onClose={() => setDrawerOpen(false)}
         onRemove={removeAnswer}
         onMove={moveAnswer}

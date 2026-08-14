@@ -2,12 +2,24 @@
 
 import { Providers } from './providers';
 import { Workbench } from '../components/Workbench';
-import { getVideoFrames, getVideoPlayback, searchMedia } from '../lib/api';
+import {
+  createSubmissionPreview,
+  getVideoFrames,
+  getVideoPlayback,
+  saveSelection,
+  searchMedia,
+} from '../lib/api';
 
 export default function HomePage() {
   return (
     <Providers>
-      <Workbench search={searchMedia} loadPlayback={getVideoPlayback} loadFrames={getVideoFrames} />
+      <Workbench
+        search={searchMedia}
+        loadPlayback={getVideoPlayback}
+        loadFrames={getVideoFrames}
+        saveSelection={saveSelection}
+        createPreview={createSubmissionPreview}
+      />
     </Providers>
   );
 }

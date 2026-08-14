@@ -2,7 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-import type { QualificationAnswer, QualificationTask } from '../../lib/contracts';
+import type {
+  QualificationAnswer,
+  QualificationTask,
+  SelectionRevision,
+  SubmissionPreview,
+} from '../../lib/contracts';
 import { buildSubmission } from '../../lib/workbench-model';
 
 interface Props {
@@ -10,13 +15,20 @@ interface Props {
   task: QualificationTask;
   queryId: string;
   answers: readonly QualificationAnswer[];
+  saveSelection: (queryId: string, task: QualificationTask, answers: readonly QualificationAnswer[]) => Promise<SelectionRevision>;
+  createPreview: (queryId: string, task: QualificationTask, answers: readonly QualificationAnswer[]) => Promise<SubmissionPreview>;
   onClose: () => void;
   onRemove: (index: number) => void;
   onMove: (from: number, to: number) => void;
 }
 
-export function AnswerDrawer({ open, task, queryId, answers, onClose, onRemove, onMove }: Props) {
+export function AnswerDrawer({ open, task, queryId, answers, saveSelection, createPreview, onClose, onRemove, onMove }: Props) {
   const [copied, setCopied] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [revision, setRevision] = useState<number | null>(null);
+  const [preview, setPreview] = useState<SubmissionPreview | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
 
@@ -56,9 +68,40 @@ export function AnswerDrawer({ open, task, queryId, answers, onClose, onRemove, 
   async function copyPayload() {
     const payload = buildSubmission(task, queryId, answers);
     if (!payload || !navigator.clipboard) return;
-    await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setActionError('Không thể sao chép JSON.');
+    }
+  }
+
+  async function saveAnswers() {
+    if (!answers.length || saving || previewing) return;
+    setSaving(true);
+    setActionError(null);
+    try {
+      const result = await saveSelection(queryId, task, answers);
+      setRevision(result.revision);
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : 'Không thể lưu đáp án.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function createSubmissionPreview() {
+    if (!answers.length || saving || previewing) return;
+    setPreviewing(true);
+    setActionError(null);
+    try {
+      setPreview(await createPreview(queryId, task, answers));
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : 'Không thể tạo preview.');
+    } finally {
+      setPreviewing(false);
+    }
   }
 
   return (
@@ -67,10 +110,15 @@ export function AnswerDrawer({ open, task, queryId, answers, onClose, onRemove, 
       <aside ref={drawerRef} className="answer-drawer" role="dialog" aria-modal="true" aria-label="Hàng đợi đáp án" onKeyDown={trapFocus}>
         <header>
           <div>
-            <p className="section-kicker">Bản nháp cục bộ</p>
+            <p className="section-kicker">Bản nháp và đồng bộ backend</p>
             <h2>Hàng đợi đáp án</h2>
           </div>
           <button ref={closeButtonRef} type="button" className="icon-button" aria-label="Đóng" onClick={onClose}>×</button>
+          <div className="drawer-status-stack" aria-live="polite">
+            {actionError && <p role="alert" className="drawer-error">{actionError}</p>}
+            {revision !== null && <p role="status" className="drawer-status">Đã lưu revision {revision}</p>}
+            {preview && <p role="status" className="drawer-status">Preview đã tạo cho {preview.answer_count} đáp án</p>}
+          </div>
         </header>
 
         <div className="answer-list">
@@ -93,6 +141,14 @@ export function AnswerDrawer({ open, task, queryId, answers, onClose, onRemove, 
 
         <footer>
           <span>{answers.length}/100 đáp án</span>
+          <div className="answer-sync-actions">
+            <button type="button" className="secondary-button" disabled={!answers.length || saving || previewing} onClick={saveAnswers}>
+              {saving ? 'Đang lưu…' : 'Lưu đáp án'}
+            </button>
+            <button type="button" className="secondary-button" disabled={!answers.length || saving || previewing} onClick={createSubmissionPreview}>
+              {previewing ? 'Đang tạo…' : 'Tạo preview'}
+            </button>
+          </div>
           <button type="button" className="primary-button" disabled={!answers.length} onClick={copyPayload}>
             {copied ? 'Đã sao chép' : 'Sao chép JSON'}
           </button>

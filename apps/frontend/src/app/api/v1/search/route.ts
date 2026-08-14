@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { forwardJsonResponse, requestBackend } from '../../../../lib/backend-proxy';
 import { mockSearchResponse } from '../../../../lib/mock-data';
 import type { SearchRequest } from '../../../../lib/contracts';
-import { attachMediaSession, validateMediaOperatorRequest } from '../../../../lib/server-media-access';
+import { attachMediaSession } from '../../../../lib/server-media-access';
 
 const SEARCH_TASKS = new Set<SearchRequest['task']>(['textual_kis', 'video_kis', 'avs', 'vqa', 'trake', 'kisc']);
 
 export async function POST(request: NextRequest) {
-  const mediaAccessError = validateMediaOperatorRequest(request);
-  if (mediaAccessError) return mediaAccessError;
   const body = await request.json().catch(() => null) as Partial<SearchRequest> | null;
   if (
     !body ||
@@ -28,35 +27,23 @@ export async function POST(request: NextRequest) {
     session_id: typeof body.session_id === 'string' ? body.session_id : undefined,
   };
 
-  const backendUrl = process.env.BACKEND_API_URL?.replace(/\/$/, '');
-  if (!backendUrl) {
-    return attachMediaSession(NextResponse.json(mockSearchResponse(requestBody)));
-  }
-
-  const headers: Record<string, string> = { 'content-type': 'application/json' };
-  const operatorToken = request.headers.get('x-operator-token');
-  if (operatorToken) headers['x-operator-token'] = operatorToken;
-
+  let upstream: Response | null;
   try {
-    const upstream = await fetch(`${backendUrl}/v1/search`, {
+    upstream = await requestBackend('/v1/search', {
       method: 'POST',
-      headers,
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(requestBody),
-      cache: 'no-store',
     });
-    const payload = await upstream.json().catch(() => ({ message: 'Backend trả về dữ liệu không hợp lệ.' }));
-    if (!upstream.ok) {
-      return NextResponse.json({ message: publicUpstreamError(upstream.status) }, { status: upstream.status });
-    }
-    return attachMediaSession(NextResponse.json(payload));
   } catch {
     return NextResponse.json({ message: 'Không thể kết nối tới backend tìm kiếm.' }, { status: 502 });
   }
-}
+  if (!upstream) {
+    return attachMediaSession(NextResponse.json(mockSearchResponse(requestBody)));
+  }
 
-function publicUpstreamError(status: number): string {
-  if (status === 400 || status === 422) return 'Yêu cầu tìm kiếm không hợp lệ.';
-  if (status === 401 || status === 403) return 'Không có quyền thực hiện tìm kiếm.';
-  if (status === 429) return 'Hệ thống đang nhận quá nhiều yêu cầu. Vui lòng thử lại sau.';
-  return 'Backend tìm kiếm không thể xử lý yêu cầu.';
+  try {
+    return attachMediaSession(await forwardJsonResponse(upstream, 'Backend tìm kiếm không thể xử lý yêu cầu.'));
+  } catch {
+    return NextResponse.json({ message: 'Không thể kết nối tới backend tìm kiếm.' }, { status: 502 });
+  }
 }

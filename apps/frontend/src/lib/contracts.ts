@@ -27,6 +27,27 @@ export interface SearchRequest {
   session_id?: string;
 }
 
+export interface RetrievalCandidate {
+  rank: number;
+  segment_id: string;
+  video_id: string;
+  original_frame_id: number | null;
+  start_ms: number;
+  end_ms: number;
+  preview_uri?: string;
+  score: number;
+  evidence_ids: string[];
+  matched_modalities: string[];
+}
+
+export interface CandidatePage {
+  query_id: string;
+  total: number;
+  limit: number;
+  offset: number;
+  candidates: RetrievalCandidate[];
+}
+
 export interface SearchEvidence {
   evidence_id: string;
   type: EvidenceType;
@@ -142,4 +163,24 @@ export interface QualificationSubmission {
   query_id: string;
   task: QualificationTask;
   answers: QualificationAnswer[];
+}
+
+export interface SelectionRevision {
+  selection_id: string;
+  query_id: string;
+  revision: number;
+  task: QualificationTask;
+  answers: QualificationAnswer[];
+  note: string | null;
+  created_at?: string;
+}
+
+export interface SubmissionPreview {
+  query_id: string;
+  task: QualificationTask;
+  answer_count: number;
+  answers: QualificationAnswer[];
+  csv: string;
+  submittable: boolean;
+  warnings: string[];
 }

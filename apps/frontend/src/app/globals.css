@@ -681,14 +681,14 @@ textarea:focus-visible,
 .drawer-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  z-index: 80;
   border: 0;
   background: rgba(12, 20, 28, 0.38);
 }
 
 .answer-drawer {
   position: fixed;
-  z-index: 60;
+  z-index: 90;
   top: 0;
   right: 0;
   width: min(440px, 100vw);
@@ -703,6 +703,33 @@ textarea:focus-visible,
 .answer-drawer > footer {
   padding: 18px;
   border-bottom: 1px solid var(--line);
+}
+
+.answer-drawer > header {
+  flex-wrap: wrap;
+}
+
+.drawer-status-stack {
+  flex: 0 0 100%;
+  display: grid;
+  gap: 6px;
+}
+
+.drawer-status-stack p {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.drawer-error {
+  color: var(--danger);
+  background: #fff0ee;
+}
+
+.drawer-status {
+  color: var(--success);
+  background: #effaf4;
 }
 
 .answer-list {
@@ -753,19 +780,32 @@ textarea:focus-visible,
 .answer-drawer > footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 9px;
   border-top: 1px solid var(--line);
   border-bottom: 0;
 }
 
 .answer-drawer > footer span {
+  flex: 0 0 auto;
   color: var(--ink-muted);
   font-size: 12px;
 }
 
+.answer-sync-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.answer-sync-actions button,
+.answer-drawer > footer > .primary-button {
+  padding: 0 9px;
+  font-size: 11px;
+}
+
 .toast-stack {
   position: fixed;
-  z-index: 80;
+  z-index: 70;
   right: 18px;
   bottom: 18px;
   display: grid;
