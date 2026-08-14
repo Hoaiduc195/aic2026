@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from urllib.parse import unquote
 
 from pipelines.main.config import NodeConfig, PipelineConfig
 from pipelines.main.core.models import NodeContext, NodeResult, PipelineRequest, RunStatus
@@ -75,7 +76,8 @@ class CoreContractTests(unittest.TestCase):
                 schema_version="1.0.0",
             )
             self.assertEqual(artifact.sha256, hashlib.sha256(payload).hexdigest())
-            self.assertTrue(Path(artifact.uri.removeprefix("file://")).exists())
+            uri_path = unquote(artifact.uri.removeprefix("file:///"))
+            self.assertTrue(Path(uri_path).exists())
             manifest = store.read_artifact_manifest(artifact.artifact_id)
             self.assertEqual(manifest["record_count"], 1)
 
