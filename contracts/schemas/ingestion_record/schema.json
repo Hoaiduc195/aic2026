@@ -7,24 +7,45 @@
   "required": [
     "ingestion_id",
     "source_artifact_uri",
-    "target_index",
-    "record_count",
+    "source_checksum_sha256",
+    "target_table",
+    "dataset_version",
+    "pipeline_version",
     "status",
+    "records_seen",
+    "records_inserted",
+    "records_updated",
+    "records_skipped",
+    "records_failed",
     "started_at",
-    "finished_at",
     "errors"
   ],
   "properties": {
     "ingestion_id": { "type": "string", "minLength": 1 },
-    "source_artifact_uri": { "type": "string", "pattern": "^(s3|gs|azure|https?)://" },
-    "target_index": { "type": "string", "minLength": 1 },
-    "record_count": { "type": "integer", "minimum": 0 },
+    "feature_set_id": { "type": ["string", "null"], "minLength": 1 },
+    "artifact_id": { "type": ["string", "null"], "minLength": 1 },
+    "source_artifact_uri": { "type": "string", "pattern": "^(file|s3|r2|https?)://[^\\s?#]+$" },
+    "source_checksum_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "target_table": { "type": "string", "minLength": 1 },
+    "dataset_version": { "type": "string", "minLength": 1 },
+    "pipeline_version": { "type": "string", "minLength": 1 },
     "status": { "type": "string", "enum": ["pending", "running", "completed", "failed"] },
+    "records_seen": { "type": "integer", "minimum": 0 },
+    "records_inserted": { "type": "integer", "minimum": 0 },
+    "records_updated": { "type": "integer", "minimum": 0 },
+    "records_skipped": { "type": "integer", "minimum": 0 },
+    "records_failed": { "type": "integer", "minimum": 0 },
+    "checkpoint": { "type": "object", "additionalProperties": true },
     "started_at": { "type": "string", "format": "date-time" },
-    "finished_at": { "type": "string", "format": "date-time" },
+    "finished_at": { "type": ["string", "null"], "format": "date-time" },
     "errors": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "oneOf": [
+          { "type": "string" },
+          { "type": "object", "additionalProperties": true }
+        ]
+      }
     }
   }
 }

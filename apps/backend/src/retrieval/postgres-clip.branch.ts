@@ -24,7 +24,9 @@ export class PostgresClipBranch implements RetrievalBranch {
 
   async search(query: string, plan: RetrievalExecutionPlan): Promise<BranchResult> {
     const embedding = await this.encoder.embedText(query);
-    if (embedding.length !== 512) throw new Error('CLIP query embedding must have 512 dimensions');
+    if (embedding.length !== this.encoder.dimensions) {
+      throw new Error(`CLIP query embedding must have ${this.encoder.dimensions} dimensions`);
+    }
     const vector = `[${embedding.join(',')}]`;
     const result = await this.database.query<ClipRow>(`
       SELECT e.evidence_id, e.segment_id, e.video_id, e.original_frame_id,
@@ -32,9 +34,21 @@ export class PostgresClipBranch implements RetrievalBranch {
              1 - (c.embedding <=> $1::vector) AS rank_score
       FROM clip_embeddings c
       JOIN evidence e ON e.evidence_id = c.evidence_id
+      JOIN feature_sets fs ON fs.feature_set_id = e.feature_set_id
+      JOIN index_release_features irf
+        ON irf.feature_set_id = fs.feature_set_id
+       AND irf.dataset_version = fs.dataset_version
+       AND irf.modality = fs.modality
+      JOIN index_releases ir
+        ON ir.index_version = irf.index_version
+       AND ir.dataset_version = irf.dataset_version
       LEFT JOIN frames f ON f.video_id = e.video_id AND f.original_frame_id = e.original_frame_id
+      WHERE ir.status = 'active'
+        AND ir.index_version = $3
+        AND fs.modality = 'visual_embedding'
+        AND fs.embedding_dimensions = $2
       ORDER BY c.embedding <=> $1::vector, e.video_id, e.start_ms
-      LIMIT $2`, [vector, plan.top_k_per_branch]);
+      LIMIT $4`, [vector, this.encoder.dimensions, plan.index_version, plan.top_k_per_branch]);
     return {
       query_id: plan.query_id, branch: this.name, status: 'completed', query_variant: query,
       candidates: result.rows.map((row, index) => ({

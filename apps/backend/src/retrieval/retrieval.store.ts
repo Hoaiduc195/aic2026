@@ -38,6 +38,7 @@ interface CandidateRow extends QueryResultRow {
   readonly score: number | string;
   readonly evidence_ids: string[];
   readonly matched_modalities: string[];
+  readonly fusion_trace: FusedCandidate['fusion_trace'];
 }
 
 export class PostgresRetrievalStore implements RetrievalStore {
@@ -52,13 +53,14 @@ export class PostgresRetrievalStore implements RetrievalStore {
         RETURNING query_id
       )
       INSERT INTO retrieval_candidates
-        (query_id, rank, segment_id, video_id, original_frame_id, start_ms, end_ms, preview_uri, score, evidence_ids, matched_modalities)
+        (query_id, rank, segment_id, video_id, original_frame_id, start_ms, end_ms, preview_uri, score, evidence_ids, matched_modalities, fusion_trace)
       SELECT $1, candidate.ordinality::integer, candidate.value->>'segment_id', candidate.value->>'video_id',
              NULLIF(candidate.value->>'original_frame_id', '')::integer,
              (candidate.value->>'start_ms')::integer, (candidate.value->>'end_ms')::integer,
              candidate.value->>'preview_uri', (candidate.value->>'score')::double precision,
              ARRAY(SELECT jsonb_array_elements_text(candidate.value->'evidence_ids')),
-             ARRAY(SELECT jsonb_array_elements_text(candidate.value->'matched_modalities'))
+             ARRAY(SELECT jsonb_array_elements_text(candidate.value->'matched_modalities')),
+             COALESCE(candidate.value->'fusion_trace', '[]'::jsonb)
       FROM jsonb_array_elements($8::jsonb) WITH ORDINALITY AS candidate(value, ordinality)
       CROSS JOIN inserted_run
       ON CONFLICT (query_id, rank) DO NOTHING`, [
@@ -70,7 +72,7 @@ export class PostgresRetrievalStore implements RetrievalStore {
   async listCandidates(queryId: string, limit: number, offset: number): Promise<CandidatePage> {
     const result = await this.database.query<CandidateRow>(`
       SELECT COUNT(*) OVER() AS total_count, rank, segment_id, video_id, original_frame_id,
-             start_ms, end_ms, preview_uri, score, evidence_ids, matched_modalities
+             start_ms, end_ms, preview_uri, score, evidence_ids, matched_modalities, fusion_trace
       FROM retrieval_candidates WHERE query_id = $1 ORDER BY rank LIMIT $2 OFFSET $3`,
       [queryId, limit, offset]);
     return {
@@ -82,7 +84,7 @@ export class PostgresRetrievalStore implements RetrievalStore {
         rank: row.rank, segment_id: row.segment_id, video_id: row.video_id,
         original_frame_id: row.original_frame_id, start_ms: row.start_ms, end_ms: row.end_ms,
         preview_uri: row.preview_uri ?? undefined, score: Number(row.score),
-        evidence_ids: row.evidence_ids, matched_modalities: row.matched_modalities, fusion_trace: [],
+        evidence_ids: row.evidence_ids, matched_modalities: row.matched_modalities, fusion_trace: row.fusion_trace,
       })),
     };
   }

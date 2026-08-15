@@ -20,6 +20,31 @@ function schema(name: string): object {
 describe('runtime payload contract parity', () => {
   const ajv = new Ajv2020({ allErrors: true, strict: false });
 
+  it('validates the ingestion audit record used by the database importer', () => {
+    const validate = ajv.compile(schema('ingestion_record'));
+    const record = {
+      ingestion_id: 'ingest-aic2026-v1-videos',
+      feature_set_id: null,
+      artifact_id: null,
+      source_artifact_uri: 'r2://aic-artifacts/canonical/videos.jsonl',
+      source_checksum_sha256: 'a'.repeat(64),
+      target_table: 'videos',
+      dataset_version: 'aic2026-v1',
+      pipeline_version: 'main-v1.0.0',
+      status: 'completed',
+      records_seen: 873,
+      records_inserted: 873,
+      records_updated: 0,
+      records_skipped: 0,
+      records_failed: 0,
+      checkpoint: { last_video_id: 'L30_V096' },
+      started_at: '2026-08-15T00:00:00Z',
+      finished_at: '2026-08-15T00:10:00Z',
+      errors: [],
+    };
+    expect(validate(record), JSON.stringify(validate.errors)).toBe(true);
+  });
+
   it('validates the actual QueryPlan emitted by RetrievalService', () => {
     const service = new RetrievalService(
       loadConfig(),

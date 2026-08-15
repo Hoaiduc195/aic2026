@@ -18,8 +18,8 @@ describe('PostgresClipBranch', () => {
     };
     const encoder: QueryEmbeddingProvider = {
       isConfigured: true,
-      dimensions: 512,
-      embedText: vi.fn(async () => Array.from({ length: 512 }, () => 0.1)),
+      dimensions: 1024,
+      embedText: vi.fn(async () => Array.from({ length: 1024 }, () => 0.1)),
     };
     const branch = new PostgresClipBranch(database, encoder);
     const plan = {
@@ -40,6 +40,7 @@ describe('PostgresClipBranch', () => {
     expect(result.candidates[0].raw_score).toBe(0.95);
     const [sql, parameters] = vi.mocked(database.query).mock.calls[0];
     expect(sql).toContain('<=> $1::vector');
-    expect(parameters?.[1]).toBe(10);
+    expect(sql).toContain("ir.status = 'active'");
+    expect(parameters).toEqual([expect.any(String), 1024, 'v1', 10]);
   });
 });

@@ -91,12 +91,22 @@ export class PostgresTextBranch extends PostgresBranch {
              ) + CASE WHEN lower(t.text_content) LIKE '%' || lower($1) || '%' THEN 0.25 ELSE 0 END AS rank_score
       FROM text_evidence t
       JOIN evidence e ON e.evidence_id = t.evidence_id
+      JOIN feature_sets fs ON fs.feature_set_id = e.feature_set_id
+      JOIN index_release_features irf
+        ON irf.feature_set_id = fs.feature_set_id
+       AND irf.dataset_version = fs.dataset_version
+       AND irf.modality = fs.modality
+      JOIN index_releases ir
+        ON ir.index_version = irf.index_version
+       AND ir.dataset_version = irf.dataset_version
       LEFT JOIN frames f ON f.video_id = e.video_id AND f.original_frame_id = e.original_frame_id
       CROSS JOIN query
       WHERE (t.search_document @@ query.value OR similarity(lower(t.text_content), lower($1)) > 0.15)
         AND e.evidence_type = $2
+        AND ir.status = 'active'
+        AND ir.index_version = $3
       ORDER BY rank_score DESC, e.video_id, e.start_ms, e.evidence_id
-      LIMIT $3`, [normalizedQuery, this.evidenceType, plan.top_k_per_branch]);
+      LIMIT $4`, [normalizedQuery, this.evidenceType, plan.index_version, plan.top_k_per_branch]);
     return this.completed(
       plan,
       normalizedQuery,
@@ -132,15 +142,25 @@ export class PostgresObjectBranch extends PostgresBranch {
              o.label AS matched_label
       FROM object_evidence o
       JOIN evidence e ON e.evidence_id = o.evidence_id
+      JOIN feature_sets fs ON fs.feature_set_id = e.feature_set_id
+      JOIN index_release_features irf
+        ON irf.feature_set_id = fs.feature_set_id
+       AND irf.dataset_version = fs.dataset_version
+       AND irf.modality = fs.modality
+      JOIN index_releases ir
+        ON ir.index_version = irf.index_version
+       AND ir.dataset_version = irf.dataset_version
       LEFT JOIN frames f ON f.video_id = e.video_id AND f.original_frame_id = e.original_frame_id
       JOIN query_terms q ON o.normalized_label = q.term OR similarity(o.normalized_label, q.term) > 0.2
       WHERE o.confidence >= $2
+        AND ir.status = 'active'
+        AND ir.index_version = $3
       GROUP BY e.evidence_id, e.segment_id, e.video_id, e.original_frame_id,
                e.start_ms, e.end_ms, f.thumbnail_object_key, o.label
       )
       SELECT * FROM scored
       ORDER BY rank_score DESC, video_id, start_ms, evidence_id
-      LIMIT $3`, [terms, plan.object_constraints.min_confidence, plan.top_k_per_branch]);
+      LIMIT $4`, [terms, plan.object_constraints.min_confidence, plan.index_version, plan.top_k_per_branch]);
     return this.completed(
       plan,
       terms.join(' '),

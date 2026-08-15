@@ -8,7 +8,7 @@ submit lên hệ thống cuộc thi.
 ## Thành phần đã cài đặt
 
 - PostgreSQL FTS cho caption, ASR và OCR; `pg_trgm` cho object label.
-- pgvector/HNSW cho CLIP 512 chiều; query encoder chạy qua HTTP interface riêng.
+- pgvector/HNSW cho visual embedding 1024 chiều; query encoder chạy qua HTTP interface riêng.
 - Branch isolation: một index/model lỗi không làm hỏng toàn bộ search.
 - R2 presigned URL cho video playback và keyframe thumbnail.
 - Snapshot retrieval run/candidate và manual selection có revision trong Neon.
@@ -26,24 +26,31 @@ PyTorch/VLM/LLM trực tiếp.
 Copy-Item .env.example .env
 npm install
 npm run db:migrate
+npm run db:verify
+# Sau khi bulk import feature:
+npm run db:build-indexes
 npm run start:dev
 ```
 
 Neon nên dùng pooled URL cho `DATABASE_URL` và direct URL cho
 `DATABASE_DIRECT_URL`. Migration tạo extension `vector`, `pg_trgm` cùng các bảng
-video/frame/segment/evidence/index/retrieval/manual selection.
+video/frame/segment, feature set/artifact, evidence, index release, retrieval và manual selection.
+GIN/trigram/HNSW là index nặng nên chỉ được tạo bằng `npm run db:build-indexes`
+sau khi bulk import hoàn tất.
 
 R2 dùng S3-compatible API nên backend cần đủ endpoint, bucket, access key và
 secret key. Object key được giả định theo cấu trúc:
 
 ```text
-videos/<video-id>.mp4
-keyframes/<video-id>/<frame>.jpg
-features/<producer>/<artifact>
+datasets/<dataset-version>/videos/<video-id>.mp4
+datasets/<dataset-version>/keyframes/<video-id>/<original-frame-id>.webp
+features/<dataset-version>/<modality>/<model-version>/<artifact>
 ```
 
 `EMBEDDING_SERVICE_URL` là tùy chọn. Service nhận `{"text":"..."}` và trả
-`{"embedding":[512 số hữu hạn]}`. Nếu chưa cấu hình, CLIP branch được đánh dấu
+`{"embedding":[1024 số hữu hạn]}`. Image encoder và text query encoder phải dùng
+đúng cùng checkpoint/projection/normalization; chỉ cùng số chiều là chưa đủ. Nếu
+chưa cấu hình, CLIP branch được đánh dấu
 `unavailable`; caption/ASR/OCR/object vẫn hoạt động.
 
 ## API
@@ -78,12 +85,14 @@ lại model.
 ## Ingest feature
 
 Feature extraction vẫn thuộc `pipelines/`, không thuộc backend. Job ingest cần
-chuẩn hóa Parquet thành các bảng sau trong một transaction:
+chuẩn hóa Parquet/JSON thành các bảng sau theo transaction từng artifact/video:
 
-1. `videos`, `segments`, `frames`;
-2. `evidence` cho từng caption/ASR/OCR/object/CLIP record;
-3. `text_evidence`, `object_evidence` hoặc `clip_embeddings` theo modality;
-4. kiểm tra object key thuộc `videos/`, `keyframes/` hoặc `features/` trước commit.
+1. `videos`, `feature_sets`, `feature_artifacts`;
+2. `segments`, `frames` với exact source-frame identity;
+3. `evidence` cho từng caption/ASR/OCR/object/CLIP record;
+4. `text_evidence`, `object_evidence` hoặc `clip_embeddings` theo modality;
+5. `index_releases`, `index_release_features` để khóa snapshot đa phương thức;
+6. build search indexes, benchmark, rồi mới chuyển đúng một release sang `active`.
 
 Repository hiện không chứa Parquet dataset thật để suy ra an toàn tên cột, vì
 vậy importer dataset-specific chưa được hardcode vào backend. Khi artifact

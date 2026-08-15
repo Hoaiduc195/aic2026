@@ -59,8 +59,9 @@ describe('Postgres retrieval branches', () => {
     });
     const [sql, parameters] = vi.mocked(db.query).mock.calls[0];
     expect(sql).toContain('websearch_to_tsquery');
+    expect(sql).toContain("ir.status = 'active'");
     expect(sql).not.toContain("người ' đi xe");
-    expect(parameters).toEqual(["người ' đi xe", 'caption', 20]);
+    expect(parameters).toEqual(["người ' đi xe", 'caption', 'index-1', 20]);
   });
 
   it('searches normalized object labels without interpolating user input', async () => {
@@ -76,6 +77,7 @@ describe('Postgres retrieval branches', () => {
     expect(result.candidates[0].matched_terms).toEqual(['bicycle']);
     const [sql, parameters] = vi.mocked(db.query).mock.calls[0];
     expect(sql).toContain('similarity');
-    expect(parameters).toEqual([['bicycle'], 0.25, 20]);
+    expect(sql).toContain("ir.status = 'active'");
+    expect(parameters).toEqual([['bicycle'], 0.25, 'index-1', 20]);
   });
 });

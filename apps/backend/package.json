@@ -14,6 +14,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "db:migrate": "tsx src/database/migrate.ts",
+    "db:build-indexes": "tsx src/database/build-indexes.ts",
+    "db:verify": "tsx src/database/verify.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

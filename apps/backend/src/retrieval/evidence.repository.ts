@@ -25,8 +25,9 @@ export class PostgresEvidenceRepository implements EvidenceRepository {
     const result = await this.database.query<EvidenceRow>(`
       SELECT e.evidence_id, e.evidence_type AS type, e.start_ms, e.end_ms,
              COALESCE(t.text_content, o.label, e.payload->>'snippet') AS snippet,
-             e.producer
+             fs.producer
       FROM evidence e
+      JOIN feature_sets fs ON fs.feature_set_id = e.feature_set_id
       LEFT JOIN text_evidence t ON t.evidence_id = e.evidence_id
       LEFT JOIN object_evidence o ON o.evidence_id = e.evidence_id
       WHERE e.evidence_id = ANY($1::text[])`, [evidenceIds]);

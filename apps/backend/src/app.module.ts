@@ -82,8 +82,8 @@ function createTaskRegistry(config: ReturnType<typeof loadConfig>): TaskExecutor
     {
       provide: QUERY_EMBEDDER,
       useFactory: (config: ReturnType<typeof loadConfig>) => config.embeddingServiceUrl
-        ? new HttpQueryEmbeddingProvider(config.embeddingServiceUrl, 512, config.embeddingServiceToken)
-        : new UnavailableQueryEmbeddingProvider(512),
+        ? new HttpQueryEmbeddingProvider(config.embeddingServiceUrl, config.embeddingDimensions, config.embeddingServiceToken)
+        : new UnavailableQueryEmbeddingProvider(config.embeddingDimensions),
       inject: [APP_CONFIG],
     },
     { provide: RETRIEVAL_BRANCHES, useFactory: createBranches, inject: [DATABASE, QUERY_EMBEDDER] },

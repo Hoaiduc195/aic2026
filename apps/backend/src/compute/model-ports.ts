@@ -48,6 +48,6 @@ export class HttpQueryEmbeddingProvider implements QueryEmbeddingProvider {
 
 export class UnavailableQueryEmbeddingProvider implements QueryEmbeddingProvider {
   readonly isConfigured = false;
-  constructor(public readonly dimensions = 512) {}
+  constructor(public readonly dimensions = 1024) {}
   async embedText(_query: string): Promise<readonly number[]> { throw new Error('query embedding service is not configured'); }
 }

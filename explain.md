@@ -27,7 +27,7 @@
 
 Chưa hoàn thành end-to-end trên dữ liệu thật vì các mục sau phải chờ nhóm thống nhất database/index:
 
-- Visual embedding đang có nguy cơ lệch 768 chiều ở SigLIP và 512 chiều trong pgvector/query service.
+- Team đã chốt ViT-B/32 (`vit32b`) với visual embedding 1024 chiều; migration/query runtime đã chuyển sang 1024.
 - Chưa có importer từ caption/OCR/ASR/object/embedding artifact vào PostgreSQL.
 - Chưa có PostgreSQL/index thật để integration-test các câu SQL retrieval.
 - Chưa được phép đánh dấu version manifest là `active`; hiện để `staged` có chủ đích.
@@ -38,8 +38,8 @@ Chưa hoàn thành end-to-end trên dữ liệu thật vì các mục sau phải
 
 ### Phase R0
 
-- [ ] **R0-01 — BLOCKED:** Chưa chốt model visual và embedding dimension; chờ team database/model.
-- [ ] **R0-02 — BLOCKED:** Chưa migrate pgvector 512 ↔ 768; chờ quyết định R0-01 và database.
+- [x] **R0-01 — DONE:** Đã chốt ViT-B/32 (`vit32b`); còn phải ghi exact checkpoint/revision/checksum trước khi activate.
+- [x] **R0-02 — DONE:** Đã chốt 1024 chiều và đồng bộ migration, query encoder contract cùng runtime validation.
 - [x] **R0-03 — DONE:** Schema đã có đầy đủ field runtime: fusion/display K, fusion method, index version, query views, object terms/constraints, channel weights, candidate time/preview và diagnostics.
 - [x] **R0-04 — DONE:** `runtime-contracts.test.ts` validate payload thật do `RetrievalService` và PostgreSQL object branch sinh ra; SearchResponse thật cũng được validate.
 - [x] **R0-05 — DONE ở mức contract/runtime:** Có version manifest, checksum rule, artifact/model/index identity và state machine `staged/active/retired`.
@@ -180,7 +180,7 @@ Nếu một thay đổi ontology làm từ `cầm` bị hiểu nhầm thành qu�
 
 ### R3-01 — CLIP/SigLIP branch trên index thật
 
-Branch này biến query text thành vector rồi tìm image vector gần nhất trong pgvector. Nó chưa thể hoàn tất vì image vector hiện có thể là 768 chiều, trong khi backend/migration đang giả định 512. Hai phía phải cùng model, dimension và normalization; không được cắt vector cho vừa.
+Branch này biến query text thành vector rồi tìm image vector gần nhất trong pgvector. Team đã có file image embedding ViT-B/32 1024 chiều và backend/migration đã chuyển sang 1024. Phần còn thiếu là import vào Neon và text encoder dùng đúng joint embedding space, checkpoint, projection cùng normalization với image encoder; chỉ cùng số chiều là chưa đủ.
 
 ### R3-02 — Caption lexical baseline
 
@@ -362,7 +362,7 @@ Môi trường:
 
 ## 9. Việc cần team database quyết định tiếp
 
-- [ ] Chọn SigLIP 768 hay model 512 và đóng băng model/dimension/normalization.
+- [x] Chốt ViT-B/32 và 1024 chiều; còn ghi exact checkpoint/revision/normalization/checksum vào manifest trước activation.
 - [ ] Chốt migration pgvector và dimension.
 - [ ] Chốt schema/importer cho artifact caption, OCR, ASR, object và embedding.
 - [ ] Chốt caption dense index và OCR/ASR semantic index có làm ngay hay không.

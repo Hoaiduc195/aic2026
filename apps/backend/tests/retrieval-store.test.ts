@@ -29,10 +29,11 @@ describe('PostgresRetrievalStore', () => {
     const db = database([{
       total_count: '1', rank: 1, segment_id: 's', video_id: 'v', original_frame_id: 2,
       start_ms: 10, end_ms: 20, preview_uri: null, score: '0.5', evidence_ids: ['e'], matched_modalities: ['ocr'],
+      fusion_trace: [{ branch: 'ocr', channel_rank: 1, weight: 1, contribution: 0.1, evidence_ids: ['e'] }],
     }] as never[]);
     const store = new PostgresRetrievalStore(db);
     const page = await store.listCandidates('q', 10, 0);
-    expect(page).toMatchObject({ total: 1, candidates: [{ rank: 1, score: 0.5 }] });
+    expect(page).toMatchObject({ total: 1, candidates: [{ rank: 1, score: 0.5, fusion_trace: [{ branch: 'ocr' }] }] });
 
     vi.mocked(db.query).mockResolvedValueOnce({ rows: [{ selection_id: 1 }] as never[], rowCount: 1 });
     await expect(store.saveSelection('q', 'textual_kis', [{ video_id: 'v', frame_id: 1 }], 'ok'))

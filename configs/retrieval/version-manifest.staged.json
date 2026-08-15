@@ -8,7 +8,7 @@
     "retrieval_input": "preprocessing-artifacts"
   },
   "model_versions": {
-    "visual": "dimension-awaiting-database-decision",
+    "visual": "vit-b-32-1024",
     "caption": "florence-2-base",
     "object": "yolo26n-coco"
   },
@@ -19,6 +19,7 @@
   "created_at": "2026-08-15T00:00:00Z",
   "status": "staged",
   "build_config": {
-    "activation_blocker": "database/index and visual embedding dimension must be agreed with the team"
+    "embedding_dimensions": 1024,
+    "activation_blocker": "database/index must be created, imported, validated and checksummed"
   }
 }

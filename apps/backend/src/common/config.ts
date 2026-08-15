@@ -13,6 +13,7 @@ export interface BackendConfig {
   readonly signedUrlTtlSeconds: number;
   readonly embeddingServiceUrl?: string;
   readonly embeddingServiceToken?: string;
+  readonly embeddingDimensions: number;
   readonly datasetVersion: string;
   readonly pipelineVersion: string;
   readonly indexVersion: string;
@@ -89,13 +90,14 @@ export function loadConfig(): BackendConfig {
     signedUrlTtlSeconds: positiveInteger(process.env.R2_SIGNED_URL_TTL_SECONDS, 900),
     embeddingServiceUrl: optionalEnv('EMBEDDING_SERVICE_URL'),
     embeddingServiceToken: optionalEnv('EMBEDDING_SERVICE_TOKEN'),
+    embeddingDimensions: positiveInteger(process.env.EMBEDDING_DIMENSIONS, 1024),
     datasetVersion: optionalEnv('DATASET_VERSION') ?? 'local',
     pipelineVersion: optionalEnv('PIPELINE_VERSION') ?? 'preprocessing-artifacts',
     indexVersion,
     schemaVersion: optionalEnv('SCHEMA_VERSION') ?? '1.0.0',
     artifactVersion: optionalEnv('ARTIFACT_VERSION') ?? 'preprocessing-artifacts',
     modelVersions: stringMap(optionalEnv('MODEL_VERSIONS_JSON'), {
-      visual: 'dimension-awaiting-database-decision',
+      visual: 'vit-b-32-1024',
       object: 'yolo26n-coco',
       caption: 'florence-2-base',
     }),
