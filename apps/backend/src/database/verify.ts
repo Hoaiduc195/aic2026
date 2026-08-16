@@ -8,6 +8,7 @@ const EXPECTED_TABLES = [
   'evidence',
   'feature_artifacts',
   'feature_sets',
+  'frame_aliases',
   'frames',
   'index_release_features',
   'index_releases',

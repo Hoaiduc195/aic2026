@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/frame_alias/schema.json",
+  "title": "FrameAlias",
+  "description": "One sparse/keyframe occurrence mapped to a canonical source frame. Multiple aliases may share one (video_id, original_frame_id).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "video_id",
+    "keyframe_no",
+    "original_frame_id",
+    "timestamp_ms",
+    "storage_uri"
+  ],
+  "properties": {
+    "video_id": { "type": "string", "minLength": 1 },
+    "keyframe_no": { "type": "integer", "minimum": 1 },
+    "original_frame_id": { "type": "integer", "minimum": 0 },
+    "timestamp_ms": { "type": "integer", "minimum": 0 },
+    "storage_uri": { "type": "string", "pattern": "^(r2|s3|https?)://[^\\s?#]+$" },
+    "thumbnail_object_key": { "type": "string", "minLength": 1 },
+    "metadata": { "type": "object", "additionalProperties": true }
+  }
+}

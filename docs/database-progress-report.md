@@ -16,7 +16,13 @@ trỏ về `original_frame_id` cụ thể.
 
 - `videos`: metadata và `object_key` của video trong R2.
 - `frames`: khóa chính `(video_id, original_frame_id)`, timestamp, thumbnail và
-  quality route.
+  quality route. Đây là một dòng canonical cho mỗi source frame.
+- `frame_aliases`: giữ từng lần xuất hiện của keyframe/map, khóa chính
+  `(video_id, keyframe_no)`, và trỏ về frame canonical bằng
+  `(video_id, original_frame_id)`. Vì vậy hai keyframe khác nhau có thể cùng
+  trỏ đến một frame canonical mà không tạo hai frame canonical. Các trường
+  `keyframe_no`/thumbnail trong `frames` chỉ là occurrence đại diện để tương
+  thích với API cũ; danh sách đầy đủ nằm ở `frame_aliases`.
 - `feature_sets`/`feature_artifacts`: provenance, model/checkpoint, checksum và
   artifact storage.
 - `evidence`: caption, OCR, ASR, object hoặc visual evidence; giữ
@@ -27,9 +33,10 @@ trỏ về `original_frame_id` cụ thể.
   frame/time identity.
 - `manual_selections`: revision của thao tác chọn thủ công.
 
-`apps/backend/sql/001_initial.sql` là baseline hiện tại. `verify_database.sql`
-và `src/database/verify.ts` cùng kiểm tra một danh sách bảng, nên khi import
-cần chạy cả hai bước xác minh.
+`apps/backend/sql/001_initial.sql` là baseline gốc; `002_add_frame_aliases.sql`
+thêm bảng alias và `003_backfill_frame_aliases.sql` backfill alias đại diện cho
+DB đã có dữ liệu. `verify_database.sql` và `src/database/verify.ts` cùng kiểm
+tra một danh sách bảng, nên khi import cần chạy cả hai bước xác minh.
 
 ## Dữ liệu refined hiện có
 
@@ -50,10 +57,18 @@ JSON bị thiếu.
 ## Luồng import đề xuất
 
 1. Import `videos` và `frames` trước để tạo khóa `(video_id, original_frame_id)`.
-2. Tạo `feature_sets` và `feature_artifacts` từ manifest/checksum.
-3. Import từng modality vào `evidence`, rồi vào bảng con tương ứng.
-4. Kiểm tra row count, frame mapping, model dimension/checkpoint và checksum.
-5. Tạo index sau bulk import; chỉ activate một `index_release` đã kiểm tra.
+2. Import toàn bộ map/keyframe occurrences vào `frame_aliases` bằng khóa
+   `(video_id, keyframe_no)`; không loại bỏ các dòng trùng
+   `original_frame_id`.
+3. Tạo `feature_sets` và `feature_artifacts` từ manifest/checksum.
+4. Import từng modality vào `evidence`, rồi vào bảng con tương ứng.
+5. Kiểm tra row count, frame mapping, model dimension/checkpoint và checksum.
+6. Tạo index sau bulk import; chỉ activate một `index_release` đã kiểm tra.
+
+Ở tầng retrieval, các alias vẫn có thể xuất hiện như hai hit đầu vào, nhưng
+fusion gom chúng theo `(video_id, original_frame_id)`. Kết quả hiển thị vì thế
+chỉ có một canonical frame; `occurrence_count`/evidence vẫn có thể cho biết có
+bao nhiêu alias cùng đóng góp.
 
 Importer phải idempotent, parameterized và ghi rõ `inserted/updated/skipped/
 failed`. Không nên import toàn bộ 873 video trước khi thử một batch nhỏ.

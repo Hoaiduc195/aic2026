@@ -18,6 +18,8 @@ export function candidateKey(
   startMs?: number,
   endMs?: number,
 ): string {
+  // keyframe_no is intentionally absent: multiple sparse aliases can point
+  // to one canonical source frame and must be fused into one result.
   if (originalFrameId !== null && originalFrameId !== undefined) {
     return `${videoId}:frame:${originalFrameId}`;
   }

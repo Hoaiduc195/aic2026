@@ -9,6 +9,10 @@ database migrations, or organizer-specific submission payloads.
 
 - `video_id` and `original_frame_id` identify a source frame. The latter is
   authoritative for exact-frame results.
+- A sparse keyframe occurrence is identified by `(video_id, keyframe_no)` and
+  may be represented as a `frame_alias` of the same canonical source frame.
+  Retrieval may receive multiple aliases, but fusion must return one result per
+  canonical `(video_id, original_frame_id)`.
 - Internal temporal intervals use integer milliseconds and half-open semantics:
   `[start_ms, end_ms)`.
 - `frame_id` is optional legacy/adapter identity and must not replace
@@ -29,7 +33,7 @@ database migrations, or organizer-specific submission payloads.
 
 | Boundary | Canonical schemas |
 |---|---|
-| Source and temporal hierarchy | `video_manifest`, `frame`, `micro_event`, `context_window`, `event_window` |
+| Source and temporal hierarchy | `video_manifest`, `frame`, `frame_alias`, `micro_event`, `context_window`, `event_window` |
 | Retrieval and evidence | `keyframe`, `dense_candidate`, `semantic_keyframe`, `event_score`, `evidence`, `evidence_relation` |
 | Reproducibility and publication | `processing_run`, `artifact_manifest`, `version_manifest`, `ingestion_record` |
 | Query and branch execution | `qualification_request`, `query_plan`, `branch_result`, `search_response` |

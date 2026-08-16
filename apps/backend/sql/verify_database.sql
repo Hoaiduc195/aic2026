@@ -1,5 +1,5 @@
 -- Read-only verification after `npm run db:migrate` and after each import.
--- Expected baseline: vector + pg_trgm installed, every table present, vector(1024).
+-- Expected schema: vector + pg_trgm installed, every table present, vector(1024).
 
 SELECT extname, extversion
 FROM pg_extension
@@ -23,6 +23,7 @@ WHERE n.nspname = 'public'
 SELECT
   (SELECT count(*) FROM videos) AS videos,
   (SELECT count(*) FROM frames) AS frames,
+  (SELECT count(*) FROM frame_aliases) AS frame_aliases,
   (SELECT count(*) FROM feature_sets) AS feature_sets,
   (SELECT count(*) FROM feature_artifacts) AS feature_artifacts,
   (SELECT count(*) FROM index_releases) AS index_releases,
