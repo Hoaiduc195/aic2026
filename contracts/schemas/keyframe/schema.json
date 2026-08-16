@@ -23,7 +23,6 @@
     "decoded_frame_index": { "type": "integer", "minimum": 0 },
     "timestamp_ms": { "type": "number", "minimum": 0 },
     "storage_uri": { "type": "string", "pattern": "^(file|s3|r2|https?)://[^\\s@?#]+$" },
-    "segment_id": { "type": ["string", "null"] },
     "shot_id": { "type": ["integer", "string", "null"] },
     "shot_ids": {
       "type": "array",

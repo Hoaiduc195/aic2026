@@ -40,8 +40,6 @@ The following require a new major schema version or an explicit adapter:
 
 - `original_frame_id` remains the authoritative internal source-frame key.
   `frame_id` may be retained only as a legacy or organizer mapping field.
-- `segment_start_ms`/`segment_end_ms` are accepted during migration, while
-  canonical producers should emit `start_ms`/`end_ms`.
 - Legacy search payloads must be converted to the versioned `search_response`
   or `qualification_response` before they cross the backend boundary.
 - Organizer-specific conversion is disabled by default and must not alter the

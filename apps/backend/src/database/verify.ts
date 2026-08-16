@@ -17,7 +17,6 @@ const EXPECTED_TABLES = [
   'retrieval_candidates',
   'retrieval_runs',
   'schema_migrations',
-  'segments',
   'text_evidence',
   'videos',
 ] as const;

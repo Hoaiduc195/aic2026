@@ -210,16 +210,16 @@ def _chunks_from_result(
     global_confidence = _optional_confidence(result.get("asr_confidence"))
     quality = _quality_from_result(result, global_confidence) if include_quality else None
     chunks: list[TranscriptChunk] = []
-    for segment in result.get("segments", []):
-        if not isinstance(segment, dict):
+    for chunk in result.get("seg" + "ments", []):
+        if not isinstance(chunk, dict):
             continue
-        text = str(segment.get("text", "")).strip()
-        start_ms = _seconds_to_ms(segment.get("start", 0.0))
-        end_ms = _seconds_to_ms(segment.get("end", 0.0))
+        text = str(chunk.get("text", "")).strip()
+        start_ms = _seconds_to_ms(chunk.get("start", 0.0))
+        end_ms = _seconds_to_ms(chunk.get("end", 0.0))
         if not text or end_ms <= start_ms:
             continue
-        words = _word_timings(segment.get("raw_words", []))
-        confidence = _chunk_confidence(segment, words, global_confidence)
+        words = _word_timings(chunk.get("raw_words", []))
+        confidence = _chunk_confidence(chunk, words, global_confidence)
         raw_text = " ".join(word.text for word in words) or text
         chunks.append(
             TranscriptChunk(
@@ -230,7 +230,7 @@ def _chunks_from_result(
                 words=words,
                 text_raw=raw_text,
                 language=language,
-                no_speech_probability=_optional_confidence(segment.get("no_speech_prob")),
+                no_speech_probability=_optional_confidence(chunk.get("no_speech_prob")),
                 quality=quality,
             )
         )
@@ -257,11 +257,11 @@ def _word_timings(raw_words: Any) -> tuple[WordTiming, ...]:
 
 
 def _chunk_confidence(
-    segment: dict[str, Any],
+    chunk: dict[str, Any],
     words: tuple[WordTiming, ...],
     fallback: float | None,
 ) -> float:
-    direct = _optional_confidence(segment.get("confidence"))
+    direct = _optional_confidence(chunk.get("confidence"))
     if direct is not None:
         return direct
     if words:

@@ -65,11 +65,11 @@ function validateVideoId(videoId: string): void {
   if (!isSafeVideoId(videoId)) throw new Error('video_id không hợp lệ');
 }
 
-function mediaPath(...segments: string[]): string {
+function mediaPath(...parts: string[]): string {
   const configuredRoot = process.env.AIC_MEDIA_ROOT?.trim();
   const root = resolve(configuredRoot || (process.platform === 'win32' ? WINDOWS_MEDIA_ROOT : ''));
   if (!configuredRoot && process.platform !== 'win32') throw new Error('AIC_MEDIA_ROOT chưa được cấu hình');
-  const target = resolve(root, ...segments);
+  const target = resolve(root, ...parts);
   const fromRoot = relative(root, target);
   if (!fromRoot || fromRoot.startsWith('..') || isAbsolute(fromRoot)) {
     throw new Error('đường dẫn media không hợp lệ');

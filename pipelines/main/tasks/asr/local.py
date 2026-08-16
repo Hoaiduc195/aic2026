@@ -4,13 +4,13 @@ from typing import Any
 
 from pipelines.main.core.models import NodeContext, NodeResult
 from pipelines.main.tasks.base import TaskNode
-from pipelines.main.tasks.io import first_artifact_path, jsonl_bytes, read_jsonl
+from pipelines.main.tasks.io import jsonl_bytes
 
 
 class AsrLocalNode(TaskNode):
     task_name = "asr"
     provider = "local"
-    dependencies = ("segmentation",)
+    dependencies = ("ingestion",)
 
     def __init__(self, *, artifact_store: Any) -> None:
         super().__init__(artifact_store=artifact_store)
@@ -21,7 +21,6 @@ class AsrLocalNode(TaskNode):
             from faster_whisper import WhisperModel
         except ImportError:
             return NodeResult.failed(self.task_name, self.provider, "missing_asr_dependency", "ASR requires faster-whisper")
-        segments = read_jsonl(first_artifact_path(context.artifacts["segmentation"]))
         model_name = str(context.config.node(self.task_name).options.get("model", "small"))
         language = str(context.config.node(self.task_name).options.get("language", "vi"))
         device = str(context.config.node(self.task_name).options.get("device", "auto"))
@@ -42,25 +41,19 @@ class AsrLocalNode(TaskNode):
                 if not text:
                     continue
                 confidence = _confidence(chunk)
-                for segment in segments:
-                    overlap_start = max(start_ms, int(segment["start_ms"]))
-                    overlap_end = min(end_ms, int(segment["end_ms"]))
-                    if overlap_end <= overlap_start:
-                        continue
-                    records.append({
-                        "video_id": context.video_id,
-                        "segment_id": str(segment["segment_id"]),
-                        "start_ms": overlap_start,
-                        "end_ms": overlap_end,
-                        "text_raw": text,
-                        "text_normalized": " ".join(text.split()).casefold(),
-                        "language": language,
-                        "confidence": confidence,
-                        "producer": "asr:main-faster-whisper",
-                        "model_version": model_name,
-                        "pipeline_version": "main-v1.0.0",
-                        "schema_version": "1.0.0",
-                    })
+                records.append({
+                    "video_id": context.video_id,
+                    "start_ms": start_ms,
+                    "end_ms": end_ms,
+                    "text_raw": text,
+                    "text_normalized": " ".join(text.split()).casefold(),
+                    "language": language,
+                    "confidence": confidence,
+                    "producer": "asr:main-faster-whisper",
+                    "model_version": model_name,
+                    "pipeline_version": "main-v1.0.0",
+                    "schema_version": "1.0.0",
+                })
         except Exception as error:  # noqa: BLE001 - model boundary
             return NodeResult.failed(self.task_name, self.provider, "asr_inference_failed", str(error))
         from pipelines.main.contracts.validation import validate_records

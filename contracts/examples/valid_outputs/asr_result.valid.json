@@ -1,6 +1,5 @@
 {
   "video_id": "video_test_0001",
-  "segment_id": "video_test_0001_seg_002",
   "asr_start_ms": 13500,
   "asr_end_ms": 16200,
   "start_ms": 13500,

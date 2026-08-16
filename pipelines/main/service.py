@@ -29,7 +29,6 @@ CORE_LOCAL_TASKS = frozenset({
     "ingestion",
     "frame_manifest",
     "shot_detection",
-    "segmentation",
     "keyframes",
     "normalization",
 })

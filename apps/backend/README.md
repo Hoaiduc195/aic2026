@@ -34,7 +34,7 @@ npm run start:dev
 
 Neon nên dùng pooled URL cho `DATABASE_URL` và direct URL cho
 `DATABASE_DIRECT_URL`. Migration tạo extension `vector`, `pg_trgm` cùng các bảng
-video/frame/segment, feature set/artifact, evidence, index release, retrieval và manual selection.
+video/frame, feature set/artifact, evidence, index release, retrieval và manual selection.
 GIN/trigram/HNSW là index nặng nên chỉ được tạo bằng `npm run db:build-indexes`
 sau khi bulk import hoàn tất.
 
@@ -88,7 +88,7 @@ Feature extraction vẫn thuộc `pipelines/`, không thuộc backend. Job inges
 chuẩn hóa Parquet/JSON thành các bảng sau theo transaction từng artifact/video:
 
 1. `videos`, `feature_sets`, `feature_artifacts`;
-2. `segments`, `frames` với exact source-frame identity;
+2. `frames` với exact source-frame identity;
 3. `evidence` cho từng caption/ASR/OCR/object/CLIP record;
 4. `text_evidence`, `object_evidence` hoặc `clip_embeddings` theo modality;
 5. `index_releases`, `index_release_features` để khóa snapshot đa phương thức;

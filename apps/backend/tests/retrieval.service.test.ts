@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { loadConfig } from '../src/common/config';
 import { RETRIEVAL_BRANCHES, TASK_EXECUTOR_REGISTRY, APP_CONFIG } from '../src/common/tokens';
@@ -65,7 +65,6 @@ describe('RetrievalService', () => {
   it('fuses candidates and returns a frontend-compatible response', async () => {
     const branches = [
       completedBranch('clip', [{
-        segment_id: 'seg-1',
         video_id: 'L21_V001',
         rank: 1,
         raw_score: 0.9,
@@ -76,7 +75,6 @@ describe('RetrievalService', () => {
         evidence_ids: ['clip-1'],
       }]),
       completedBranch('object', [{
-        segment_id: 'seg-1',
         video_id: 'L21_V001',
         rank: 2,
         raw_score: 0.8,
@@ -140,16 +138,52 @@ describe('RetrievalService', () => {
 
   it('signs R2 previews and hydrates evidence for the workbench', async () => {
     const branch = completedBranch('caption', [{
-      segment_id: 's', video_id: 'v', rank: 1, raw_score: 1, original_frame_id: 1,
+      video_id: 'v', rank: 1, raw_score: 1, original_frame_id: 1,
       start_ms: 10, end_ms: 20, preview_uri: 'r2://media/keyframes/v/1.jpg', evidence_ids: ['e-1'],
     }]);
     const evidenceRepository = { findByIds: async () => new Map([['e-1', {
       evidence_id: 'e-1', type: 'caption', start_ms: 10, end_ms: 20, snippet: 'bike', producer: 'captioner',
     }]]) };
+    const store = {
+      saveRun: vi.fn(async () => undefined),
+      listCandidates: vi.fn(),
+      saveSelection: vi.fn(),
+      getLatestSelection: vi.fn(),
+    };
     const storage = { isConfigured: true, signReadUrl: async (key: string) => `https://signed/${key}`, health: async () => true };
-    const service = new RetrievalService(loadConfig(), [branch], createRegistry(), undefined, evidenceRepository, storage);
+    const service = new RetrievalService(loadConfig(), [branch], createRegistry(), store, evidenceRepository, storage);
     const response = await service.search({ query: 'bike', task: 'textual_kis' });
     expect(response.results[0].preview_uri).toBe('https://signed/keyframes/v/1.jpg');
     expect(response.results[0].evidence[0]).toMatchObject({ snippet: 'bike' });
+    expect(store.saveRun).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      [expect.objectContaining({ preview_uri: 'r2://media/keyframes/v/1.jpg' })],
+    );
+  });
+
+  it('signs the video object key when a keyframe preview is unavailable', async () => {
+    const branch = completedBranch('caption', [{
+      video_id: 'v', rank: 1, raw_score: 1, original_frame_id: null,
+      start_ms: 10, end_ms: 20, video_object_key: 'videos/v.mp4', evidence_ids: ['e-1'],
+    }]);
+    const store = {
+      saveRun: vi.fn(async () => undefined),
+      listCandidates: vi.fn(),
+      saveSelection: vi.fn(),
+      getLatestSelection: vi.fn(),
+    };
+    const storage = { isConfigured: true, signReadUrl: vi.fn(async (key: string) => `https://signed/${key}`), health: async () => true };
+    const service = new RetrievalService(loadConfig(), [branch], createRegistry(), store, undefined, storage);
+
+    const response = await service.search({ query: 'bike', task: 'textual_kis' });
+
+    expect(response.results[0].preview_uri).toBe('https://signed/videos/v.mp4');
+    expect(storage.signReadUrl).toHaveBeenCalledWith('videos/v.mp4');
+    expect(store.saveRun).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      [expect.objectContaining({ preview_uri: 'r2://media/videos/v.mp4' })],
+    );
   });
 });

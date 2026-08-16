@@ -11,9 +11,9 @@ describe('PostgresClipBranch', () => {
       isConfigured: true,
       health: vi.fn(async () => true),
       query: vi.fn(async () => ({ rows: [{
-        evidence_id: 'clip-1', segment_id: 'seg-1', video_id: 'video-1',
+        evidence_id: 'clip-1', video_id: 'video-1',
         original_frame_id: 7, start_ms: 200, end_ms: 201,
-        preview_object_key: 'keyframes/video-1/7.jpg', rank_score: 0.95,
+        preview_object_key: 'keyframes/video-1/7.jpg', video_object_key: 'videos/video-1.mp4', rank_score: 0.95,
       }] as never[], rowCount: 1 })),
     };
     const encoder: QueryEmbeddingProvider = {
@@ -38,6 +38,7 @@ describe('PostgresClipBranch', () => {
 
     expect(encoder.embedText).toHaveBeenCalledWith('a bicycle');
     expect(result.candidates[0].raw_score).toBe(0.95);
+    expect(result.candidates[0].video_object_key).toBe('videos/video-1.mp4');
     const [sql, parameters] = vi.mocked(database.query).mock.calls[0];
     expect(sql).toContain('<=> $1::vector');
     expect(sql).toContain("ir.status = 'active'");

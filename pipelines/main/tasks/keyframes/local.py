@@ -10,24 +10,24 @@ from pipelines.main.tasks.video import decode_frames, require_cv2
 class KeyframesLocalNode(TaskNode):
     task_name = "keyframes"
     provider = "local"
-    dependencies = ("frame_manifest", "segmentation")
+    dependencies = ("frame_manifest", "shot_detection")
 
     async def run(self, context: NodeContext) -> NodeResult:
         frames = read_jsonl(first_artifact_path(context.artifacts["frame_manifest"]))
-        segments = read_jsonl(first_artifact_path(context.artifacts["segmentation"]))
-        if not frames or not segments:
-            return NodeResult.failed(self.task_name, self.provider, "missing_timeline", "frames and segments are required")
+        shots = read_jsonl(first_artifact_path(context.artifacts["shot_detection"]))
+        if not frames or not shots:
+            return NodeResult.failed(self.task_name, self.provider, "missing_timeline", "frames and shot boundaries are required")
 
         frame_by_id = {int(frame["original_frame_id"]): frame for frame in frames}
-        selected: dict[int, tuple[str, int]] = {}
-        for index, segment in enumerate(segments):
-            start = int(segment["start_frame_id"])
-            end = max(start + 1, int(segment["end_frame_id"]))
+        selected: dict[int, tuple[int, int]] = {}
+        for index, shot in enumerate(shots):
+            start = int(shot["start_frame_id"])
+            end = max(start + 1, int(shot["end_frame_id"]))
             candidate_ids = list(range(start, min(end, start + 3)))
             if not candidate_ids:
                 continue
             candidate = max(candidate_ids, key=lambda frame_id: _quality(frame_by_id.get(frame_id, {})))
-            selected[candidate] = (str(segment["segment_id"]), index)
+            selected[candidate] = (int(shot["shot_id"]), index)
 
         cv2 = require_cv2()
         keyframe_rows: list[dict[str, object]] = []
@@ -36,7 +36,7 @@ class KeyframesLocalNode(TaskNode):
             frame_id = int(frame_record["original_frame_id"])
             if frame_id not in selected:
                 continue
-            segment_id, ordinal = selected[frame_id]
+            shot_id, ordinal = selected[frame_id]
             encoded_ok, encoded = cv2.imencode(".jpg", image, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
             if not encoded_ok:
                 continue
@@ -59,8 +59,7 @@ class KeyframesLocalNode(TaskNode):
                 "timestamp_ms": int(frame_record["timestamp_ms"]),
                 "storage_uri": image_artifact.uri,
                 "source_storage_uri": self._input_path(context).resolve().as_uri(),
-                "segment_id": segment_id,
-                "shot_id": ordinal,
+                "shot_id": shot_id,
                 "n": ordinal + 1,
                 "frame_idx": frame_id,
                 "pts_time": float(frame_record["timestamp_ms"]) / 1000.0,

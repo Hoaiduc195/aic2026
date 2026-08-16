@@ -13,7 +13,6 @@ SCHEMA_VERSION = "1.0.0"
 @dataclass(frozen=True)
 class FrameIdentity:
     video_id: str
-    segment_id: str
     original_frame_id: int
     timestamp_ms: int
 
@@ -40,7 +39,6 @@ def normalize_detection(
         attributes["bbox_normalized"] = list(detection["bbox_normalized"])
     return {
         "video_id": identity.video_id,
-        "segment_id": identity.segment_id,
         "timestamp_ms": identity.timestamp_ms,
         "original_frame_id": identity.original_frame_id,
         "objects": [{"class": class_name, "box": box, "confidence": confidence, "attributes": attributes}],
@@ -65,7 +63,6 @@ def normalize_detections(
         objects.extend(single["objects"])
     return {
         "video_id": identity.video_id,
-        "segment_id": identity.segment_id,
         "timestamp_ms": identity.timestamp_ms,
         "original_frame_id": identity.original_frame_id,
         "objects": objects,
@@ -101,7 +98,6 @@ def normalize_ocr(
         })
     return {
         "video_id": identity.video_id,
-        "segment_id": identity.segment_id,
         "timestamp_ms": identity.timestamp_ms,
         "original_frame_id": identity.original_frame_id,
         "text": text,

@@ -1,7 +1,6 @@
 {
-  "segment_id": "video_test_0001_seg_002",
-  "segment_start_ms": 12000,
-  "segment_end_ms": 18000,
+  "original_frame_id": 385,
+  "timestamp_ms": 15400,
   "source": "transnetv2",
   "confidence": 0.97
 }

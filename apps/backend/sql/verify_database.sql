@@ -22,7 +22,6 @@ WHERE n.nspname = 'public'
 
 SELECT
   (SELECT count(*) FROM videos) AS videos,
-  (SELECT count(*) FROM segments) AS segments,
   (SELECT count(*) FROM frames) AS frames,
   (SELECT count(*) FROM feature_sets) AS feature_sets,
   (SELECT count(*) FROM feature_artifacts) AS feature_artifacts,

@@ -73,7 +73,6 @@ class VisualEmbeddingLocalNode(TaskNode):
         records = [
             {
                 "video_id": context.video_id,
-                "segment_id": str(row.get("segment_id") or f"{context.video_id}-seg-unknown"),
                 "original_frame_id": int(row["original_frame_id"]),
                 "timestamp_ms": int(row["timestamp_ms"]),
                 "embedding_id": f"{context.video_id}:{int(row['original_frame_id'])}",

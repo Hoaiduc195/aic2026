@@ -16,10 +16,11 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["segment_id", "video_id", "rank", "raw_score", "evidence_ids"],
+        "required": ["video_id", "original_frame_id", "rank", "raw_score", "evidence_ids"],
         "properties": {
-          "segment_id": { "type": "string", "minLength": 1 },
           "video_id": { "type": "string", "minLength": 1 },
+          "original_frame_id": { "type": ["integer", "null"], "minimum": 0 },
+          "video_object_key": { "type": "string", "minLength": 1 },
           "rank": { "type": "integer", "minimum": 1 },
           "raw_score": { "type": "number" },
           "original_frame_id": { "type": ["integer", "null"], "minimum": 0 },

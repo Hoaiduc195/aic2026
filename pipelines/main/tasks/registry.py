@@ -16,7 +16,6 @@ from .modal import ModalNode
 from .normalization.local import NormalizationLocalNode
 from .object_detection.local import ObjectDetectionLocalNode
 from .ocr.local import OcrLocalNode
-from .segmentation.local import SegmentationLocalNode
 from .shot_detection.local import ShotDetectionLocalNode
 from .visual_embedding.local import VisualEmbeddingLocalNode
 
@@ -24,10 +23,9 @@ TASK_DEPENDENCIES = {
     "ingestion": (),
     "frame_manifest": ("ingestion",),
     "shot_detection": ("frame_manifest",),
-    "segmentation": ("shot_detection",),
-    "keyframes": ("frame_manifest", "segmentation"),
+    "keyframes": ("frame_manifest", "shot_detection"),
     "visual_embedding": ("keyframes",),
-    "asr": ("segmentation",),
+    "asr": ("ingestion",),
     "ocr": ("keyframes",),
     "object_detection": ("keyframes",),
     "captioning": ("keyframes",),
@@ -43,7 +41,6 @@ def build_registry(*, artifact_store: Any) -> NodeRegistry:
         IngestionLocalNode(artifact_store=artifact_store),
         FrameManifestLocalNode(artifact_store=artifact_store),
         ShotDetectionLocalNode(artifact_store=artifact_store),
-        SegmentationLocalNode(artifact_store=artifact_store),
         KeyframesLocalNode(artifact_store=artifact_store),
         VisualEmbeddingLocalNode(artifact_store=artifact_store),
         AsrLocalNode(artifact_store=artifact_store),

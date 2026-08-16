@@ -63,7 +63,7 @@ class ObjectDetectionLocalNode(TaskNode):
                                 float(box[3]) / max(height, 1.0),
                             ],
                         })
-                identity = FrameIdentity(context.video_id, str(row.get("segment_id") or f"{context.video_id}-seg-unknown"), int(row["original_frame_id"]), int(row["timestamp_ms"]))
+                identity = FrameIdentity(context.video_id, int(row["original_frame_id"]), int(row["timestamp_ms"]))
                 records.append(normalize_detections(identity, detections, model_version=model_name))
             from pipelines.main.contracts.validation import validate_records
 

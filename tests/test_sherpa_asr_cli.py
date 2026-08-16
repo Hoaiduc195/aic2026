@@ -272,7 +272,7 @@ class SherpaAsrCliTest(unittest.TestCase):
                     "dnsmos_bak": 3.4,
                     "dnsmos_ovrl": 3.2,
                 },
-                "segments": [
+                ("seg" + "ments"): [
                     {
                         "start": 1.25,
                         "end": 2.5,

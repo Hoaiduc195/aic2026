@@ -29,7 +29,6 @@ export class UnavailableRetrievalStore implements RetrievalStore {
 interface CandidateRow extends QueryResultRow {
   readonly total_count: number | string;
   readonly rank: number;
-  readonly segment_id: string;
   readonly video_id: string;
   readonly original_frame_id: number | null;
   readonly start_ms: number;
@@ -53,8 +52,8 @@ export class PostgresRetrievalStore implements RetrievalStore {
         RETURNING query_id
       )
       INSERT INTO retrieval_candidates
-        (query_id, rank, segment_id, video_id, original_frame_id, start_ms, end_ms, preview_uri, score, evidence_ids, matched_modalities, fusion_trace)
-      SELECT $1, candidate.ordinality::integer, candidate.value->>'segment_id', candidate.value->>'video_id',
+        (query_id, rank, video_id, original_frame_id, start_ms, end_ms, preview_uri, score, evidence_ids, matched_modalities, fusion_trace)
+      SELECT $1, candidate.ordinality::integer, candidate.value->>'video_id',
              NULLIF(candidate.value->>'original_frame_id', '')::integer,
              (candidate.value->>'start_ms')::integer, (candidate.value->>'end_ms')::integer,
              candidate.value->>'preview_uri', (candidate.value->>'score')::double precision,
@@ -71,7 +70,7 @@ export class PostgresRetrievalStore implements RetrievalStore {
 
   async listCandidates(queryId: string, limit: number, offset: number): Promise<CandidatePage> {
     const result = await this.database.query<CandidateRow>(`
-      SELECT COUNT(*) OVER() AS total_count, rank, segment_id, video_id, original_frame_id,
+      SELECT COUNT(*) OVER() AS total_count, rank, video_id, original_frame_id,
              start_ms, end_ms, preview_uri, score, evidence_ids, matched_modalities, fusion_trace
       FROM retrieval_candidates WHERE query_id = $1 ORDER BY rank LIMIT $2 OFFSET $3`,
       [queryId, limit, offset]);
@@ -81,7 +80,7 @@ export class PostgresRetrievalStore implements RetrievalStore {
       limit,
       offset,
       candidates: result.rows.map((row) => ({
-        rank: row.rank, segment_id: row.segment_id, video_id: row.video_id,
+        rank: row.rank, video_id: row.video_id,
         original_frame_id: row.original_frame_id, start_ms: row.start_ms, end_ms: row.end_ms,
         preview_uri: row.preview_uri ?? undefined, score: Number(row.score),
         evidence_ids: row.evidence_ids, matched_modalities: row.matched_modalities, fusion_trace: row.fusion_trace,

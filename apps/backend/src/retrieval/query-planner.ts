@@ -187,9 +187,7 @@ export function buildDeterministicPlan(
           : branch === 'caption' ? 1.0 : 1.0;
   }
 
-  const targetGranularities = request.task === 'trake'
-    ? ['frame', 'micro_event', 'context_window'] as const
-    : request.task === 'vqa' ? ['frame', 'context_window'] as const : ['frame', 'segment'] as const;
+  const targetGranularities = ['frame'] as const;
 
   return {
     query_id: queryId,

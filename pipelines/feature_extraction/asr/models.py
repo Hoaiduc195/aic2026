@@ -8,12 +8,12 @@ from typing import Any
 
 
 def _require_non_empty(value: str, field_name: str) -> None:
-    if not isinstance(value, str) or not value:
+    if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must be a non-empty string")
 
 
 def _require_milliseconds(value: int, field_name: str) -> None:
-    if not isinstance(value, int) or value < 0:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise ValueError(f"{field_name} must be a non-negative integer")
 
 
@@ -42,30 +42,8 @@ def _require_optional_score(value: float | None, field_name: str, maximum: float
 
 
 @dataclass(frozen=True)
-class Segment:
-    """Video segment used as the temporal target for ASR chunks."""
-
-    video_id: str
-    segment_id: str
-    segment_start_ms: int
-    segment_end_ms: int
-    source: str = "asr_mapper"
-    confidence: float = 1.0
-
-    def __post_init__(self) -> None:
-        _require_non_empty(self.video_id, "video_id")
-        _require_non_empty(self.segment_id, "segment_id")
-        _require_milliseconds(self.segment_start_ms, "segment_start_ms")
-        _require_milliseconds(self.segment_end_ms, "segment_end_ms")
-        _require_non_empty(self.source, "source")
-        _require_confidence(self.confidence)
-        if self.segment_end_ms <= self.segment_start_ms:
-            raise ValueError("segment_end_ms must be greater than segment_start_ms")
-
-
-@dataclass(frozen=True)
 class WordTiming:
-    """Word-level timing and confidence emitted by the Sherpa pipeline."""
+    """Word-level timing and confidence emitted by an ASR backend."""
 
     text: str
     start_ms: int
@@ -150,8 +128,7 @@ class TranscriptChunk:
             raise ValueError("words must be a tuple of WordTiming")
         if self.text_raw is not None and not isinstance(self.text_raw, str):
             raise ValueError("text_raw must be a string or null")
-        if not isinstance(self.language, str) or not self.language.strip():
-            raise ValueError("language must be a non-empty string")
+        _require_non_empty(self.language, "language")
         _require_optional_score(
             self.no_speech_probability, "no_speech_probability", 1.0
         )
@@ -163,32 +140,63 @@ class TranscriptChunk:
 
 @dataclass(frozen=True)
 class AsrResult:
-    """Contract-compatible ASR output row."""
+    """One interval of spoken content anchored only to the video timeline."""
 
     video_id: str
-    segment_id: str
-    asr_start_ms: int
-    asr_end_ms: int
-    text: str
+    start_ms: int
+    end_ms: int
+    text_raw: str
+    text_normalized: str
+    language: str
     confidence: float
+    producer: str = "asr"
+    model_version: str = "unknown"
+    pipeline_version: str = "asr-v1"
+    schema_version: str = "1.0.0"
+    words: tuple[WordTiming, ...] = ()
+    no_speech_probability: float | None = None
+    quality: QualityInfo | None = None
 
     def __post_init__(self) -> None:
         _require_non_empty(self.video_id, "video_id")
-        _require_non_empty(self.segment_id, "segment_id")
-        _require_milliseconds(self.asr_start_ms, "asr_start_ms")
-        _require_milliseconds(self.asr_end_ms, "asr_end_ms")
-        if not isinstance(self.text, str):
-            raise TypeError("text must be a string")
+        _require_milliseconds(self.start_ms, "start_ms")
+        _require_milliseconds(self.end_ms, "end_ms")
+        _require_non_empty(self.text_raw, "text_raw")
+        _require_non_empty(self.text_normalized, "text_normalized")
+        _require_non_empty(self.language, "language")
         _require_confidence(self.confidence)
-        if self.asr_end_ms <= self.asr_start_ms:
-            raise ValueError("asr_end_ms must be greater than asr_start_ms")
+        _require_non_empty(self.producer, "producer")
+        _require_non_empty(self.model_version, "model_version")
+        _require_non_empty(self.pipeline_version, "pipeline_version")
+        _require_non_empty(self.schema_version, "schema_version")
+        if not isinstance(self.words, tuple) or not all(
+            isinstance(word, WordTiming) for word in self.words
+        ):
+            raise ValueError("words must be a tuple of WordTiming")
+        _require_optional_score(self.no_speech_probability, "no_speech_probability", 1.0)
+        if self.quality is not None and not isinstance(self.quality, QualityInfo):
+            raise ValueError("quality must be QualityInfo or null")
+        if self.end_ms <= self.start_ms:
+            raise ValueError("end_ms must be greater than start_ms")
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        row: dict[str, Any] = {
             "video_id": self.video_id,
-            "segment_id": self.segment_id,
-            "asr_start_ms": self.asr_start_ms,
-            "asr_end_ms": self.asr_end_ms,
-            "text": self.text,
+            "start_ms": self.start_ms,
+            "end_ms": self.end_ms,
+            "text_raw": self.text_raw,
+            "text_normalized": self.text_normalized,
+            "language": self.language,
             "confidence": self.confidence,
+            "producer": self.producer,
+            "model_version": self.model_version,
+            "pipeline_version": self.pipeline_version,
+            "schema_version": self.schema_version,
         }
+        if self.words:
+            row["words"] = [word.to_dict() for word in self.words]
+        if self.no_speech_probability is not None:
+            row["no_speech_probability"] = self.no_speech_probability
+        if self.quality is not None:
+            row["quality"] = self.quality.to_dict()
+        return row

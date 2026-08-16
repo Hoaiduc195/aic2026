@@ -1,7 +1,7 @@
 # Ho Chi Minh City AI Challenge 2026: Multimedia Preprocessing Pipeline
 
 ## Overview
-This repository serves as the official, primary codebase for the Ho Chi Minh City AI Challenge 2026. It encapsulates the comprehensive Multimedia Preprocessing Pipeline and the advanced Retrieval System designed to tackle complex, large-scale video and segment search tasks using Natural Language Queries (NLQ).
+This repository serves as the official, primary codebase for the Ho Chi Minh City AI Challenge 2026. It encapsulates the comprehensive Multimedia Preprocessing Pipeline and the advanced Retrieval System designed to tackle complex, large-scale video and frame/evidence search tasks using Natural Language Queries (NLQ).
 
 ## Directory Structure
 The source code within this repository is organized systematically to promote modularity and scalability:

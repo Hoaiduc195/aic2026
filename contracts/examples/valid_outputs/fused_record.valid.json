@@ -1,8 +1,7 @@
 {
   "video_id": "video_test_0001",
-  "segment_id": "video_test_0001_seg_002",
-  "segment_start_ms": 12000,
-  "segment_end_ms": 18000,
+  "original_frame_id": 385,
+  "timestamp_ms": 15400,
   "keyframes": [
     "frame_000385"
   ],
@@ -26,6 +25,6 @@
   ],
   "storage_refs": {
     "keyframe_uri": "s3://aic-multimedia-artifacts/keyframes/video_test_0001/frame_000385.webp",
-    "transcript_uri": "s3://aic-multimedia-artifacts/transcripts/video_test_0001/asr_segments.parquet"
+    "transcript_uri": "s3://aic-multimedia-artifacts/transcripts/video_test_0001/asr_spans.parquet"
   }
 }

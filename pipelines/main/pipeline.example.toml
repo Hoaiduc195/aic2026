@@ -6,7 +6,7 @@ dataset_version = "local"
 output_dir = "outputs"
 max_concurrency = 1
 fail_fast = false
-tasks = ["ingestion", "frame_manifest", "shot_detection", "segmentation", "keyframes", "visual_embedding", "asr", "ocr", "object_detection", "captioning", "normalization"]
+tasks = ["ingestion", "frame_manifest", "shot_detection", "keyframes", "visual_embedding", "asr", "ocr", "object_detection", "captioning", "normalization"]
 
 [nodes.shot_detection.options]
 scene_change_threshold = 0.35

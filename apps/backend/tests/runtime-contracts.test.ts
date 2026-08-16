@@ -61,7 +61,7 @@ describe('runtime payload contract parity', () => {
       isConfigured: true,
       health: vi.fn(async () => true),
       query: vi.fn(async () => ({ rows: [{
-        evidence_id: 'object-1', segment_id: 'segment-1', video_id: 'video-1', original_frame_id: 5,
+        evidence_id: 'object-1', video_id: 'video-1', original_frame_id: 5,
         start_ms: 100, end_ms: 101, preview_object_key: 'keyframes/video-1/5.jpg', rank_score: 0.9,
         matched_label: 'bottle',
       }] as never[], rowCount: 1 })),
@@ -86,7 +86,7 @@ describe('runtime payload contract parity', () => {
           query_id: plan.query_id, branch: 'caption' as const, status: 'completed' as const,
           query_variant: plan.original_query,
           candidates: [{
-            segment_id: 's1', video_id: 'v1', rank: 1, raw_score: 0.8,
+            video_id: 'v1', rank: 1, raw_score: 0.8,
             original_frame_id: 3, start_ms: 100, end_ms: 200, evidence_ids: ['caption-1'],
           }],
           elapsed_ms: 1, deadline_ms: plan.latency_budget_ms,

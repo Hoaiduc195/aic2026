@@ -6,9 +6,8 @@
   "additionalProperties": false,
   "required": [
     "video_id",
-    "segment_id",
-    "segment_start_ms",
-    "segment_end_ms",
+    "original_frame_id",
+    "timestamp_ms",
     "keyframes",
     "ocr_text",
     "asr_text",
@@ -19,9 +18,8 @@
   ],
   "properties": {
     "video_id": { "type": "string", "minLength": 1 },
-    "segment_id": { "type": "string", "minLength": 1 },
-    "segment_start_ms": { "type": "integer", "minimum": 0 },
-    "segment_end_ms": { "type": "integer", "minimum": 0 },
+    "original_frame_id": { "type": "integer", "minimum": 0 },
+    "timestamp_ms": { "type": "integer", "minimum": 0 },
     "keyframes": {
       "type": "array",
       "items": { "type": "string", "minLength": 1 }

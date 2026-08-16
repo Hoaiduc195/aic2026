@@ -45,9 +45,9 @@ function database(rows: readonly unknown[]): DatabaseClient {
 describe('Postgres retrieval branches', () => {
   it('uses parameterized FTS and maps caption evidence to a candidate', async () => {
     const db = database([{
-      evidence_id: 'caption-1', segment_id: 'segment-1', video_id: 'video-1',
+      evidence_id: 'caption-1', video_id: 'video-1',
       original_frame_id: 42, start_ms: 1000, end_ms: 2000,
-      preview_object_key: 'keyframes/video-1/000042.jpg', rank_score: 0.8,
+      preview_object_key: 'keyframes/video-1/000042.jpg', video_object_key: 'videos/video-1.mp4', rank_score: 0.8,
     }]);
     const branch = new PostgresTextBranch('caption', 'caption', db);
 
@@ -56,6 +56,7 @@ describe('Postgres retrieval branches', () => {
     expect(result.status).toBe('completed');
     expect(result.candidates[0]).toMatchObject({
       video_id: 'video-1', original_frame_id: 42, evidence_ids: ['caption-1'], rank: 1,
+      video_object_key: 'videos/video-1.mp4',
     });
     const [sql, parameters] = vi.mocked(db.query).mock.calls[0];
     expect(sql).toContain('websearch_to_tsquery');
@@ -66,15 +67,16 @@ describe('Postgres retrieval branches', () => {
 
   it('searches normalized object labels without interpolating user input', async () => {
     const db = database([{
-      evidence_id: 'object-1', segment_id: 'segment-1', video_id: 'video-1',
+      evidence_id: 'object-1', video_id: 'video-1',
       original_frame_id: 5, start_ms: 100, end_ms: 101,
-      preview_object_key: null, rank_score: 0.7, matched_label: 'bicycle',
+      preview_object_key: null, video_object_key: 'videos/video-1.mp4', rank_score: 0.7, matched_label: 'bicycle',
     }]);
     const branch = new PostgresObjectBranch(db);
 
     const result = await branch.search('bicycle', { ...plan, branches: ['object'] });
 
     expect(result.candidates[0].matched_terms).toEqual(['bicycle']);
+    expect(result.candidates[0].video_object_key).toBe('videos/video-1.mp4');
     const [sql, parameters] = vi.mocked(db.query).mock.calls[0];
     expect(sql).toContain('similarity');
     expect(sql).toContain("ir.status = 'active'");

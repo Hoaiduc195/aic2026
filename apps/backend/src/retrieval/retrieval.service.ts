@@ -14,7 +14,7 @@ import type {
   SearchResponse,
 } from '../common/types';
 import type { BackendConfig } from '../common/config';
-import { fuseBranchResults } from './fusion';
+import { candidateKey, fuseBranchResults } from './fusion';
 import type { RetrievalBranch } from './branch';
 import { buildDeterministicPlan, queryForBranch } from './query-planner';
 import type { TaskExecutorInput } from '../tasks/task-executor';
@@ -22,6 +22,7 @@ import { TaskExecutorRegistry } from '../tasks/task-registry';
 import type { RetrievalStore } from './retrieval.store';
 import type { EvidenceRepository, EvidenceView } from './evidence.repository';
 import type { ObjectStorage } from '../storage/object-storage';
+import { signPreviewUris, withPreviewReferences } from '../storage/preview-url';
 
 const DEFAULT_BRANCH_K = 200;
 const DEFAULT_FUSION_K = 500;
@@ -64,16 +65,12 @@ export class RetrievalService {
         .map((branch) => this.runBranchVariants(branch, plan)),
     );
     const fusedCandidates = fuseBranchResults(branchResults, plan);
+    const persistedCandidates = withPreviewReferences(fusedCandidates);
     const warnings: string[] = [];
-    let candidates = fusedCandidates;
+    let responseCandidates = persistedCandidates;
     if (this.storage?.isConfigured) {
       try {
-        candidates = await Promise.all(fusedCandidates.map(async (candidate) => {
-          const prefix = 'r2://media/';
-          return candidate.preview_uri?.startsWith(prefix)
-            ? { ...candidate, preview_uri: await this.storage!.signReadUrl(candidate.preview_uri.slice(prefix.length)) }
-            : candidate;
-        }));
+        responseCandidates = await signPreviewUris(persistedCandidates, this.storage);
       } catch (error) {
         this.logger.warn(`preview signing failed: ${error instanceof Error ? error.message : 'unknown error'}`);
         warnings.push('preview_signing_failed');
@@ -82,14 +79,14 @@ export class RetrievalService {
 
     let evidenceById: ReadonlyMap<string, EvidenceView> = new Map();
     try {
-      const evidenceIds = [...new Set(candidates.flatMap((candidate) => candidate.evidence_ids))];
+      const evidenceIds = [...new Set(responseCandidates.flatMap((candidate) => candidate.evidence_ids))];
       evidenceById = await this.evidenceRepository?.findByIds(evidenceIds) ?? evidenceById;
     } catch (error) {
       this.logger.warn(`evidence hydration failed: ${error instanceof Error ? error.message : 'unknown error'}`);
       warnings.push('evidence_hydration_failed');
     }
     try {
-      await this.store?.saveRun(request, plan, candidates);
+      await this.store?.saveRun(request, plan, persistedCandidates);
     } catch (error) {
       this.logger.warn(`retrieval persistence failed: ${error instanceof Error ? error.message : 'unknown error'}`);
       warnings.push('retrieval_persistence_failed');
@@ -99,7 +96,7 @@ export class RetrievalService {
       request,
       plan,
       branchResults,
-      candidates,
+      candidates: responseCandidates,
       elapsedMs: Math.round(performance.now() - startedAt),
       config: this.config,
       evidenceById,
@@ -168,7 +165,7 @@ export class RetrievalService {
     const candidates = new Map<string, BranchResult['candidates'][number]>();
     for (const result of completed) {
       for (const candidate of result.candidates) {
-        const key = `${candidate.video_id}:${candidate.segment_id}`;
+        const key = candidateKey(candidate.video_id, candidate.original_frame_id, candidate.start_ms, candidate.end_ms);
         const current = candidates.get(key);
         candidates.set(key, current
           ? {

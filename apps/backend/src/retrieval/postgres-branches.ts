@@ -7,8 +7,8 @@ import { normalizeRetrievalText } from './query-planner';
 
 interface CandidateRow extends QueryResultRow {
   readonly evidence_id: string;
-  readonly segment_id: string;
   readonly video_id: string;
+  readonly video_object_key: string | null;
   readonly original_frame_id: number | null;
   readonly start_ms: number;
   readonly end_ms: number;
@@ -23,8 +23,8 @@ function previewUri(key: string | null): string | undefined {
 
 function candidatesFromRows(rows: readonly CandidateRow[]): BranchCandidate[] {
   return rows.map((row, index) => ({
-    segment_id: row.segment_id,
     video_id: row.video_id,
+    ...(row.video_object_key ? { video_object_key: row.video_object_key } : {}),
     rank: index + 1,
     raw_score: Number(row.rank_score),
     original_frame_id: row.original_frame_id,
@@ -83,7 +83,7 @@ export class PostgresTextBranch extends PostgresBranch {
     const normalizedQuery = normalizeRetrievalText(query).toLowerCase();
     const result = await this.database.query<CandidateRow>(`
       WITH query AS (SELECT websearch_to_tsquery('simple', $1) AS value)
-      SELECT e.evidence_id, e.segment_id, e.video_id, e.original_frame_id,
+      SELECT e.evidence_id, e.video_id, v.object_key AS video_object_key, e.original_frame_id,
              e.start_ms, e.end_ms, f.thumbnail_object_key AS preview_object_key,
              GREATEST(
                ts_rank_cd(t.search_document, query.value),
@@ -91,6 +91,7 @@ export class PostgresTextBranch extends PostgresBranch {
              ) + CASE WHEN lower(t.text_content) LIKE '%' || lower($1) || '%' THEN 0.25 ELSE 0 END AS rank_score
       FROM text_evidence t
       JOIN evidence e ON e.evidence_id = t.evidence_id
+      JOIN videos v ON v.video_id = e.video_id
       JOIN feature_sets fs ON fs.feature_set_id = e.feature_set_id
       JOIN index_release_features irf
         ON irf.feature_set_id = fs.feature_set_id
@@ -133,7 +134,7 @@ export class PostgresObjectBranch extends PostgresBranch {
     const result = await this.database.query<CandidateRow>(`
       WITH query_terms AS (SELECT unnest($1::text[]) AS term),
       scored AS (
-      SELECT e.evidence_id, e.segment_id, e.video_id, e.original_frame_id,
+      SELECT e.evidence_id, e.video_id, v.object_key AS video_object_key, e.original_frame_id,
              e.start_ms, e.end_ms, f.thumbnail_object_key AS preview_object_key,
              MAX(
                (CASE WHEN o.normalized_label = q.term THEN 1.0 ELSE similarity(o.normalized_label, q.term) END)
@@ -142,6 +143,7 @@ export class PostgresObjectBranch extends PostgresBranch {
              o.label AS matched_label
       FROM object_evidence o
       JOIN evidence e ON e.evidence_id = o.evidence_id
+      JOIN videos v ON v.video_id = e.video_id
       JOIN feature_sets fs ON fs.feature_set_id = e.feature_set_id
       JOIN index_release_features irf
         ON irf.feature_set_id = fs.feature_set_id
@@ -155,7 +157,7 @@ export class PostgresObjectBranch extends PostgresBranch {
       WHERE o.confidence >= $2
         AND ir.status = 'active'
         AND ir.index_version = $3
-      GROUP BY e.evidence_id, e.segment_id, e.video_id, e.original_frame_id,
+      GROUP BY e.evidence_id, e.video_id, v.object_key, e.original_frame_id,
                e.start_ms, e.end_ms, f.thumbnail_object_key, o.label
       )
       SELECT * FROM scored

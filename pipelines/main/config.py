@@ -13,7 +13,6 @@ DEFAULT_TASKS = (
     "ingestion",
     "frame_manifest",
     "shot_detection",
-    "segmentation",
     "keyframes",
     "visual_embedding",
     "asr",

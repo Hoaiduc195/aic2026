@@ -20,8 +20,8 @@ const response: SearchResponse = {
   confidence: { level: 'high', score: 0.91 },
   results: [
     {
-      segment_id: 'video_01_seg_01',
       video_id: 'video_01',
+      original_frame_id: 385,
       start_ms: 10_000,
       end_ms: 16_000,
       preview_uri: 's3://demo/frame.webp',
@@ -240,8 +240,8 @@ describe('qualification frame-first workbench', () => {
     const user = userEvent.setup();
     const secondResult = {
       ...response.results[0],
-      segment_id: 'video_02_seg_01',
       video_id: 'video_02',
+      original_frame_id: 420,
       representative_frame: { original_frame_id: 420, timestamp_ms: 14_000, preview_uri: null },
     };
     renderWorkbench({ searchResponse: { ...response, results: [...response.results, secondResult] } });

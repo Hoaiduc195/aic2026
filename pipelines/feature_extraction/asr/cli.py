@@ -1,4 +1,4 @@
-"""CLI for legacy transcript mapping and headless Sherpa transcription."""
+"""CLI for timeline-only ASR transcription."""
 
 from __future__ import annotations
 
@@ -14,13 +14,12 @@ from pipelines.feature_extraction.asr.config import (
     load_sherpa_config,
 )
 from pipelines.feature_extraction.asr.io import (
-    read_segments_json,
+    chunks_to_results,
     write_asr_results_json,
     write_asr_results_jsonl,
     write_asr_results_parquet,
 )
 from pipelines.feature_extraction.asr.runner import batch_transcribe, transcribe_file
-from pipelines.feature_extraction.asr.segment_mapping import map_transcripts_to_segments
 from pipelines.feature_extraction.asr.sherpa_backend import (
     SherpaBackend,
     check_sherpa_runtime,
@@ -135,9 +134,8 @@ def _config_from_args(args: argparse.Namespace) -> SherpaAsrConfig:
 
 
 def _legacy_main(argv: list[str]) -> None:
-    parser = argparse.ArgumentParser(description="Run ASR and emit contract-compatible rows.")
+    parser = argparse.ArgumentParser(description="Run ASR and emit timeline-only contract rows.")
     parser.add_argument("--video-id", required=True)
-    parser.add_argument("--segments", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--audio", type=Path)
     parser.add_argument("--video", type=Path)
@@ -161,8 +159,13 @@ def _legacy_main(argv: list[str]) -> None:
         else _resolve_audio_path(args.video_id, args.audio, args.video, args.workdir)
     )
     transcripts = list(backend.transcribe(audio_path))
-    segments = read_segments_json(args.segments)
-    results = map_transcripts_to_segments(args.video_id, transcripts, segments)
+    results = chunks_to_results(
+        transcripts,
+        video_id=args.video_id,
+        model_version=args.model_name,
+        producer=f"asr:{args.backend}",
+        pipeline_version="asr-cli-v2",
+    )
 
     if args.format == "jsonl":
         write_asr_results_jsonl(results, args.output)

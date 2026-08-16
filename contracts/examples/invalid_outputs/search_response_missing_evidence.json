@@ -12,8 +12,8 @@
   "confidence": {"level": "high", "score": 0.91},
   "results": [
     {
-      "segment_id": "video_test_0001_seg_002",
       "video_id": "video_test_0001",
+      "original_frame_id": 385,
       "start_ms": 12000,
       "end_ms": 18000,
       "preview_uri": "s3://aic-multimedia-artifacts/keyframes/video_test_0001/frame_000385.webp",

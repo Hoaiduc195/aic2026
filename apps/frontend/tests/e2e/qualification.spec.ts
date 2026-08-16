@@ -14,8 +14,8 @@ const searchResponse = {
   confidence: { level: 'high', score: 0.91 },
   results: [
     {
-      segment_id: 'video_01_seg_01',
       video_id: 'video_01',
+      original_frame_id: 385,
       start_ms: 10_000,
       end_ms: 16_000,
       preview_uri: 's3://demo/frame.webp',

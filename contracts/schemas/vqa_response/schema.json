@@ -10,7 +10,6 @@
     "result_id": { "type": "string", "minLength": 1 },
     "query_id": { "type": "string", "minLength": 1 },
     "video_id": { "type": "string", "minLength": 1 },
-    "segment_id": { "type": ["string", "null"], "minLength": 1 },
     "original_frame_id": { "type": "integer", "minimum": 0 },
     "timestamp_ms": { "type": "integer", "minimum": 0 },
     "answer_status": { "type": "string", "enum": ["answered", "needs_more_evidence", "abstained"] },

@@ -15,7 +15,6 @@ class NormalizationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.identity = FrameIdentity(
             video_id="video-1",
-            segment_id="video-1-seg-0001",
             original_frame_id=12,
             timestamp_ms=480,
         )
@@ -44,7 +43,7 @@ class NormalizationTests(unittest.TestCase):
         )
         self.assertEqual(record["text"], "")
         self.assertEqual(record["boxes"], [])
-        self.assertEqual(record["segment_id"], "video-1-seg-0001")
+        self.assertEqual(record["original_frame_id"], 12)
 
     def test_normalized_object_record_validates_against_repository_contract(self) -> None:
         record = normalize_detections(self.identity, [], model_version="yolo26n.pt")

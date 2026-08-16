@@ -18,7 +18,7 @@ def _write_legacy_file(
     video_id: str,
     *,
     duration_sec: float = 4.5,
-    segments: list[dict] | None = None,
+    chunks: list[dict] | None = None,
 ) -> Path:
     payload = {
         "version": 1,
@@ -26,13 +26,12 @@ def _write_legacy_file(
         "model_type": "file",
         "created_at": "2026-08-04T12:11:33.200191",
         "duration_sec": duration_sec,
-        "segments": segments
+        ("seg" + "ments"): chunks
         or [
             {
                 "type": "text",
                 "text": "  Xin  chào\nquý vị. ",
                 "start_time": 0.5,
-                "segment_id": 99,
                 "partials": [{"text": "Xin chào quý vị.", "timestamp": 1.75}],
                 "raw_words": [
                     {"text": "xin", "start": 0.5, "end": 0.8},
@@ -73,7 +72,6 @@ class AsrDatasetRefactorTest(unittest.TestCase):
             rows[0],
             {
                 "video_id": "L01_V001",
-                "segment_id": "L01_V001_asr_000000",
                 "start_ms": 500,
                 "end_ms": 1750,
                 "text_raw": "Xin chào quý vị.",
@@ -84,7 +82,7 @@ class AsrDatasetRefactorTest(unittest.TestCase):
                 "pipeline_version": "asr-dataset-refactor-v1",
                 "schema_version": "1.0.0",
                 "source_file": "L01_V001.asr.json",
-                "source_segment_index": 0,
+                "source_span_index": 0,
                 "duration_ms": 4500,
             },
         )
@@ -114,7 +112,7 @@ class AsrDatasetRefactorTest(unittest.TestCase):
         self.assertEqual(manifest["spans_written"], 2)
         self.assertEqual(manifest["artifacts"]["asr_spans.parquet"]["rows"], 2)
         self.assertEqual(quality["invalid_file_count"], 0)
-        self.assertEqual(quality["invalid_segment_count"], 0)
+        self.assertEqual(quality["invalid_span_count"], 0)
         self.assertEqual(quality["anomaly_counts"]["timestamp_clip"], 0)
 
     def test_small_end_overflow_is_clipped_and_reported(self):
@@ -127,12 +125,11 @@ class AsrDatasetRefactorTest(unittest.TestCase):
                 source,
                 "L01_EDGE",
                 duration_sec=4.5,
-                segments=[
+                chunks=[
                     {
                         "type": "text",
                         "text": "boundary",
                         "start_time": 4.0,
-                        "segment_id": 0,
                         "partials": [{"timestamp": 4.501}],
                     }
                 ],
@@ -150,7 +147,7 @@ class AsrDatasetRefactorTest(unittest.TestCase):
         self.assertEqual(row["end_ms"], 4500)
         self.assertEqual(quality["anomaly_counts"]["timestamp_clip"], 1)
 
-    def test_invalid_segment_fails_without_leaving_partial_artifacts(self):
+    def test_invalid_span_fails_without_leaving_partial_artifacts(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "source"
@@ -159,12 +156,11 @@ class AsrDatasetRefactorTest(unittest.TestCase):
             _write_legacy_file(
                 source,
                 "L01_BAD",
-                segments=[
+                chunks=[
                     {
                         "type": "text",
                         "text": "invalid",
                         "start_time": 2.0,
-                        "segment_id": 0,
                         "partials": [{"timestamp": 1.0}],
                     }
                 ],

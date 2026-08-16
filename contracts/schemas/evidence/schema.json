@@ -10,7 +10,6 @@
     "evidence_id": { "type": "string", "minLength": 1 },
     "evidence_type": { "type": "string", "enum": ["frame", "ocr", "asr", "caption", "object", "track", "audio", "temporal"] },
     "video_id": { "type": "string", "minLength": 1 },
-    "segment_id": { "type": ["string", "null"], "minLength": 1 },
     "micro_event_id": { "type": ["string", "null"], "minLength": 1 },
     "event_window_id": { "type": ["string", "null"], "minLength": 1 },
     "original_frame_id": { "type": ["integer", "null"], "minimum": 0 },

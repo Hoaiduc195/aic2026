@@ -13,8 +13,8 @@ import {
 import type { FrameCandidate, SearchResponse, SearchResult } from '@/lib/contracts';
 
 const result: SearchResult = {
-  segment_id: 'video_01_seg_02',
   video_id: 'video_01',
+  original_frame_id: 385,
   start_ms: 12_000,
   end_ms: 18_000,
   preview_uri: 's3://demo/video.webp',
@@ -67,7 +67,7 @@ describe('workbench answer model', () => {
     expect(buildAnswer('trake', result, '', '', ['10', '', '30', '40'])).toBeNull();
     expect(buildSubmission('textual_kis', 'query_01', [])).toBeNull();
     expect(formatMs(12_340)).toBe('12.34s');
-    expect(resultKey(result)).toBe('video_01\u0000video_01_seg_02');
+    expect(resultKey(result)).toBe('video_01\u0000385');
   });
 
   it('normalizes search results into browser-safe frame candidates', () => {
@@ -75,7 +75,7 @@ describe('workbench answer model', () => {
       query_id: 'query_01',
       degraded: false,
       unavailable_branches: [],
-      results: [result, { ...result, segment_id: 'missing-frame', representative_frame: null }],
+      results: [result, { ...result, original_frame_id: null, representative_frame: null }],
     };
 
     const normalized = toFrameCandidates(searchResponse);

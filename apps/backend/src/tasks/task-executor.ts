@@ -28,16 +28,16 @@ export interface TaskExecutor {
 export function toSearchResults(
   candidates: readonly FusedCandidate[],
   displayK: number,
-  bucket?: string,
   evidenceById: ReadonlyMap<string, EvidenceView> = new Map(),
 ): SearchResult[] {
   return candidates.slice(0, displayK).map((candidate) => {
     const startMs = Math.max(candidate.start_ms, 0);
     const endMs = Math.max(candidate.end_ms, startMs + 1);
-    const previewUri = candidate.preview_uri ?? `r2://${bucket ?? 'unconfigured'}/videos/${candidate.video_id}.mp4`;
+    const previewUri = candidate.preview_uri
+      ?? (candidate.video_object_key ? `r2://media/${candidate.video_object_key}` : `r2://unavailable/${candidate.video_id}`);
     return {
-      segment_id: candidate.segment_id,
       video_id: candidate.video_id,
+      original_frame_id: candidate.original_frame_id ?? null,
       start_ms: startMs,
       end_ms: endMs,
       preview_uri: previewUri,
@@ -86,7 +86,7 @@ export function buildSearchResponse(
       fallbacks_applied: degraded ? ['continue_with_available_branches'] : [],
       action: hasResults ? 'return' : 'expand',
     },
-    results: toSearchResults(input.candidates, input.plan.display_k, input.config.r2Bucket, input.evidenceById),
+    results: toSearchResults(input.candidates, input.plan.display_k, input.evidenceById),
     timing: {
       elapsed_ms: input.elapsedMs,
       branch_status: Object.fromEntries(input.branchResults.map((result) => [result.branch, result.status])),

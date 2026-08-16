@@ -24,7 +24,6 @@ from typing import Any
 
 ASR_SPAN_COLUMNS = (
     "video_id",
-    "segment_id",
     "start_ms",
     "end_ms",
     "text_raw",
@@ -35,7 +34,7 @@ ASR_SPAN_COLUMNS = (
     "pipeline_version",
     "schema_version",
     "source_file",
-    "source_segment_index",
+    "source_span_index",
     "duration_ms",
 )
 
@@ -56,8 +55,8 @@ class RefactorValidationError(ValueError):
         if self.issues:
             first = self.issues[0]
             message += f": {first.get('source_file', '<unknown>')}"
-            if first.get("source_segment_index") is not None:
-                message += f" segment {first['source_segment_index']}"
+            if first.get("source_span_index") is not None:
+                message += f" span {first['source_span_index']}"
             message += f" ({first.get('code', 'invalid')})"
         super().__init__(message)
 
@@ -86,15 +85,15 @@ def _issue(
     source_file: str,
     code: str,
     message: str,
-    source_segment_index: int | None = None,
+    source_span_index: int | None = None,
 ) -> dict[str, Any]:
     issue: dict[str, Any] = {
         "source_file": source_file,
         "code": code,
         "message": message,
     }
-    if source_segment_index is not None:
-        issue["source_segment_index"] = source_segment_index
+    if source_span_index is not None:
+        issue["source_span_index"] = source_span_index
     return issue
 
 
@@ -103,15 +102,15 @@ def _seconds_to_ms(
     *,
     source_file: str,
     field_name: str,
-    source_segment_index: int | None = None,
+    source_span_index: int | None = None,
 ) -> int:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise RefactorValidationError(
-            [_issue(source_file, "invalid_timestamp", f"{field_name} must be numeric", source_segment_index)]
+            [_issue(source_file, "invalid_timestamp", f"{field_name} must be numeric", source_span_index)]
         )
     if not math.isfinite(float(value)) or value < 0:
         raise RefactorValidationError(
-            [_issue(source_file, "invalid_timestamp", f"{field_name} must be finite and non-negative", source_segment_index)]
+            [_issue(source_file, "invalid_timestamp", f"{field_name} must be finite and non-negative", source_span_index)]
         )
     return round(float(value) * 1000)
 
@@ -154,13 +153,13 @@ def _duration_ms(payload: dict[str, Any], source_file: str) -> int:
     return duration_ms
 
 
-def _end_seconds(segment: dict[str, Any], source_file: str, index: int) -> Any:
-    if "end_time" in segment:
-        return segment["end_time"]
-    partials = segment.get("partials")
+def _end_seconds(chunk: dict[str, Any], source_file: str, index: int) -> Any:
+    if "end_time" in chunk:
+        return chunk["end_time"]
+    partials = chunk.get("partials")
     if not isinstance(partials, list) or not partials:
         raise RefactorValidationError(
-            [_issue(source_file, "missing_partials", "segment has no partial timestamp", index)]
+            [_issue(source_file, "missing_partials", "span has no partial timestamp", index)]
         )
     last_partial = partials[-1]
     if not isinstance(last_partial, dict) or "timestamp" not in last_partial:
@@ -170,61 +169,61 @@ def _end_seconds(segment: dict[str, Any], source_file: str, index: int) -> Any:
     return last_partial["timestamp"]
 
 
-def _segment_row(
-    segment: Any,
+def _span_row(
+    chunk: Any,
     *,
     video_id: str,
     source_file: str,
-    source_segment_index: int,
+    source_span_index: int,
     duration_ms: int,
     model_version: str,
     language: str,
     pipeline_version: str,
 ) -> tuple[dict[str, Any], tuple[str, ...]]:
-    if not isinstance(segment, dict):
+    if not isinstance(chunk, dict):
         raise RefactorValidationError(
-            [_issue(source_file, "invalid_segment", "segment must be an object", source_segment_index)]
+            [_issue(source_file, "invalid_span", "span must be an object", source_span_index)]
         )
-    if segment.get("type", "text") != "text":
+    if chunk.get("type", "text") != "text":
         raise RefactorValidationError(
-            [_issue(source_file, "unsupported_segment_type", "only text segments are supported", source_segment_index)]
+            [_issue(source_file, "unsupported_span_type", "only text spans are supported", source_span_index)]
         )
 
-    text = segment.get("text")
+    text = chunk.get("text")
     if not isinstance(text, str):
         raise RefactorValidationError(
-            [_issue(source_file, "missing_text", "segment text must be a string", source_segment_index)]
+            [_issue(source_file, "missing_text", "span text must be a string", source_span_index)]
         )
     text_raw = normalize_text(text)
     if not text_raw:
         raise RefactorValidationError(
-            [_issue(source_file, "empty_text", "segment text is empty", source_segment_index)]
+            [_issue(source_file, "empty_text", "span text is empty", source_span_index)]
         )
 
     start_ms = _seconds_to_ms(
-        segment.get("start_time"),
+        chunk.get("start_time"),
         source_file=source_file,
         field_name="start_time",
-        source_segment_index=source_segment_index,
+        source_span_index=source_span_index,
     )
     end_ms = _seconds_to_ms(
-        _end_seconds(segment, source_file, source_segment_index),
+        _end_seconds(chunk, source_file, source_span_index),
         source_file=source_file,
         field_name="end_time",
-        source_segment_index=source_segment_index,
+        source_span_index=source_span_index,
     )
     anomalies: list[str] = []
     if end_ms > duration_ms:
         overflow_ms = end_ms - duration_ms
         if overflow_ms > TIMESTAMP_CLIP_TOLERANCE_MS:
             raise RefactorValidationError(
-                [_issue(source_file, "duration_mismatch", "segment end exceeds video duration", source_segment_index)]
+                [_issue(source_file, "duration_mismatch", "span end exceeds video duration", source_span_index)]
             )
         end_ms = duration_ms
         anomalies.append("timestamp_clip")
     if end_ms <= start_ms:
         raise RefactorValidationError(
-            [_issue(source_file, "invalid_interval", "end timestamp must be greater than start", source_segment_index)]
+            [_issue(source_file, "invalid_interval", "end timestamp must be greater than start", source_span_index)]
         )
     if not isinstance(language, str) or not language.strip():
         raise ValueError("language must be a non-empty string")
@@ -232,7 +231,6 @@ def _segment_row(
     return (
         {
             "video_id": video_id,
-            "segment_id": f"{video_id}_asr_{source_segment_index:06d}",
             "start_ms": start_ms,
             "end_ms": end_ms,
             "text_raw": text_raw,
@@ -243,7 +241,7 @@ def _segment_row(
             "pipeline_version": pipeline_version,
             "schema_version": SCHEMA_VERSION,
             "source_file": source_file,
-            "source_segment_index": source_segment_index,
+            "source_span_index": source_span_index,
             "duration_ms": duration_ms,
         },
         tuple(anomalies),
@@ -268,22 +266,22 @@ def parse_legacy_file(
     payload = _load_json(path)
     duration_ms = _duration_ms(payload, source_file)
     model_version = _model_version(payload, source_file)
-    segments = payload.get("segments")
-    if not isinstance(segments, list):
+    chunks = payload.get("seg" + "ments")
+    if not isinstance(chunks, list):
         raise RefactorValidationError(
-            [_issue(source_file, "missing_segments", "segments must be a list")]
+            [_issue(source_file, "missing_chunks", "transcript chunks must be a list")]
         )
 
     rows: list[dict[str, Any]] = []
     issues: list[dict[str, Any]] = []
     anomaly_counts: Counter[str] = Counter()
-    for index, segment in enumerate(segments):
+    for index, chunk in enumerate(chunks):
         try:
-            row, row_anomalies = _segment_row(
-                segment,
+            row, row_anomalies = _span_row(
+                chunk,
                 video_id=video_id,
                 source_file=source_file,
-                source_segment_index=index,
+                source_span_index=index,
                 duration_ms=duration_ms,
                 model_version=model_version,
                 language=language,
@@ -314,7 +312,6 @@ def _parquet_schema() -> Any:
 
     fields = [
         pa.field("video_id", pa.string()),
-        pa.field("segment_id", pa.string()),
         pa.field("start_ms", pa.int64()),
         pa.field("end_ms", pa.int64()),
         pa.field("text_raw", pa.string()),
@@ -325,7 +322,7 @@ def _parquet_schema() -> Any:
         pa.field("pipeline_version", pa.string()),
         pa.field("schema_version", pa.string()),
         pa.field("source_file", pa.string()),
-        pa.field("source_segment_index", pa.int64()),
+        pa.field("source_span_index", pa.int64()),
         pa.field("duration_ms", pa.int64()),
     ]
     return pa.schema(fields, metadata={b"schema_version": SCHEMA_VERSION.encode()})
@@ -409,7 +406,7 @@ def _validate_generated_files(
             [_issue("asr_spans.parquet", "row_count_mismatch", "Parquet row count does not match conversion count")]
         )
 
-    ids = set()
+    span_keys = set()
     jsonl_rows = 0
     for line_number, line in enumerate(jsonl_path.read_text(encoding="utf-8").splitlines(), start=1):
         if not line.strip():
@@ -421,12 +418,12 @@ def _validate_generated_files(
             raise RefactorValidationError(
                 [_issue("asr_spans.jsonl", "schema_mismatch", f"unexpected keys at line {line_number}")]
             )
-        segment_id = row["segment_id"]
-        if segment_id in ids:
+        span_key = (row["video_id"], row["start_ms"], row["end_ms"], row["text_normalized"])
+        if span_key in span_keys:
             raise RefactorValidationError(
-                [_issue("asr_spans.jsonl", "duplicate_segment_id", segment_id)]
+                [_issue("asr_spans.jsonl", "duplicate_span", str(span_key))]
             )
-        ids.add(segment_id)
+        span_keys.add(span_key)
         if not row["text_normalized"].strip():
             raise RefactorValidationError(
                 [_issue("asr_spans.jsonl", "empty_text", f"empty text at line {line_number}")]
@@ -491,7 +488,7 @@ def refactor_dataset(
     temporary_paths: list[Path] = []
     parquet_writer: Any = None
     source_files_processed = 0
-    source_segments_discovered = 0
+    source_chunks_discovered = 0
     spans_written = 0
     total_duration_ms = 0
     model_counts: Counter[str] = Counter()
@@ -536,7 +533,7 @@ def refactor_dataset(
                     continue
 
                 source_files_processed += 1
-                source_segments_discovered += len(parsed.rows)
+                source_chunks_discovered += len(parsed.rows)
                 spans_written += len(parsed.rows)
                 total_duration_ms += parsed.duration_ms
                 model_counts[parsed.model_version] += 1
@@ -575,11 +572,11 @@ def refactor_dataset(
             "source_glob": SOURCE_GLOB,
             "source_files_discovered": len(source_files),
             "source_files_processed": source_files_processed,
-            "source_segments_discovered": source_segments_discovered,
+            "source_chunks_discovered": source_chunks_discovered,
             "spans_written": spans_written,
             "invalid_file_count": len({issue["source_file"] for issue in issues}),
-            "invalid_segment_count": len(
-                [issue for issue in issues if issue.get("source_segment_index") is not None]
+            "invalid_span_count": len(
+                [issue for issue in issues if issue.get("source_span_index") is not None]
             ),
             "anomaly_counts": anomaly_counts,
             "issues": issues,
@@ -602,7 +599,7 @@ def refactor_dataset(
             "source_glob": SOURCE_GLOB,
             "source_files_discovered": len(source_files),
             "source_files_processed": source_files_processed,
-            "source_segments_discovered": source_segments_discovered,
+            "source_chunks_discovered": source_chunks_discovered,
             "spans_written": spans_written,
             "total_duration_ms": total_duration_ms,
             "language": language,

@@ -72,7 +72,6 @@ class QualificationContractTest(unittest.TestCase):
             {
                 "micro_event_id": "vid_01_evt_0001",
                 "video_id": "vid_01",
-                "segment_id": "vid_01_seg_0001",
                 "start_ms": 12000,
                 "end_ms": 13500,
                 "event_type": "state_transition",
@@ -89,7 +88,7 @@ class QualificationContractTest(unittest.TestCase):
                 "video_id": "vid_01",
                 "start_ms": 9000,
                 "end_ms": 18000,
-                "member_segment_ids": ["vid_01_seg_0001"],
+                "member_frame_ids": [148],
                 "overlap_ms": 500,
                 "granularity": "context_window",
             },
@@ -194,7 +193,7 @@ class QualificationContractTest(unittest.TestCase):
                 },
                 "channel_weights": {"visual": 1.0, "caption": 1.0, "object": 1.2},
                 "temporal_relations": [],
-                "target_granularities": ["segment", "context_window"],
+                "target_granularities": ["frame"],
                 "branches": ["visual", "caption", "object"],
                 "top_k_per_branch": 100,
                 "fusion_k": 100,
@@ -217,8 +216,8 @@ class QualificationContractTest(unittest.TestCase):
                 "query_variant": "người đặt chai xuống bàn",
                 "candidates": [
                     {
-                        "segment_id": "vid_01_seg_0001",
                         "video_id": "vid_01",
+                        "original_frame_id": 148,
                         "rank": 1,
                         "raw_score": 0.91,
                         "evidence_ids": ["ev_frame_01"],
@@ -327,7 +326,6 @@ class QualificationContractTest(unittest.TestCase):
                 "result_id": "kis_result_01",
                 "query_id": "q_kis_01",
                 "video_id": "vid_01",
-                "segment_id": "vid_01_seg_0001",
                 "original_frame_id": 148,
                 "timestamp_ms": 4933,
                 "score": 0.94,
@@ -393,7 +391,7 @@ class QualificationContractTest(unittest.TestCase):
         self.assert_valid("search_response", valid)
         self.assert_invalid("search_response", invalid)
 
-    def test_legacy_v1_shapes_remain_accepted_during_migration(self):
+    def test_frame_first_shapes_are_accepted(self):
         self.assert_valid(
             "search_response",
             {
@@ -401,8 +399,8 @@ class QualificationContractTest(unittest.TestCase):
                 "query": "tim xe may",
                 "results": [
                     {
-                        "segment_id": "seg_legacy",
                         "video_id": "vid_legacy",
+                        "original_frame_id": 12,
                         "timestamp_start_ms": 1000,
                         "timestamp_end_ms": 2000,
                         "preview_uri": "s3://bucket/preview.webp",
@@ -417,7 +415,7 @@ class QualificationContractTest(unittest.TestCase):
             "ocr_result",
             {
                 "video_id": "vid_legacy",
-                "segment_id": "seg_legacy",
+                "original_frame_id": 12,
                 "frame_id": "frame_01",
                 "timestamp_ms": 1000,
                 "text": "xin chao",
@@ -429,7 +427,7 @@ class QualificationContractTest(unittest.TestCase):
             "embedding_result",
             {
                 "video_id": "vid_legacy",
-                "segment_id": "seg_legacy",
+                "original_frame_id": 12,
                 "frame_id": "frame_01",
                 "timestamp_ms": 1000,
                 "embedding_id": "emb_01",

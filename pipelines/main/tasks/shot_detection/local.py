@@ -36,8 +36,7 @@ class ShotDetectionLocalNode(TaskNode):
                 "producer": "shot-detection:main",
                 "pipeline_version": "main-v1.0.0",
             })
-        # shot_manifest is an internal main-pipeline artifact; frame/segment
-        # contracts are validated at their canonical boundaries.
+        # shot_manifest is an internal frame-timeline artifact.
         artifact = self.artifact_store.write_bytes(
             run_id=context.run_id,
             artifact_type="shot-manifest",

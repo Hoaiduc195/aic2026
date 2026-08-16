@@ -66,7 +66,7 @@ export interface RetrievalExecutionPlan {
   readonly query_views: QueryViews;
   readonly channel_weights: ChannelWeights;
   readonly temporal_relations: Array<'before' | 'after' | 'during' | 'overlaps' | 'near' | 'sequence'>;
-  readonly target_granularities: Array<'frame' | 'micro_event' | 'segment' | 'context_window'>;
+  readonly target_granularities: Array<'frame'>;
   readonly branches: BranchName[];
   readonly top_k_per_branch: number;
   readonly fusion_k: number;
@@ -81,8 +81,8 @@ export interface RetrievalExecutionPlan {
 }
 
 export interface BranchCandidate {
-  readonly segment_id: string;
   readonly video_id: string;
+  readonly video_object_key?: string | null;
   readonly rank: number;
   readonly raw_score: number;
   readonly original_frame_id?: number | null;
@@ -126,8 +126,8 @@ export interface FusionTraceEntry {
 }
 
 export interface FusedCandidate {
-  readonly segment_id: string;
   readonly video_id: string;
+  readonly video_object_key?: string | null;
   readonly original_frame_id?: number | null;
   readonly start_ms: number;
   readonly end_ms: number;
@@ -139,8 +139,8 @@ export interface FusedCandidate {
 }
 
 export interface SearchResult {
-  readonly segment_id: string;
   readonly video_id: string;
+  readonly original_frame_id: number | null;
   readonly start_ms: number;
   readonly end_ms: number;
   readonly preview_uri: string;

@@ -255,8 +255,10 @@ function parseResult(value: unknown, index: number): SearchResult {
   }
 
   return {
-    segment_id: requiredText(value.segment_id, `results[${index}].segment_id`),
     video_id: requiredText(value.video_id, `results[${index}].video_id`),
+    original_frame_id: value.original_frame_id === null
+      ? null
+      : nonNegativeInteger(value.original_frame_id, `results[${index}].original_frame_id`),
     start_ms: start,
     end_ms: end,
     preview_uri: requiredUri(value.preview_uri, `results[${index}].preview_uri`),
@@ -327,7 +329,6 @@ function parseCandidate(value: unknown, index: number): CandidatePage['candidate
   if (!isObject(value)) throw new Error(`candidates[${index}] phải là object`);
   return {
     rank: positiveInteger(value.rank, `candidates[${index}].rank`),
-    segment_id: requiredText(value.segment_id, `candidates[${index}].segment_id`),
     video_id: requiredText(value.video_id, `candidates[${index}].video_id`),
     original_frame_id: value.original_frame_id === null ? null : nonNegativeInteger(value.original_frame_id, `candidates[${index}].original_frame_id`),
     start_ms: nonNegativeInteger(value.start_ms, `candidates[${index}].start_ms`),

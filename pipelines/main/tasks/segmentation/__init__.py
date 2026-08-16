@@ -1,1 +1,0 @@
-"""Canonical segment construction."""

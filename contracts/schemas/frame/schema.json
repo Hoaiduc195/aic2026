@@ -61,9 +61,6 @@
     "scene_change_score": { "type": "number", "minimum": 0 },
     "text_change_score": { "type": "number", "minimum": 0 }
     ,"frame_id": { "type": "string", "minLength": 1 }
-    ,"segment_id": { "type": ["string", "null"], "minLength": 1 }
-    ,"micro_event_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
-    ,"context_window_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
     ,"quality_tier": { "type": "string", "enum": ["high", "medium", "low", "temporal_only", "technical_failure"] }
     ,"retrieval_roles": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
     ,"storage_uri": { "type": ["string", "null"], "pattern": "^(file|s3|r2|gs|azure|https?)://[^\\s?#]+$" }

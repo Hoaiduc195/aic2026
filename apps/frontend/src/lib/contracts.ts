@@ -29,7 +29,6 @@ export interface SearchRequest {
 
 export interface RetrievalCandidate {
   rank: number;
-  segment_id: string;
   video_id: string;
   original_frame_id: number | null;
   start_ms: number;
@@ -58,8 +57,8 @@ export interface SearchEvidence {
 }
 
 export interface SearchResult {
-  segment_id: string;
   video_id: string;
+  original_frame_id: number | null;
   start_ms: number;
   end_ms: number;
   preview_uri: string;
@@ -102,7 +101,6 @@ export interface SearchResponse {
 
 export interface FrameCandidate {
   result_key: string;
-  segment_id: string;
   video_id: string;
   original_frame_id: number;
   timestamp_ms: number;

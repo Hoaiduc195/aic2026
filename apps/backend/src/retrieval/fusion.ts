@@ -12,22 +12,30 @@ function modalityForBranch(branch: BranchName): string {
   return branch.startsWith('ocr_') ? 'ocr' : branch.startsWith('asr_') ? 'asr' : branch;
 }
 
-function candidateKey(videoId: string, segmentId: string): string {
-  return `${videoId}:${segmentId}`;
+export function candidateKey(
+  videoId: string,
+  originalFrameId: number | null | undefined,
+  startMs?: number,
+  endMs?: number,
+): string {
+  if (originalFrameId !== null && originalFrameId !== undefined) {
+    return `${videoId}:frame:${originalFrameId}`;
+  }
+  return `${videoId}:time:${startMs ?? 0}:${endMs ?? 1}`;
 }
 
 export interface AggregatedBranchCandidate extends BranchCandidate {
   readonly occurrence_count: number;
 }
 
-/** Convert frame/evidence hits from one channel into one ranked hit per canonical segment. */
+/** Convert frame/evidence hits from one channel into one ranked hit per source frame. */
 export function aggregateBranchCandidates(
   candidates: readonly BranchCandidate[],
   limit: number,
 ): AggregatedBranchCandidate[] {
   const grouped = new Map<string, BranchCandidate[]>();
   for (const candidate of candidates) {
-    const key = candidateKey(candidate.video_id, candidate.segment_id);
+    const key = candidateKey(candidate.video_id, candidate.original_frame_id, candidate.start_ms, candidate.end_ms);
     grouped.set(key, [...(grouped.get(key) ?? []), candidate]);
   }
 
@@ -53,7 +61,8 @@ export function aggregateBranchCandidates(
       };
     })
     .sort((left, right) => right.raw_score - left.raw_score
-      || candidateKey(left.video_id, left.segment_id).localeCompare(candidateKey(right.video_id, right.segment_id)))
+      || candidateKey(left.video_id, left.original_frame_id, left.start_ms, left.end_ms)
+        .localeCompare(candidateKey(right.video_id, right.original_frame_id, right.start_ms, right.end_ms)))
     .slice(0, limit)
     .map((candidate, index) => ({ ...candidate, rank: index + 1 }));
 }
@@ -63,8 +72,8 @@ export function fuseBranchResults(
   plan: RetrievalExecutionPlan,
 ): FusedCandidate[] {
   const fused = new Map<string, {
-    segment_id: string;
     video_id: string;
+    video_object_key?: string | null;
     original_frame_id?: number | null;
     start_ms: number;
     end_ms: number;
@@ -80,11 +89,11 @@ export function fuseBranchResults(
     const weight = plan.channel_weights[branchResult.branch] ?? 1;
     if (!Number.isFinite(weight) || weight <= 0) continue;
     for (const candidate of aggregateBranchCandidates(branchResult.candidates, plan.top_k_per_branch)) {
-      const key = candidateKey(candidate.video_id, candidate.segment_id);
+      const key = candidateKey(candidate.video_id, candidate.original_frame_id, candidate.start_ms, candidate.end_ms);
       const contribution = weight / (RRF_K + candidate.rank);
       const current = fused.get(key) ?? {
-        segment_id: candidate.segment_id,
         video_id: candidate.video_id,
+        video_object_key: candidate.video_object_key,
         original_frame_id: candidate.original_frame_id,
         start_ms: candidate.start_ms ?? 0,
         end_ms: Math.max(candidate.end_ms ?? 1, (candidate.start_ms ?? 0) + 1),
@@ -94,6 +103,8 @@ export function fuseBranchResults(
         matched_modalities: new Set<string>(),
         fusion_trace: [],
       };
+      current.video_object_key ??= candidate.video_object_key;
+      current.original_frame_id ??= candidate.original_frame_id;
       current.score += contribution;
       current.start_ms = Math.min(current.start_ms, candidate.start_ms ?? current.start_ms);
       current.end_ms = Math.max(current.end_ms, candidate.end_ms ?? current.end_ms);
@@ -115,7 +126,8 @@ export function fuseBranchResults(
 
   return [...fused.values()]
     .sort((left, right) => right.score - left.score
-      || candidateKey(left.video_id, left.segment_id).localeCompare(candidateKey(right.video_id, right.segment_id)))
+      || candidateKey(left.video_id, left.original_frame_id, left.start_ms, left.end_ms)
+        .localeCompare(candidateKey(right.video_id, right.original_frame_id, right.start_ms, right.end_ms)))
     .slice(0, plan.fusion_k)
     .map((candidate) => ({
       ...candidate,

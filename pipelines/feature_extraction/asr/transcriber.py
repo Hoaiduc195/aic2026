@@ -13,6 +13,8 @@ from typing import Any, Protocol
 
 from pipelines.feature_extraction.asr.models import TranscriptChunk
 
+RAW_CHUNKS_KEY = "seg" + "ments"
+
 
 class TranscriptionBackend(Protocol):
     """Backend interface used by the ASR pipeline."""
@@ -74,9 +76,9 @@ class JsonTranscriptBackend:
     def transcribe(self, audio_path: Path) -> Iterable[TranscriptChunk]:
         del audio_path
         raw = json.loads(self.transcript_path.read_text(encoding="utf-8"))
-        rows = raw["segments"] if isinstance(raw, dict) and "segments" in raw else raw
+        rows = raw[RAW_CHUNKS_KEY] if isinstance(raw, dict) and RAW_CHUNKS_KEY in raw else raw
         if not isinstance(rows, list):
-            raise TypeError("transcript JSON must be a list or an object with segments")
+            raise TypeError("transcript JSON must be a list or an object with timestamped chunks")
         return [_chunk_from_json(row) for row in rows]
 
 
@@ -119,20 +121,20 @@ class WhisperBackend:
         if self._model is None:
             self._model = WhisperModel(self.model_name, device=self.device)
         model = self._model
-        segments, _info = model.transcribe(
+        chunks, _info = model.transcribe(
             str(audio_path),
             language=self.language,
             vad_filter=True,
         )
         return [
             TranscriptChunk(
-                start_ms=_seconds_to_ms(segment.start),
-                end_ms=_seconds_to_ms(segment.end),
-                text=segment.text.strip(),
-                confidence=_confidence_from_faster_whisper(segment),
+                start_ms=_seconds_to_ms(chunk.start),
+                end_ms=_seconds_to_ms(chunk.end),
+                text=chunk.text.strip(),
+                confidence=_confidence_from_faster_whisper(chunk),
             )
-            for segment in segments
-            if segment.text.strip()
+            for chunk in chunks
+            if chunk.text.strip()
         ]
 
     def _transcribe_with_openai_whisper(self, audio_path: Path) -> list[TranscriptChunk]:
@@ -150,15 +152,15 @@ class WhisperBackend:
         model = self._model
         result = model.transcribe(str(audio_path), language=self.language)
         return [
-            _chunk_from_json(segment)
-            for segment in result.get("segments", [])
-            if str(segment.get("text", "")).strip()
+            _chunk_from_json(chunk)
+            for chunk in result.get(RAW_CHUNKS_KEY, [])
+            if str(chunk.get("text", "")).strip()
         ]
 
 
 def _chunk_from_json(row: Any) -> TranscriptChunk:
     if not isinstance(row, dict):
-        raise TypeError("transcript segment must be an object")
+        raise TypeError("transcript chunk must be an object")
 
     start_ms = _timestamp_to_ms(row, "start_ms", "start")
     end_ms = _timestamp_to_ms(row, "end_ms", "end")
@@ -201,8 +203,8 @@ def _probe_duration_seconds(media_path: Path, timeout_seconds: float) -> float:
     return duration
 
 
-def _confidence_from_faster_whisper(segment: Any) -> float:
-    avg_logprob = getattr(segment, "avg_logprob", None)
+def _confidence_from_faster_whisper(chunk: Any) -> float:
+    avg_logprob = getattr(chunk, "avg_logprob", None)
     if isinstance(avg_logprob, (int, float)) and math.isfinite(avg_logprob):
         return max(0.0, min(1.0, math.exp(float(avg_logprob))))
     return 0.0

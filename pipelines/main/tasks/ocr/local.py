@@ -32,7 +32,7 @@ class OcrLocalNode(TaskNode):
             records = []
             for row in rows:
                 raw = self._predict(str(row["path"]))
-                identity = FrameIdentity(context.video_id, str(row.get("segment_id") or f"{context.video_id}-seg-unknown"), int(row["original_frame_id"]), int(row["timestamp_ms"]))
+                identity = FrameIdentity(context.video_id, int(row["original_frame_id"]), int(row["timestamp_ms"]))
                 records.append(normalize_ocr(identity, raw, model_version=model_version))
             from pipelines.main.contracts.validation import validate_records
 

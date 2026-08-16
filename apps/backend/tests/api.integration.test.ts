@@ -3,7 +3,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { RETRIEVAL_STORE } from '../src/common/tokens';
+import { OBJECT_STORAGE, RETRIEVAL_STORE } from '../src/common/tokens';
 import { createOperatorAuthMiddleware } from '../src/common/operator-auth.middleware';
 import { ManualController } from '../src/manual/manual.controller';
 import { SubmissionController } from '../src/manual/submission.controller';
@@ -27,6 +27,11 @@ describe('backend HTTP API', () => {
     getLatestSelection: vi.fn(async () => null),
     saveSelection: vi.fn(async (_queryId, task, answers) => ({ revision: 1, task, answers })),
   };
+  const storage = {
+    isConfigured: true,
+    signReadUrl: vi.fn(async (key: string) => `https://signed/${key}`),
+    health: vi.fn(async () => true),
+  };
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({
@@ -35,6 +40,7 @@ describe('backend HTTP API', () => {
         { provide: RetrievalService, useValue: retrieval },
         { provide: MediaService, useValue: media },
         { provide: RETRIEVAL_STORE, useValue: store },
+        { provide: OBJECT_STORAGE, useValue: storage },
       ],
     }).compile();
     app = module.createNestApplication();
@@ -75,5 +81,32 @@ describe('backend HTTP API', () => {
     await request(app.getHttpServer()).post('/v1/submissions/preview')
       .set('x-operator-token', 'operator-secret').send({ query_id: 'q-1', ...body }).expect(201)
       .expect(({ body: responseBody }) => expect(responseBody.submittable).toBe(false));
+  });
+
+  it('re-signs stored candidate previews when they are read', async () => {
+    vi.mocked(store.listCandidates).mockResolvedValueOnce({
+      query_id: 'q-1',
+      total: 1,
+      limit: 100,
+      offset: 0,
+      candidates: [{
+        rank: 1,
+        video_id: 'video-1',
+        original_frame_id: 2,
+        start_ms: 10,
+        end_ms: 20,
+        preview_uri: 'r2://media/keyframes/video-1/2.jpg',
+        score: 0.9,
+        evidence_ids: [],
+        matched_modalities: ['caption'],
+        fusion_trace: [],
+      }] as never,
+    });
+
+    await request(app.getHttpServer()).get('/v1/queries/q-1/candidates')
+      .set('x-operator-token', 'operator-secret').expect(200)
+      .expect(({ body }) => expect(body.candidates[0].preview_uri)
+        .toBe('https://signed/keyframes/video-1/2.jpg'));
+    expect(storage.signReadUrl).toHaveBeenCalledWith('keyframes/video-1/2.jpg');
   });
 });

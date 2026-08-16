@@ -71,7 +71,7 @@ export function buildSubmission(
 }
 
 export function resultKey(result: SearchResult): string {
-  return `${result.video_id}\u0000${result.segment_id}`;
+  return `${result.video_id}\u0000${result.original_frame_id ?? `${result.start_ms}:${result.end_ms}`}`;
 }
 
 export function formatMs(value: number): string {
@@ -90,7 +90,6 @@ export function toFrameCandidates(response: SearchResponse): NormalizedFrames {
 
     return [{
       result_key: resultKey(result),
-      segment_id: result.segment_id,
       video_id: result.video_id,
       original_frame_id: frame.original_frame_id,
       timestamp_ms: frame.timestamp_ms,

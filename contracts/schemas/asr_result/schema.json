@@ -5,12 +5,11 @@
   "type": "object",
   "additionalProperties": false,
   "description": "ASR is an interval evidence record, not a frame attribute. Canonical fields are start_ms/end_ms and raw/normalized text; legacy asr_* and text fields remain accepted in v1.",
-  "required": ["video_id", "segment_id", "confidence"],
+  "required": ["video_id", "confidence"],
   "properties": {
     "dataset_id": { "type": "string", "minLength": 1 },
     "dataset_version": { "type": "string", "minLength": 1 },
     "video_id": { "type": "string", "minLength": 1 },
-    "segment_id": { "type": "string", "minLength": 1 },
     "asr_start_ms": { "type": "integer", "minimum": 0 },
     "asr_end_ms": { "type": "integer", "minimum": 0 },
     "start_ms": { "type": "integer", "minimum": 0 },

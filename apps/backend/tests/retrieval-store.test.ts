@@ -16,18 +16,18 @@ describe('PostgresRetrievalStore', () => {
       query_id: 'q-1', task: 'vqa', original_query: 'question', index_version: 'v1',
     } as RetrievalExecutionPlan;
     await store.saveRun({ query: 'question', task: 'vqa' }, plan, [{
-      segment_id: 's', video_id: 'v', original_frame_id: 1, start_ms: 10, end_ms: 11,
+      video_id: 'v', original_frame_id: 1, start_ms: 10, end_ms: 11,
       score: 0.5, evidence_ids: ['e'], matched_modalities: ['caption'], fusion_trace: [],
     }]);
     const [sql, params] = vi.mocked(db.query).mock.calls[0];
     expect(sql).toContain('jsonb_array_elements');
     expect(params?.[3]).toBe('question');
-    expect(params?.[7]).toContain('"segment_id":"s"');
+    expect(params?.[7]).toContain('"original_frame_id":1');
   });
 
   it('maps paginated candidates and selection revisions', async () => {
     const db = database([{
-      total_count: '1', rank: 1, segment_id: 's', video_id: 'v', original_frame_id: 2,
+      total_count: '1', rank: 1, video_id: 'v', original_frame_id: 2,
       start_ms: 10, end_ms: 20, preview_uri: null, score: '0.5', evidence_ids: ['e'], matched_modalities: ['ocr'],
       fusion_trace: [{ branch: 'ocr', channel_rank: 1, weight: 1, contribution: 0.1, evidence_ids: ['e'] }],
     }] as never[]);

@@ -35,10 +35,10 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["segment_id", "video_id", "preview_uri", "score", "matched_modalities"],
+        "required": ["video_id", "original_frame_id", "preview_uri", "score", "matched_modalities"],
         "properties": {
-          "segment_id": { "type": "string", "minLength": 1 },
           "video_id": { "type": "string", "minLength": 1 },
+          "original_frame_id": { "type": ["integer", "null"], "minimum": 0 },
           "start_ms": { "type": "integer", "minimum": 0 },
           "end_ms": { "type": "integer", "minimum": 1 },
           "timestamp_start_ms": { "type": "integer", "minimum": 0, "description": "Deprecated alias for start_ms." },

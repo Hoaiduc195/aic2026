@@ -119,34 +119,8 @@ CREATE TABLE IF NOT EXISTS feature_artifacts (
 CREATE INDEX IF NOT EXISTS feature_artifacts_video_idx
   ON feature_artifacts (video_id, feature_set_id);
 
-CREATE TABLE IF NOT EXISTS segments (
-  segment_id text PRIMARY KEY,
-  video_id text NOT NULL REFERENCES videos(video_id) ON DELETE CASCADE,
-  start_ms integer NOT NULL CHECK (start_ms >= 0),
-  end_ms integer NOT NULL CHECK (end_ms > start_ms),
-  start_frame_id integer NOT NULL CHECK (start_frame_id >= 0),
-  end_frame_id integer NOT NULL CHECK (end_frame_id > start_frame_id),
-  segment_ordinal integer NOT NULL CHECK (segment_ordinal >= 0),
-  segment_type text NOT NULL,
-  representative_frame_ids integer[] NOT NULL DEFAULT '{}',
-  previous_segment_id text,
-  next_segment_id text,
-  source text NOT NULL,
-  confidence double precision NOT NULL CHECK (confidence BETWEEN 0 AND 1),
-  pipeline_version text NOT NULL,
-  schema_version text NOT NULL CHECK (schema_version ~ '^[0-9]+\.[0-9]+\.[0-9]+$'),
-  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
-  UNIQUE (video_id, segment_ordinal),
-  UNIQUE (video_id, start_ms, end_ms),
-  UNIQUE (segment_id, video_id),
-  FOREIGN KEY (previous_segment_id, video_id) REFERENCES segments(segment_id, video_id) DEFERRABLE INITIALLY DEFERRED,
-  FOREIGN KEY (next_segment_id, video_id) REFERENCES segments(segment_id, video_id) DEFERRABLE INITIALLY DEFERRED
-);
-CREATE INDEX IF NOT EXISTS segments_video_time_idx ON segments (video_id, start_ms, end_ms);
-
 CREATE TABLE IF NOT EXISTS frames (
   video_id text NOT NULL REFERENCES videos(video_id) ON DELETE CASCADE,
-  segment_id text NOT NULL,
   keyframe_no integer NOT NULL CHECK (keyframe_no > 0),
   original_frame_id integer NOT NULL CHECK (original_frame_id >= 0),
   timestamp_ms integer NOT NULL CHECK (timestamp_ms >= 0),
@@ -164,17 +138,14 @@ CREATE TABLE IF NOT EXISTS frames (
   PRIMARY KEY (video_id, original_frame_id),
   UNIQUE (video_id, keyframe_no),
   UNIQUE (thumbnail_object_key),
-  UNIQUE (storage_uri),
-  FOREIGN KEY (segment_id, video_id) REFERENCES segments(segment_id, video_id) ON DELETE CASCADE
+  UNIQUE (storage_uri)
 );
 CREATE INDEX IF NOT EXISTS frames_video_timestamp_idx ON frames (video_id, timestamp_ms);
-CREATE INDEX IF NOT EXISTS frames_segment_idx ON frames (segment_id, timestamp_ms);
 
 CREATE TABLE IF NOT EXISTS evidence (
   evidence_id text PRIMARY KEY,
   evidence_type text NOT NULL CHECK (evidence_type IN ('frame', 'ocr', 'asr', 'caption', 'object', 'track', 'audio', 'temporal')),
   video_id text NOT NULL REFERENCES videos(video_id) ON DELETE CASCADE,
-  segment_id text NOT NULL,
   feature_set_id text NOT NULL REFERENCES feature_sets(feature_set_id) ON DELETE RESTRICT,
   artifact_id text,
   source_record_index bigint CHECK (source_record_index IS NULL OR source_record_index >= 0),
@@ -184,12 +155,10 @@ CREATE TABLE IF NOT EXISTS evidence (
   confidence double precision CHECK (confidence IS NULL OR confidence BETWEEN 0 AND 1),
   payload jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
-  FOREIGN KEY (segment_id, video_id) REFERENCES segments(segment_id, video_id) ON DELETE CASCADE,
   FOREIGN KEY (video_id, original_frame_id) REFERENCES frames(video_id, original_frame_id),
   FOREIGN KEY (artifact_id, feature_set_id) REFERENCES feature_artifacts(artifact_id, feature_set_id)
 );
 CREATE INDEX IF NOT EXISTS evidence_video_time_idx ON evidence (video_id, start_ms, end_ms);
-CREATE INDEX IF NOT EXISTS evidence_segment_idx ON evidence (segment_id);
 CREATE INDEX IF NOT EXISTS evidence_type_idx ON evidence (evidence_type);
 CREATE INDEX IF NOT EXISTS evidence_feature_set_idx ON evidence (feature_set_id, evidence_type);
 
@@ -273,7 +242,6 @@ CREATE TABLE IF NOT EXISTS retrieval_runs (
 CREATE TABLE IF NOT EXISTS retrieval_candidates (
   query_id text NOT NULL REFERENCES retrieval_runs(query_id) ON DELETE CASCADE,
   rank integer NOT NULL CHECK (rank > 0),
-  segment_id text NOT NULL,
   video_id text NOT NULL,
   original_frame_id integer,
   start_ms integer NOT NULL CHECK (start_ms >= 0),

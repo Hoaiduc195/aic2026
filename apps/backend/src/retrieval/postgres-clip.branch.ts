@@ -7,8 +7,8 @@ import type { RetrievalBranch } from './branch';
 
 interface ClipRow extends QueryResultRow {
   readonly evidence_id: string;
-  readonly segment_id: string;
   readonly video_id: string;
+  readonly video_object_key: string | null;
   readonly original_frame_id: number | null;
   readonly start_ms: number;
   readonly end_ms: number;
@@ -29,11 +29,12 @@ export class PostgresClipBranch implements RetrievalBranch {
     }
     const vector = `[${embedding.join(',')}]`;
     const result = await this.database.query<ClipRow>(`
-      SELECT e.evidence_id, e.segment_id, e.video_id, e.original_frame_id,
+      SELECT e.evidence_id, e.video_id, v.object_key AS video_object_key, e.original_frame_id,
              e.start_ms, e.end_ms, f.thumbnail_object_key AS preview_object_key,
              1 - (c.embedding <=> $1::vector) AS rank_score
       FROM clip_embeddings c
       JOIN evidence e ON e.evidence_id = c.evidence_id
+      JOIN videos v ON v.video_id = e.video_id
       JOIN feature_sets fs ON fs.feature_set_id = e.feature_set_id
       JOIN index_release_features irf
         ON irf.feature_set_id = fs.feature_set_id
@@ -52,7 +53,9 @@ export class PostgresClipBranch implements RetrievalBranch {
     return {
       query_id: plan.query_id, branch: this.name, status: 'completed', query_variant: query,
       candidates: result.rows.map((row, index) => ({
-        segment_id: row.segment_id, video_id: row.video_id, rank: index + 1, raw_score: Number(row.rank_score),
+        video_id: row.video_id,
+        ...(row.video_object_key ? { video_object_key: row.video_object_key } : {}),
+        rank: index + 1, raw_score: Number(row.rank_score),
         original_frame_id: row.original_frame_id, start_ms: Number(row.start_ms), end_ms: Number(row.end_ms),
         preview_uri: row.preview_object_key ? `r2://media/${row.preview_object_key}` : undefined,
         evidence_ids: [row.evidence_id],

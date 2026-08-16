@@ -5,7 +5,6 @@ export function mockSearchResponse(request: SearchRequest): SearchResponse {
   const base = [
     {
       video_id: 'L21_V001',
-      segment_id: 'L21_V001_seg_002',
       start_ms: 12_000,
       end_ms: 18_000,
       frame_id: 411,
@@ -16,7 +15,6 @@ export function mockSearchResponse(request: SearchRequest): SearchResponse {
     },
     {
       video_id: 'L21_V002',
-      segment_id: 'L21_V002_seg_014',
       start_ms: 43_500,
       end_ms: 49_200,
       frame_id: 1350,
@@ -27,7 +25,6 @@ export function mockSearchResponse(request: SearchRequest): SearchResponse {
     },
     {
       video_id: 'L21_V003',
-      segment_id: 'L21_V003_seg_006',
       start_ms: 88_000,
       end_ms: 94_600,
       frame_id: 2670,
@@ -52,8 +49,8 @@ export function mockSearchResponse(request: SearchRequest): SearchResponse {
     unavailable_branches: [],
     confidence: { level: 'high', score: 0.91, action: 'return' },
     results: base.slice(0, Math.min(Math.max(request.top_k, 1), base.length)).map((item) => ({
-      segment_id: item.segment_id,
       video_id: item.video_id,
+      original_frame_id: item.frame_id,
       start_ms: item.start_ms,
       end_ms: item.end_ms,
       preview_uri: `s3://aic-multimedia-artifacts/keyframes/${item.video_id}/${item.frame_id}.jpg`,

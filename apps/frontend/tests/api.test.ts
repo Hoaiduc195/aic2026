@@ -24,8 +24,8 @@ const validResponse: SearchResponse = {
   confidence: { level: 'high', score: 0.91 },
   results: [
     {
-      segment_id: 'seg_01',
       video_id: 'video_01',
+      original_frame_id: 385,
       start_ms: 0,
       end_ms: 1000,
       preview_uri: 's3://demo/frame.webp',
@@ -93,8 +93,8 @@ describe('search API boundary', () => {
       },
       results: [
         {
-          segment_id: 'seg_02',
           video_id: 'video_02',
+          original_frame_id: 120,
           start_ms: 100,
           end_ms: 900,
           preview_uri: 'https://cdn.example.com/preview.mp4',

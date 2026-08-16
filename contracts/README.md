@@ -29,7 +29,7 @@ database migrations, or organizer-specific submission payloads.
 
 | Boundary | Canonical schemas |
 |---|---|
-| Source and temporal hierarchy | `video_manifest`, `frame`, `micro_event`, `segment`, `context_window`, `event_window` |
+| Source and temporal hierarchy | `video_manifest`, `frame`, `micro_event`, `context_window`, `event_window` |
 | Retrieval and evidence | `keyframe`, `dense_candidate`, `semantic_keyframe`, `event_score`, `evidence`, `evidence_relation` |
 | Reproducibility and publication | `processing_run`, `artifact_manifest`, `version_manifest`, `ingestion_record` |
 | Query and branch execution | `qualification_request`, `query_plan`, `branch_result`, `search_response` |
