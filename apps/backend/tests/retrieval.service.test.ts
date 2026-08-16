@@ -38,6 +38,14 @@ function completedBranch(name: RetrievalBranch['name'], candidates: BranchResult
 }
 
 describe('RetrievalService', () => {
+  it('uses a bounded default branch candidate limit', () => {
+    const service = new RetrievalService(loadConfig(), [completedBranch('object', [])], createRegistry());
+
+    const plan = service.createPlan({ query: 'person', task: 'textual_kis', top_k: 20 });
+
+    expect(plan.top_k_per_branch).toBe(100);
+  });
+
   it('creates an all-branch plan with configurable k values', () => {
     const branches = [completedBranch('clip', [])];
     const service = new RetrievalService(loadConfig(), branches, createRegistry());
@@ -116,10 +124,18 @@ describe('RetrievalService', () => {
   });
 
   it('enforces the branch deadline and returns a recoverable timeout', async () => {
+    let receivedSignal: AbortSignal | undefined;
     const slowBranch: RetrievalBranch = {
       name: 'caption',
-      async search(_query, plan) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
+      async search(_query, plan, signal) {
+        receivedSignal = signal;
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, 100);
+          signal?.addEventListener('abort', () => {
+            clearTimeout(timer);
+            resolve();
+          }, { once: true });
+        });
         return {
           query_id: plan.query_id, branch: 'caption', status: 'completed', query_variant: plan.original_query,
           candidates: [], elapsed_ms: 100, deadline_ms: plan.latency_budget_ms,
@@ -134,6 +150,8 @@ describe('RetrievalService', () => {
     expect(response.degraded).toBe(true);
     expect(response.unavailable_branches).toEqual(['caption']);
     expect(response.timing).toMatchObject({ branch_status: { caption: 'timed_out' } });
+    expect(receivedSignal).toBeDefined();
+    expect(receivedSignal?.aborted).toBe(true);
   });
 
   it('signs R2 previews and hydrates evidence for the workbench', async () => {

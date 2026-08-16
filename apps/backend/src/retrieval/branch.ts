@@ -3,7 +3,7 @@ import type { BranchName, BranchResult, RetrievalExecutionPlan } from '../common
 export interface RetrievalBranch {
   readonly name: BranchName;
   readonly available?: boolean;
-  search(query: string, plan: RetrievalExecutionPlan): Promise<BranchResult>;
+  search(query: string, plan: RetrievalExecutionPlan, signal?: AbortSignal): Promise<BranchResult>;
 }
 
 export class UnavailableRetrievalBranch implements RetrievalBranch {
@@ -13,7 +13,7 @@ export class UnavailableRetrievalBranch implements RetrievalBranch {
     private readonly reason = 'retrieval index adapter is not configured',
   ) {}
 
-  async search(_query: string, plan: RetrievalExecutionPlan): Promise<BranchResult> {
+  async search(_query: string, plan: RetrievalExecutionPlan, _signal?: AbortSignal): Promise<BranchResult> {
     return {
       query_id: plan.query_id,
       branch: this.name,

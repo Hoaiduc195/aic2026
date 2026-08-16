@@ -24,9 +24,28 @@ import type { EvidenceRepository, EvidenceView } from './evidence.repository';
 import type { ObjectStorage } from '../storage/object-storage';
 import { signPreviewUris, withPreviewReferences } from '../storage/preview-url';
 
-const DEFAULT_BRANCH_K = 200;
+const DEFAULT_BRANCH_K = 100;
 const DEFAULT_FUSION_K = 500;
 const DEFAULT_DISPLAY_K = 100;
+
+function isDatabaseTimeout(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && 'code' in error && error.code === '57014');
+}
+
+function timedOutBranch(branch: RetrievalBranch, query: string, plan: RetrievalExecutionPlan): BranchResult {
+  return {
+    query_id: plan.query_id,
+    branch: branch.name,
+    status: 'timed_out',
+    query_variant: query,
+    candidates: [],
+    elapsed_ms: plan.latency_budget_ms,
+    deadline_ms: plan.latency_budget_ms,
+    index_version: plan.index_version,
+    producer: 'retrieval-core-timeout',
+    error: { code: 'BRANCH_TIMEOUT', message: 'retrieval branch exceeded its deadline', recoverable: true },
+  };
+}
 
 @Injectable()
 export class RetrievalService {
@@ -114,24 +133,25 @@ export class RetrievalService {
   ): Promise<BranchResult> {
     const startedAt = performance.now();
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    const abortController = new AbortController();
     try {
       const timeout = new Promise<BranchResult>((resolve) => {
         timeoutHandle = setTimeout(() => resolve({
-          query_id: plan.query_id,
-          branch: branch.name,
-          status: 'timed_out',
-          query_variant: query,
-          candidates: [],
-          elapsed_ms: plan.latency_budget_ms,
-          deadline_ms: plan.latency_budget_ms,
-          index_version: plan.index_version,
-          producer: 'retrieval-core-timeout',
-          error: { code: 'BRANCH_TIMEOUT', message: 'retrieval branch exceeded its deadline', recoverable: true },
+          ...timedOutBranch(branch, query, plan),
         }), plan.latency_budget_ms);
       });
-      const result = await Promise.race([branch.search(query, plan), timeout]);
+      const result = await Promise.race([
+        branch.search(query, plan, abortController.signal),
+        timeout.then((timedOut) => {
+          abortController.abort();
+          return timedOut;
+        }),
+      ]);
       return { ...result, elapsed_ms: Math.max(result.elapsed_ms, Math.round(performance.now() - startedAt)) };
     } catch (error) {
+      if (abortController.signal.aborted || isDatabaseTimeout(error)) {
+        return timedOutBranch(branch, query, plan);
+      }
       this.logger.warn(`${branch.name} branch failed: ${error instanceof Error ? error.message : 'unknown error'}`);
       return {
         query_id: plan.query_id,

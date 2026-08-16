@@ -22,7 +22,7 @@ export class PostgresClipBranch implements RetrievalBranch {
 
   constructor(private readonly database: DatabaseClient, private readonly encoder: QueryEmbeddingProvider) {}
 
-  async search(query: string, plan: RetrievalExecutionPlan): Promise<BranchResult> {
+  async search(query: string, plan: RetrievalExecutionPlan, signal?: AbortSignal): Promise<BranchResult> {
     const embedding = await this.encoder.embedText(query);
     if (embedding.length !== this.encoder.dimensions) {
       throw new Error(`CLIP query embedding must have ${this.encoder.dimensions} dimensions`);
@@ -49,7 +49,10 @@ export class PostgresClipBranch implements RetrievalBranch {
         AND fs.modality = 'visual_embedding'
         AND fs.embedding_dimensions = $2
       ORDER BY c.embedding <=> $1::vector, e.video_id, e.start_ms
-      LIMIT $4`, [vector, this.encoder.dimensions, plan.index_version, plan.top_k_per_branch]);
+      LIMIT $4`, [vector, this.encoder.dimensions, plan.index_version, plan.top_k_per_branch], {
+        statementTimeoutMs: plan.latency_budget_ms,
+        ...(signal ? { signal } : {}),
+      });
     return {
       query_id: plan.query_id, branch: this.name, status: 'completed', query_variant: query,
       candidates: result.rows.map((row, index) => ({
