@@ -331,12 +331,11 @@ describe('qualification frame-first workbench', () => {
     });
   });
 
-  it('sends the retrieval limits configured in frontend settings', async () => {
+  it('sends the retrieval limits configured in the left sidebar', async () => {
     const user = userEvent.setup();
     const search = vi.fn(async () => response);
     renderWorkbench({ search });
 
-    await user.click(screen.getByRole('button', { name: 'Cài đặt' }));
     await user.clear(screen.getByLabelText('Số frame hiển thị'));
     await user.type(screen.getByLabelText('Số frame hiển thị'), '40');
     await user.clear(screen.getByLabelText('Candidate mỗi modality'));
@@ -405,11 +404,11 @@ describe('qualification frame-first workbench', () => {
     expect(dialog).toHaveClass('settings-popover');
     expect(document.querySelector('.settings-modal-backdrop')).toBeInTheDocument();
 
-    const displayK = screen.getByLabelText('Số frame hiển thị');
-    await user.clear(displayK);
-    expect(displayK).toHaveValue(null);
-    await user.type(displayK, '40');
-    expect(displayK).toHaveValue(40);
+    const timeout = screen.getByLabelText('Timeout (ms)');
+    await user.clear(timeout);
+    expect(timeout).toHaveValue(null);
+    await user.type(timeout, '2500');
+    expect(timeout).toHaveValue(2500);
 
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: 'Cài đặt LLM' })).not.toBeInTheDocument();
