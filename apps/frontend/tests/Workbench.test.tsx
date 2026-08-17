@@ -459,4 +459,22 @@ describe('qualification frame-first workbench', () => {
     expect(second).toHaveAttribute('aria-pressed', 'true');
     expect(second).toHaveFocus();
   });
+
+  it('resizes the video panel with its accessible separator', async () => {
+    const user = userEvent.setup();
+    renderWorkbench();
+
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+    await user.click(await screen.findByRole('button', { name: 'Chọn frame video_01 · 385' }));
+
+    const separator = screen.getByRole('separator', { name: 'Điều chỉnh chiều rộng panel video' });
+    expect(separator).toHaveAttribute('aria-valuenow', '410');
+
+    separator.focus();
+    await user.keyboard('{ArrowLeft}');
+    expect(separator).toHaveAttribute('aria-valuenow', '430');
+    await user.keyboard('{ArrowRight}');
+    expect(separator).toHaveAttribute('aria-valuenow', '410');
+  });
 });
