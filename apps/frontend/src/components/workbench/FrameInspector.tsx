@@ -18,6 +18,7 @@ import type {
   VideoFrame,
   VideoFramesResponse,
 } from '../../lib/contracts';
+import { keyframeLabel } from '../../lib/video-studio-model';
 import { displayMatchedModalities, formatMs, groupEvidence } from '../../lib/workbench-model';
 
 export const DEFAULT_INSPECTOR_WIDTH = 410;
@@ -196,14 +197,14 @@ export function FrameInspector({
               <button
                 type="button"
                 key={`${frame.video_id}-${frame.original_frame_id}`}
-                aria-label={`Chọn frame ${frame.original_frame_id}`}
+                aria-label={`Chọn ${keyframeLabel(frame).toLowerCase()}`}
                 aria-pressed={active.original_frame_id === frame.original_frame_id}
                 onClick={() => onFrameSelect(frame)}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={frame.thumbnail_uri} alt="" loading="lazy" />
-                <span>#{frame.original_frame_id}</span>
-                <small>{formatMs(frame.timestamp_ms)}</small>
+                <img src={frame.thumbnail_uri} alt={`${keyframeLabel(frame)} của ${frame.video_id}`} loading="lazy" />
+                <span>#{frame.keyframe_no}</span>
+                <small>Source frame {frame.original_frame_id} · {formatMs(frame.timestamp_ms)}</small>
               </button>
             ))}
           </div>

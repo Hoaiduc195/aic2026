@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   activeAsrSpans,
   frameThumbnailUri,
+  keyframeLabel,
   nearestStudioFrame,
   timelinePercent,
 } from '@/lib/video-studio-model';
@@ -46,5 +47,9 @@ describe('video studio model', () => {
     expect(timelinePercent(-1, 60_000)).toBe(0);
     expect(timelinePercent(90_000, 60_000)).toBe(100);
     expect(frameThumbnailUri('video-1', 50)).toBe('/api/v1/media/keyframes/video-1/by-frame/50');
+  });
+
+  it('labels the ordinal keyframe separately from its source frame number', () => {
+    expect(keyframeLabel(frames[1])).toBe('Keyframe 2 · source frame 50');
   });
 });

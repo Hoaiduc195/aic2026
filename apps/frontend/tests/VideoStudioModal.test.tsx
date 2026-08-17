@@ -36,9 +36,9 @@ describe('VideoStudioModal', () => {
     );
 
     expect(screen.getByRole('dialog', { name: 'Video studio video-1' })).toBeInTheDocument();
-    expect(screen.getByText('1 keyframe')).toBeInTheDocument();
+    expect(screen.getByText(/1\s+keyframe/)).toBeInTheDocument();
     expect(screen.getByText('Keyframe 1')).toBeInTheDocument();
-    expect(screen.getByText('Source frame 50')).toBeInTheDocument();
+    expect(screen.getAllByText(/Source frame\s+50/).length).toBeGreaterThan(0);
     expect(screen.getByText('Một cảnh trong studio.')).toBeInTheDocument();
     expect(screen.getAllByText('person').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('Xin chào').length).toBeGreaterThan(0);

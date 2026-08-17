@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 
 import type { StudioAsrSpan, StudioFrame } from '../../lib/contracts';
 import { formatMs } from '../../lib/workbench-model';
-import { timelinePercent } from '../../lib/video-studio-model';
+import { keyframeLabel, timelinePercent } from '../../lib/video-studio-model';
 
 interface Props {
   durationMs: number;
@@ -112,8 +112,8 @@ export function VideoTimelineOverlay({
               className={frame.original_frame_id === selectedFrameId ? 'timeline-frame-hit is-selected' : 'timeline-frame-hit'}
               key={frame.original_frame_id}
               type="button"
-              aria-label={`Frame ${frame.original_frame_id} tại ${formatMs(frame.timestamp_ms)}`}
-              title={`Frame ${frame.original_frame_id} · ${formatMs(frame.timestamp_ms)}`}
+              aria-label={`${keyframeLabel(frame)} tại ${formatMs(frame.timestamp_ms)}`}
+              title={`${keyframeLabel(frame)} · ${formatMs(frame.timestamp_ms)}`}
               style={{ left: `${timelinePercent(frame.timestamp_ms, durationMs)}%` }}
               onClick={() => {
                 onFrameSelect(frame);

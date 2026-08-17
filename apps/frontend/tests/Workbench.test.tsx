@@ -196,10 +196,10 @@ describe('qualification frame-first workbench', () => {
     expect(loadStudio).toHaveBeenCalledWith('video_01', expect.anything());
 
     await user.click(screen.getByRole('button', { name: 'Xem các frame cùng video' }));
-    expect(await screen.findByRole('button', { name: 'Chọn frame 351' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Chọn keyframe 4 · source frame 351' })).toBeInTheDocument();
     expect(loadFrames).toHaveBeenCalledWith('video_01', 385, 25);
 
-    await user.click(screen.getByRole('button', { name: 'Chọn frame 351' }));
+    await user.click(screen.getByRole('button', { name: 'Chọn keyframe 4 · source frame 351' }));
     expect(screen.getByText('Frame 351')).toBeInTheDocument();
   });
 
@@ -666,7 +666,7 @@ describe('qualification frame-first workbench', () => {
 
     await user.click(screen.getAllByRole('button', { name: 'Gán frame hiện tại' })[0]);
     await user.click(screen.getByRole('button', { name: 'Xem các frame cùng video' }));
-    await user.click(await screen.findByRole('button', { name: 'Chọn frame 411' }));
+    await user.click(await screen.findByRole('button', { name: 'Chọn keyframe 5 · source frame 411' }));
     await user.click(screen.getByRole('button', { name: 'Gán frame hiện tại' }));
     await user.click(screen.getByRole('button', { name: 'Thêm chuỗi vào đáp án' }));
 

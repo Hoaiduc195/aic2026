@@ -15,6 +15,10 @@ export function activeAsrSpans(spans: readonly StudioAsrSpan[], timestampMs: num
   return spans.filter((span) => span.start_ms <= timestampMs && timestampMs < span.end_ms);
 }
 
+export function keyframeLabel(frame: Pick<StudioFrame, 'keyframe_no' | 'original_frame_id'>): string {
+  return `Keyframe ${frame.keyframe_no} · source frame ${frame.original_frame_id}`;
+}
+
 export function timelinePercent(timestampMs: number, durationMs: number): number {
   if (!Number.isFinite(durationMs) || durationMs <= 0) return 0;
   const percentage = (timestampMs / durationMs) * 100;

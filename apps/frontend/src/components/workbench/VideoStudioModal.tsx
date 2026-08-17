@@ -9,7 +9,7 @@ import {
 } from 'react';
 
 import type { StudioFrame, VideoStudioResponse } from '../../lib/contracts';
-import { activeAsrSpans, frameThumbnailUri, nearestStudioFrame } from '../../lib/video-studio-model';
+import { activeAsrSpans, frameThumbnailUri, keyframeLabel, nearestStudioFrame } from '../../lib/video-studio-model';
 import { formatMs } from '../../lib/workbench-model';
 import { VideoTimelineOverlay } from './VideoTimelineOverlay';
 
@@ -106,6 +106,7 @@ export function VideoStudioModal({ studio, initialFrameId, initialTimestampMs = 
             <h2 id="video-studio-title">{studio.video.video_id}</h2>
           </div>
           <div className="video-studio-header-meta">
+            <span>{studio.frames.length} {studio.frames.length === 1 ? 'keyframe' : 'keyframes'}</span>
             <span>{formatMs(studio.video.duration_ms)}</span>
             <button type="button" className="icon-button" aria-label="Đóng video studio" onClick={onClose}>×</button>
           </div>
@@ -135,25 +136,25 @@ export function VideoStudioModal({ studio, initialFrameId, initialTimestampMs = 
               onFrameSelect={selectFrame}
             />
 
-            <div className="video-studio-filmstrip" aria-label="Các canonical frame trong video">
+            <div className="video-studio-filmstrip" aria-label="Các canonical keyframe trong video">
               {studio.frames.map((frame) => (
                 <button
                   type="button"
                   key={frame.original_frame_id}
                   className={frame.original_frame_id === selectedFrameId ? 'studio-filmstrip-frame is-selected' : 'studio-filmstrip-frame'}
-                  aria-label={`Chọn frame ${frame.original_frame_id}`}
+                  aria-label={`Chọn ${keyframeLabel(frame).toLowerCase()}`}
                   aria-pressed={frame.original_frame_id === selectedFrameId}
                   onClick={() => selectFrame(frame)}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={frameThumbnailUri(frame.video_id, frame.original_frame_id)}
-                    alt={`Frame ${frame.original_frame_id} của ${frame.video_id}`}
+                    alt={`${keyframeLabel(frame)} của ${frame.video_id}`}
                     loading={frame.original_frame_id === selectedFrameId ? 'eager' : 'lazy'}
                     decoding="async"
                   />
-                  <span>#{frame.original_frame_id}</span>
-                  <small>{formatMs(frame.timestamp_ms)}</small>
+                  <span>#{frame.keyframe_no}</span>
+                  <small>Source frame {frame.original_frame_id} · {formatMs(frame.timestamp_ms)}</small>
                 </button>
               ))}
             </div>
@@ -165,9 +166,9 @@ export function VideoStudioModal({ studio, initialFrameId, initialTimestampMs = 
                 <div className="studio-selection-heading">
                   <div>
                     <p className="eyebrow">Frame đang chọn</p>
-                    <h3>Frame {selectedFrame.original_frame_id}</h3>
+                    <h3>Keyframe {selectedFrame.keyframe_no}</h3>
                   </div>
-                  <span>{formatMs(selectedFrame.timestamp_ms)}</span>
+                  <span>Source frame {selectedFrame.original_frame_id} · {formatMs(selectedFrame.timestamp_ms)}</span>
                 </div>
 
                 <div className="studio-frame-canvas">
@@ -175,7 +176,7 @@ export function VideoStudioModal({ studio, initialFrameId, initialTimestampMs = 
                   <img
                     data-testid="studio-selected-frame-image"
                     src={frameThumbnailUri(selectedFrame.video_id, selectedFrame.original_frame_id)}
-                    alt={`Frame ${selectedFrame.original_frame_id} của ${selectedFrame.video_id}`}
+                    alt={`${keyframeLabel(selectedFrame)} của ${selectedFrame.video_id}`}
                     loading="eager"
                     decoding="async"
                   />
@@ -212,7 +213,7 @@ export function VideoStudioModal({ studio, initialFrameId, initialTimestampMs = 
                     {showBoxes ? 'Ẩn bounding box' : 'Hiện bounding box'}
                   </button>
                   <button type="button" className="primary-button" onClick={() => { onSelectFrame(selectedFrame); onClose(); }}>
-                    Dùng frame {selectedFrame.original_frame_id}
+                    Dùng keyframe {selectedFrame.keyframe_no}
                   </button>
                 </div>
 
