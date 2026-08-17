@@ -403,6 +403,8 @@ describe('qualification frame-first workbench', () => {
     const dialog = screen.getByRole('dialog', { name: 'Cài đặt LLM' });
     expect(dialog).toHaveAttribute('aria-modal', 'true');
     expect(dialog).toHaveClass('settings-popover');
+    expect(dialog.parentElement).toHaveClass('settings-modal-layer');
+    expect(document.body.querySelector('.settings-modal-layer')).toContainElement(dialog);
     expect(document.querySelector('.settings-modal-backdrop')).toBeInTheDocument();
 
     const timeout = screen.getByLabelText('Timeout (ms)');
