@@ -348,7 +348,7 @@ describe('qualification frame-first workbench', () => {
     click.mockRestore();
   });
 
-  it('supports native drag and drop for changing frame rank', async () => {
+  it('supports pointer drag and drop for changing frame rank', async () => {
     const user = userEvent.setup();
     const rankedResponse: SearchResponse = {
       ...response,
@@ -375,15 +375,9 @@ describe('qualification frame-first workbench', () => {
 
     const cards = () => screen.getAllByRole('button', { name: /^Chọn frame/ })
       .map((button) => button.closest('.frame-card'));
-    const dataTransfer = {
-      effectAllowed: '',
-      dropEffect: '',
-      setData: vi.fn(),
-      getData: vi.fn(() => '2'),
-    } as unknown as DataTransfer;
-    fireEvent.dragStart(cards()[2]!, { dataTransfer });
-    fireEvent.dragOver(cards()[0]!, { dataTransfer });
-    fireEvent.drop(cards()[0]!, { dataTransfer });
+    fireEvent.pointerDown(cards()[2]!, { pointerId: 1, button: 0, clientX: 10, clientY: 300 });
+    fireEvent.pointerMove(cards()[0]!, { pointerId: 1, clientX: 10, clientY: 0 });
+    fireEvent.pointerUp(cards()[0]!, { pointerId: 1, clientX: 10, clientY: 0 });
 
     expect(screen.getAllByRole('button', { name: /^Chọn frame/ }).map((card) => card.getAttribute('aria-label'))).toEqual([
       'Chọn frame video_03 · 530',
