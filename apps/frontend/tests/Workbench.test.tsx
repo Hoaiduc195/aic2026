@@ -422,7 +422,7 @@ describe('qualification frame-first workbench', () => {
     expect(list).toHaveClass('frame-list-animated');
     expect(list.querySelectorAll('.frame-thumbnail')).toHaveLength(3);
 
-    const items = () => Array.from(list.querySelectorAll('.frame-list-item'));
+    const items = () => Array.from(list.querySelectorAll('.frame-list-item:not(.frame-list-item--dragging)'));
     expect(items()[0]).toHaveClass('frame-list-item--spacious');
     const dataTransfer = {
       effectAllowed: '',
@@ -434,6 +434,7 @@ describe('qualification frame-first workbench', () => {
     fireEvent.dragOver(items()[0]!, { dataTransfer, clientY: 0 });
 
     expect(screen.getByText('Thả để xếp ở vị trí #1')).toBeInTheDocument();
+    expect(list.querySelectorAll('.frame-list-item--dragging')).toHaveLength(1);
     expect(items()).toHaveLength(2);
     expect(items()[0]).toHaveTextContent('video_01');
     expect(items()[1]).toHaveTextContent('video_02');
