@@ -627,6 +627,16 @@ textarea:focus-visible,
   will-change: transform;
 }
 
+.frame-list-item {
+  cursor: grab;
+  touch-action: none;
+}
+
+.frame-list-item:active,
+.frame-list-item--dragging {
+  cursor: grabbing;
+}
+
 .frame-list-item--dragging {
   position: absolute;
   top: 0;

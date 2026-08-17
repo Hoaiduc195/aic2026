@@ -1,8 +1,8 @@
 'use client';
 
 import {
-  type DragEvent,
   type KeyboardEvent,
+  type PointerEvent,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -23,6 +23,15 @@ interface Props {
   onExport?: () => void;
 }
 
+interface PendingPointerDrag {
+  pointerId: number;
+  sourceIndex: number;
+  sourceKey: string;
+  startX: number;
+  startY: number;
+  started: boolean;
+}
+
 export function FrameGrid({
   frames,
   selectedKey,
@@ -39,6 +48,8 @@ export function FrameGrid({
   const animatedNodesRef = useRef<HTMLElement[]>([]);
   const animationFrameRef = useRef<number | null>(null);
   const animationTimeoutRef = useRef<number | null>(null);
+  const pointerDragRef = useRef<PendingPointerDrag | null>(null);
+  const suppressClickRef = useRef(false);
   const [draggedKey, setDraggedKey] = useState<string | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const [focusResultKey, setFocusResultKey] = useState<string | null>(null);
@@ -131,43 +142,90 @@ export function FrameGrid({
     cardRefs.current[frames[nextIndex].result_key]?.focus();
   }
 
-  function handleDragStart(event: DragEvent<HTMLElement>, index: number) {
+  function handlePointerDown(event: PointerEvent<HTMLElement>, index: number) {
+    if (event.button !== undefined && event.button !== 0) return;
     const frame = frames[index];
     if (!frame) return;
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('application/x-aic-result-key', frame.result_key);
-    event.dataTransfer.setData('text/plain', frame.result_key);
-    setDraggedKey(frame.result_key);
-    setDropIndex(index);
+
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    if (target?.closest('.frame-card-controls')) return;
+
+    pointerDragRef.current = {
+      pointerId: event.pointerId,
+      sourceIndex: index,
+      sourceKey: frame.result_key,
+      startX: event.clientX,
+      startY: event.clientY,
+      started: false,
+    };
+    suppressClickRef.current = false;
   }
 
-  function handleDragOver(event: DragEvent<HTMLElement>, targetKey: string) {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-    const sourceKey = draggedKey ?? readDraggedKey(event, frames);
-    if (!sourceKey || sourceKey === targetKey) return;
+  function handlePointerMove(
+    event: PointerEvent<HTMLElement>,
+    targetKey?: string,
+    targetElement?: HTMLElement,
+    placeholderPosition?: number,
+  ) {
+    const pending = pointerDragRef.current;
+    if (!pending || pending.pointerId !== event.pointerId) return;
+
+    if (!pending.started) {
+      const distance = Math.hypot(event.clientX - pending.startX, event.clientY - pending.startY);
+      if (distance < 6) return;
+
+      pointerDragRef.current = { ...pending, started: true };
+      suppressClickRef.current = true;
+      setDraggedKey(pending.sourceKey);
+      setDropIndex(pending.sourceIndex);
+    }
+
+    const sourceKey = pending.sourceKey;
+    if (placeholderPosition !== undefined) {
+      setDropIndex((current) => current === placeholderPosition ? current : placeholderPosition);
+      return;
+    }
+
+    const eventTarget = event.target instanceof HTMLElement
+      ? event.target.closest<HTMLElement>('[data-frame-key]')
+      : null;
+    const resolvedTarget = targetElement ?? eventTarget;
+    const resolvedKey = targetKey ?? resolvedTarget?.dataset.frameKey;
+    if (!resolvedKey || resolvedKey === sourceKey) return;
 
     const visibleFrames = frames.filter((frame) => frame.result_key !== sourceKey);
-    const targetIndex = visibleFrames.findIndex((frame) => frame.result_key === targetKey);
+    const targetIndex = visibleFrames.findIndex((frame) => frame.result_key === resolvedKey);
     if (targetIndex < 0) return;
 
-    const bounds = event.currentTarget.getBoundingClientRect();
+    const bounds = resolvedTarget?.getBoundingClientRect();
+    if (!bounds) return;
     const insertAfter = event.clientY > bounds.top + bounds.height / 2;
-    setDropIndex(targetIndex + (insertAfter ? 1 : 0));
+    const nextDropIndex = targetIndex + (insertAfter ? 1 : 0);
+    setDropIndex((current) => current === nextDropIndex ? current : nextDropIndex);
   }
 
-  function handleDrop(event: DragEvent<HTMLElement>) {
-    event.preventDefault();
-    const sourceKey = draggedKey ?? readDraggedKey(event, frames);
-    const sourceIndex = sourceKey ? frames.findIndex((frame) => frame.result_key === sourceKey) : -1;
+  function handlePointerUp(event: PointerEvent<HTMLElement>) {
+    const pending = pointerDragRef.current;
+    if (!pending || pending.pointerId !== event.pointerId) return;
+
+    const sourceKey = pending.sourceKey;
+    const sourceIndex = frames.findIndex((frame) => frame.result_key === sourceKey);
     const targetIndex = dropIndex ?? sourceIndex;
     if (sourceIndex >= 0 && targetIndex >= 0 && targetIndex < frames.length) {
       onReorder(sourceIndex, targetIndex);
     }
-    clearDragState();
+    clearPointerDrag();
   }
 
-  function clearDragState() {
+  function clearPointerDrag() {
+    pointerDragRef.current = null;
+    setDraggedKey(null);
+    setDropIndex(null);
+  }
+
+  function cancelPointerDrag() {
+    pointerDragRef.current = null;
+    suppressClickRef.current = false;
     setDraggedKey(null);
     setDropIndex(null);
   }
@@ -231,6 +289,9 @@ export function FrameGrid({
         aria-label="Danh sách kết quả frame"
         tabIndex={frames.length ? 0 : undefined}
         onKeyDown={handleKeys}
+        onPointerMove={(event) => handlePointerMove(event)}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={cancelPointerDrag}
       >
         {entries.map((entry, entryIndex) => {
           if (entry.kind === 'placeholder') {
@@ -238,12 +299,9 @@ export function FrameGrid({
               <li
                 className="frame-list-placeholder"
                 key={`placeholder-${entry.position}`}
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = 'move';
-                  setDropIndex(entry.position);
-                }}
-                onDrop={handleDrop}
+                data-drop-index={entry.position}
+                onPointerMove={(event) => handlePointerMove(event, undefined, event.currentTarget, entry.position)}
+                onPointerUp={handlePointerUp}
               >
                 <span aria-hidden="true">↕</span>
                 <span>Thả để xếp ở vị trí #{entry.position + 1}</span>
@@ -264,11 +322,10 @@ export function FrameGrid({
               className={`frame-card frame-list-item frame-list-item--spacious${entry.dragging ? ' frame-list-item--dragging' : ''}${selected ? ' selected' : ''}`}
               data-frame-key={frame.result_key}
               key={frame.result_key}
-              draggable
-              onDragStart={(event) => handleDragStart(event, index)}
-              onDragOver={(event) => handleDragOver(event, frame.result_key)}
-              onDrop={handleDrop}
-              onDragEnd={clearDragState}
+              onPointerDown={(event) => handlePointerDown(event, index)}
+              onPointerMove={(event) => handlePointerMove(event, frame.result_key, event.currentTarget)}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={cancelPointerDrag}
             >
               <div className="frame-list-main">
                 <span className="frame-drag-handle" aria-hidden="true">⠿</span>
@@ -279,7 +336,15 @@ export function FrameGrid({
                   aria-pressed={selected}
                   data-result-key={frame.result_key}
                   ref={(element) => { cardRefs.current[frame.result_key] = element; }}
-                  onClick={() => onSelect(frame)}
+                  onClick={(event) => {
+                    if (suppressClickRef.current) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      suppressClickRef.current = false;
+                      return;
+                    }
+                    onSelect(frame);
+                  }}
                 >
                   <div className="frame-thumbnail">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -362,13 +427,4 @@ function buildListEntries(
     entries.push({ kind: 'placeholder', position: insertionIndex });
   }
   return entries;
-}
-
-function readDraggedKey(event: DragEvent<HTMLElement>, frames: readonly FrameCandidate[]): string | null {
-  const rawValue = event.dataTransfer.getData('application/x-aic-result-key')
-    || event.dataTransfer.getData('text/plain');
-  if (!rawValue) return null;
-  if (frames.some((frame) => frame.result_key === rawValue)) return rawValue;
-  const legacyIndex = Number(rawValue);
-  return Number.isInteger(legacyIndex) ? frames[legacyIndex]?.result_key ?? null : null;
 }

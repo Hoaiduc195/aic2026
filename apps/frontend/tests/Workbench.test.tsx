@@ -377,6 +377,8 @@ describe('qualification frame-first workbench', () => {
       .map((button) => button.closest('.frame-card'));
     fireEvent.pointerDown(cards()[2]!, { pointerId: 1, button: 0, clientX: 10, clientY: 300 });
     fireEvent.pointerMove(cards()[0]!, { pointerId: 1, clientX: 10, clientY: 0 });
+    expect(document.querySelectorAll('.frame-list-item--dragging')).toHaveLength(1);
+    expect(screen.getByText('Thả để xếp ở vị trí #1')).toBeInTheDocument();
     fireEvent.pointerUp(cards()[0]!, { pointerId: 1, clientX: 10, clientY: 0 });
 
     expect(screen.getAllByRole('button', { name: /^Chọn frame/ }).map((card) => card.getAttribute('aria-label'))).toEqual([
@@ -418,14 +420,8 @@ describe('qualification frame-first workbench', () => {
 
     const items = () => Array.from(list.querySelectorAll('.frame-list-item:not(.frame-list-item--dragging)'));
     expect(items()[0]).toHaveClass('frame-list-item--spacious');
-    const dataTransfer = {
-      effectAllowed: '',
-      dropEffect: '',
-      setData: vi.fn(),
-      getData: vi.fn(() => '2'),
-    } as unknown as DataTransfer;
-    fireEvent.dragStart(items()[2]!, { dataTransfer });
-    fireEvent.dragOver(items()[0]!, { dataTransfer, clientY: 0 });
+    fireEvent.pointerDown(items()[2]!, { pointerId: 2, button: 0, clientX: 10, clientY: 300 });
+    fireEvent.pointerMove(items()[0]!, { pointerId: 2, clientX: 10, clientY: 0 });
 
     expect(screen.getByText('Thả để xếp ở vị trí #1')).toBeInTheDocument();
     expect(list.querySelectorAll('.frame-list-item--dragging')).toHaveLength(1);
