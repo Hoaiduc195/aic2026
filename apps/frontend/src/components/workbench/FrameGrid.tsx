@@ -1,6 +1,13 @@
 'use client';
 
-import { type DragEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import {
+  type DragEvent,
+  type KeyboardEvent,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 
 import type { FrameCandidate } from '../../lib/contracts';
 import { displayMatchedModalities, formatMs } from '../../lib/workbench-model';
@@ -27,6 +34,11 @@ export function FrameGrid({
   onExport,
 }: Props) {
   const cardRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const listRef = useRef<HTMLOListElement | null>(null);
+  const frameRectsRef = useRef<Map<string, DOMRect>>(new Map());
+  const animatedNodesRef = useRef<HTMLElement[]>([]);
+  const animationFrameRef = useRef<number | null>(null);
+  const animationTimeoutRef = useRef<number | null>(null);
   const [draggedKey, setDraggedKey] = useState<string | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const [focusResultKey, setFocusResultKey] = useState<string | null>(null);
@@ -38,6 +50,75 @@ export function FrameGrid({
     target.focus();
     setFocusResultKey(null);
   }, [focusResultKey, frames]);
+
+  function resetMotion() {
+    if (animationFrameRef.current !== null && typeof window !== 'undefined') {
+      window.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    if (animationTimeoutRef.current !== null && typeof window !== 'undefined') {
+      window.clearTimeout(animationTimeoutRef.current);
+      animationTimeoutRef.current = null;
+    }
+    animatedNodesRef.current.forEach((node) => {
+      node.style.transition = '';
+      node.style.transform = '';
+    });
+    animatedNodesRef.current = [];
+  }
+
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return undefined;
+
+    const nodes = Array.from(list.querySelectorAll<HTMLElement>('[data-frame-key]'));
+    const previousRects = frameRectsRef.current;
+    const nextRects = new Map(
+      nodes.flatMap((node) => {
+        const key = node.dataset.frameKey;
+        return key ? [[key, node.getBoundingClientRect()] as const] : [];
+      }),
+    );
+    const prefersReducedMotion = typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    resetMotion();
+    if (!prefersReducedMotion && previousRects.size > 0) {
+      const movedNodes = nodes.filter((node) => {
+        const key = node.dataset.frameKey;
+        const previous = key ? previousRects.get(key) : undefined;
+        const current = node.getBoundingClientRect();
+        if (!previous) return false;
+
+        const deltaX = previous.left - current.left;
+        const deltaY = previous.top - current.top;
+        if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return false;
+        node.style.transition = 'none';
+        node.style.transform = `translate3d(${deltaX}px, ${deltaY}px, 0)`;
+        return true;
+      });
+
+      if (
+        movedNodes.length > 0
+        && typeof window !== 'undefined'
+        && typeof window.requestAnimationFrame === 'function'
+      ) {
+        animatedNodesRef.current = movedNodes;
+        animationFrameRef.current = window.requestAnimationFrame(() => {
+          movedNodes.forEach((node) => {
+            node.style.transition = 'transform 180ms cubic-bezier(0.22, 1, 0.36, 1)';
+            node.style.transform = 'translate3d(0, 0, 0)';
+          });
+          animationFrameRef.current = null;
+          animationTimeoutRef.current = window.setTimeout(resetMotion, 220);
+        });
+      }
+    }
+
+    frameRectsRef.current = nextRects;
+    return resetMotion;
+  }, [frames, draggedKey, dropIndex]);
 
   function handleKeys(event: KeyboardEvent<HTMLOListElement>) {
     if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key) || frames.length === 0) return;
@@ -153,7 +234,8 @@ export function FrameGrid({
       )}
 
       <ol
-        className="frame-list"
+        ref={listRef}
+        className="frame-list frame-list-animated"
         aria-label="Danh sách kết quả frame"
         tabIndex={frames.length ? 0 : undefined}
         onKeyDown={handleKeys}
@@ -184,7 +266,8 @@ export function FrameGrid({
           const modalityLabel = displayMatchedModalities(frame.matched_modalities);
           return (
             <li
-              className={`frame-card frame-list-item${selected ? ' selected' : ''}`}
+              className={`frame-card frame-list-item frame-list-item--spacious${selected ? ' selected' : ''}`}
+              data-frame-key={frame.result_key}
               key={frame.result_key}
               draggable
               onDragStart={(event) => handleDragStart(event, index)}

@@ -616,10 +616,14 @@ textarea:focus-visible,
 
 .frame-list {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   margin: 18px 0 0;
   padding: 0;
   list-style: none;
+}
+
+.frame-list-animated .frame-list-item {
+  will-change: transform;
 }
 
 .frame-card {
@@ -639,7 +643,7 @@ textarea:focus-visible,
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 84px;
+  min-height: 108px;
   gap: 8px;
   padding: 14px;
   color: var(--accent);
@@ -652,7 +656,7 @@ textarea:focus-visible,
 
 .frame-list-main {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-columns: 32px minmax(0, 1fr);
   min-width: 0;
 }
 
@@ -673,7 +677,7 @@ textarea:focus-visible,
 
 .frame-card-select {
   display: grid;
-  grid-template-columns: 132px minmax(0, 1fr);
+  grid-template-columns: 172px minmax(0, 1fr);
   align-items: stretch;
   width: 100%;
   padding: 0;
@@ -702,7 +706,7 @@ textarea:focus-visible,
 
 .frame-thumbnail {
   position: relative;
-  min-height: 84px;
+  min-height: 108px;
   overflow: hidden;
   background: #dfe4e9;
 }
@@ -746,7 +750,7 @@ textarea:focus-visible,
   min-width: 0;
   align-content: center;
   gap: 4px;
-  padding: 11px 12px 12px;
+  padding: 14px 16px;
 }
 
 .frame-card-body strong {
@@ -766,8 +770,8 @@ textarea:focus-visible,
   display: flex;
   align-items: center;
   gap: 5px;
-  min-width: 132px;
-  padding: 7px 9px;
+  min-width: 148px;
+  padding: 9px 11px;
   border-left: 1px solid var(--line);
   background: #fbfcfd;
 }
@@ -786,6 +790,13 @@ textarea:focus-visible,
   flex: 1;
   color: var(--ink-muted);
   font-size: 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frame-list-animated .frame-list-item {
+    transition: none !important;
+    will-change: auto;
+  }
 }
 
 .frame-inspector {
@@ -1261,13 +1272,32 @@ textarea:focus-visible,
     border-left: 0;
   }
 
+  .frame-card-select {
+    grid-template-columns: 148px minmax(0, 1fr);
+  }
+
+  .frame-thumbnail,
+  .frame-list-placeholder {
+    min-height: 96px;
+  }
+
   .frame-card-body {
-    padding: 9px;
+    padding: 12px;
   }
 
   .frame-inspector {
     inset: 60px 0 0;
     width: 100%;
+  }
+}
+
+@media (max-width: 430px) {
+  .frame-list-main {
+    grid-template-columns: 26px minmax(0, 1fr);
+  }
+
+  .frame-card-select {
+    grid-template-columns: 128px minmax(0, 1fr);
   }
 }
 
