@@ -3,6 +3,7 @@ export interface BackendConfig {
   readonly port: number;
   readonly corsOrigins: string[];
   readonly operatorToken?: string;
+  readonly allowUnauthenticatedLocal: boolean;
   readonly databaseUrl?: string;
   readonly databaseDirectUrl?: string;
   readonly r2EndpointUrl?: string;
@@ -48,9 +49,12 @@ function stringMap(value: string | undefined, fallback: Readonly<Record<string, 
 }
 
 export function loadConfig(): BackendConfig {
+  const runtimeEnvironment = optionalEnv('NODE_ENV') ?? 'development';
   const operatorToken = optionalEnv('OPERATOR_TOKEN');
-  if (process.env.NODE_ENV === 'production' && !operatorToken) {
-    throw new Error('OPERATOR_TOKEN is required when NODE_ENV=production');
+  const allowUnauthenticatedLocal = runtimeEnvironment === 'development'
+    && optionalEnv('ALLOW_UNAUTHENTICATED_LOCAL') === 'true';
+  if (!operatorToken && runtimeEnvironment !== 'development' && runtimeEnvironment !== 'test') {
+    throw new Error('OPERATOR_TOKEN is required outside local development');
   }
   const corsOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
     .split(',')
@@ -80,6 +84,7 @@ export function loadConfig(): BackendConfig {
     port: positiveInteger(process.env.PORT, 4000),
     corsOrigins,
     operatorToken,
+    allowUnauthenticatedLocal,
     databaseUrl: optionalEnv('DATABASE_URL'),
     databaseDirectUrl: optionalEnv('DATABASE_DIRECT_URL'),
     r2EndpointUrl,

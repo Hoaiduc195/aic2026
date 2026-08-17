@@ -84,8 +84,9 @@ lại model.
 
 ## Ingest feature
 
-Feature extraction vẫn thuộc `pipelines/`, không thuộc backend. Job ingest cần
-chuẩn hóa Parquet/JSON thành các bảng sau theo transaction từng artifact/video:
+Feature extraction vẫn thuộc `pipelines/`, không thuộc backend. Importer
+dataset-specific nằm ở `pipelines/ingestion/import_refined.py`; nó đọc các
+artifact đã chuẩn hóa và ghi theo transaction từng phase/video:
 
 1. `videos`, `feature_sets`, `feature_artifacts`;
 2. `frames` với exact source-frame identity;
@@ -94,10 +95,11 @@ chuẩn hóa Parquet/JSON thành các bảng sau theo transaction từng artifac
 5. `index_releases`, `index_release_features` để khóa snapshot đa phương thức;
 6. build search indexes, benchmark, rồi mới chuyển đúng một release sang `active`.
 
-Repository hiện không chứa Parquet dataset thật để suy ra an toàn tên cột, vì
-vậy importer dataset-specific chưa được hardcode vào backend. Khi artifact
-manifest có schema ổn định, importer chỉ cần ghi vào các bảng trên; retrieval API
-không phải thay đổi.
+Importer không nằm trong backend runtime để retrieval API không phải biết cách
+đọc Parquet/NumPy. Chạy `python -m pipelines.ingestion.import_refined --dry-run`
+trước, rồi truyền `DATABASE_URL` của PostgreSQL local/Docker để import; các
+vector local được ghi trực tiếp vào `clip_embeddings`, không yêu cầu upload
+embedding lên R2.
 
 ## Kiểm tra
 

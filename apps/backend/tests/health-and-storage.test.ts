@@ -23,4 +23,12 @@ describe('health and unavailable storage', () => {
     await expect(storage.health()).resolves.toBe(false);
     await expect(storage.signReadUrl('videos/v.mp4')).rejects.toThrow('not configured');
   });
+
+  it('reports an R2 outage as degraded even when the database is healthy', async () => {
+    const config = loadConfig();
+    const database = { isConfigured: true, health: vi.fn(async () => true), query: vi.fn() };
+    const storage = { isConfigured: true, health: vi.fn(async () => false), signReadUrl: vi.fn() };
+    const health = await new HealthController(config, [], new TaskExecutorRegistry(), database, storage).health();
+    expect(health).toMatchObject({ status: 'degraded', dependencies: { database: 'healthy', object_storage: 'unhealthy' } });
+  });
 });

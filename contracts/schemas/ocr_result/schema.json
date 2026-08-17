@@ -5,7 +5,7 @@
   "description": "Frame-level OCR evidence. original_frame_id is the authoritative source-frame reference.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["video_id", "original_frame_id", "timestamp_ms", "text", "boxes", "confidence"],
+  "required": ["video_id", "original_frame_id", "timestamp_ms", "text", "boxes", "confidence", "language"],
   "properties": {
     "dataset_id": { "type": "string", "minLength": 1 },
     "dataset_version": { "type": "string", "minLength": 1 },
@@ -17,7 +17,7 @@
     "end_ms": { "type": "integer", "minimum": 1 },
     "text": { "type": "string" },
     "normalized_text": { "type": "string" },
-    "language": { "type": ["string", "null"], "minLength": 1 },
+    "language": { "const": "vi" },
     "boxes": {
       "type": "array",
       "items": {

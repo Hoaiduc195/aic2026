@@ -29,9 +29,8 @@
     "captions": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["vi", "en"],
+      "required": ["en"],
       "properties": {
-        "vi": { "type": "string" },
         "en": { "type": "string" }
       }
     },

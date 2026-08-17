@@ -43,7 +43,16 @@ class NormalizationTests(unittest.TestCase):
         )
         self.assertEqual(record["text"], "")
         self.assertEqual(record["boxes"], [])
+        self.assertEqual(record["language"], "vi")
         self.assertEqual(record["original_frame_id"], 12)
+
+    def test_ocr_rejects_non_vietnamese_language(self) -> None:
+        with self.assertRaises(ValueError):
+            normalize_ocr(
+                self.identity,
+                {"text": "hello", "boxes": [], "confidence": 0.9, "language": "en"},
+                model_version="PP-OCRv5",
+            )
 
     def test_normalized_object_record_validates_against_repository_contract(self) -> None:
         record = normalize_detections(self.identity, [], model_version="yolo26n.pt")

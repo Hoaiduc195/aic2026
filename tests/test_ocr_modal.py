@@ -69,6 +69,65 @@ class OcrPlanningTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ocr.validate_options(batch_size=8, max_retries=2, max_images=-1)
 
+    def test_model_configuration_supports_vietnamese_and_english_on_t4(self) -> None:
+        self.assertEqual(ocr.DEFAULT_GPU_TYPE, "T4")
+        self.assertEqual(ocr.DETECTION_MODEL_VERSION, "PP-OCRv6")
+        self.assertEqual(ocr.DETECTION_MODEL_NAME, "PP-OCRv6_small_det")
+        self.assertEqual(ocr.PADDLEPADDLE_VERSION, "3.2.1")
+        self.assertEqual(
+            ocr.PADDLE_BASE_IMAGE,
+            "paddlepaddle/paddle:3.2.1-gpu-cuda11.8-cudnn8.9",
+        )
+        self.assertEqual(ocr.PADDLEOCR_VERSION, "3.7.0")
+        self.assertEqual(
+            ocr.OPENCV_SYSTEM_PACKAGES,
+            (
+                "libgl1",
+                "libglib2.0-0",
+                "libsm6",
+                "libxext6",
+                "libxrender1",
+            ),
+        )
+        self.assertEqual(ocr.SUPPORTED_LANGUAGES, ("vi",))
+        self.assertEqual(ocr.LANGUAGE, "vi")
+        self.assertEqual(ocr.RECOGNITION_BACKEND, "paddleocr")
+        self.assertEqual(
+            ocr.RECOGNITION_MODEL_NAME,
+            "latin_PP-OCRv5_mobile_rec",
+        )
+        self.assertEqual(ocr.RECOGNITION_BATCH_SIZE, 64)
+
+    def test_modal_image_bootstraps_pyyaml_before_paddleocr(self) -> None:
+        self.assertEqual(ocr.PYYAML_REQUIREMENT, "PyYAML>=6.0,<7")
+        self.assertEqual(ocr.PYYAML_BOOTSTRAP_OPTIONS, "--ignore-installed")
+
+    def test_format_fps_is_stable_for_positive_and_empty_durations(self) -> None:
+        self.assertEqual(ocr.format_fps(120, 30.0), "4.00")
+        self.assertEqual(ocr.format_fps(1, 0.0), "0.00")
+        self.assertEqual(ocr.format_fps(0, 2.0), "0.00")
+
+    def test_recognition_result_keeps_detection_polygons_and_recognition_order(self) -> None:
+        polygon = [[10, 20], [200, 20], [200, 50], [10, 50]]
+
+        result = ocr.assemble_recognition_result(
+            {"dt_polys": [polygon]},
+            ["Xin chào"],
+            [0.91],
+        )
+
+        self.assertEqual(result["dt_polys"], [polygon])
+        self.assertEqual(result["rec_texts"], ["Xin chào"])
+        self.assertEqual(result["rec_scores"], [0.91])
+
+    def test_extract_recognition_result_preserves_vietnamese_unicode(self) -> None:
+        text, score = ocr.extract_recognition_result(
+            {"res": {"rec_text": "Cửa hàng tiện lợi", "rec_score": 0.93}}
+        )
+
+        self.assertEqual(text, "Cửa hàng tiện lợi")
+        self.assertEqual(score, 0.93)
+
     def test_dry_run_does_not_require_modal_or_write_results(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)

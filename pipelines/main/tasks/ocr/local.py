@@ -6,7 +6,12 @@ from typing import Any
 from pipelines.main.core.models import NodeContext, NodeResult
 from pipelines.main.tasks.base import TaskNode
 from pipelines.main.tasks.io import first_artifact_path, jsonl_bytes, read_jsonl
-from pipelines.main.tasks.normalization.records import FrameIdentity, normalize_ocr
+from pipelines.main.tasks.normalization.records import (
+    OCR_LANGUAGE,
+    OCR_SCHEMA_VERSION,
+    FrameIdentity,
+    normalize_ocr,
+)
 
 
 class OcrLocalNode(TaskNode):
@@ -24,7 +29,14 @@ class OcrLocalNode(TaskNode):
         except ImportError:
             return NodeResult.failed(self.task_name, self.provider, "missing_ocr_dependency", "OCR requires paddleocr")
         rows = read_jsonl(first_artifact_path(context.artifacts["keyframes"]))
-        language = str(context.config.node(self.task_name).options.get("language", "vi"))
+        language = str(context.config.node(self.task_name).options.get("language", OCR_LANGUAGE)).strip().lower()
+        if language != OCR_LANGUAGE:
+            return NodeResult.failed(
+                self.task_name,
+                self.provider,
+                "unsupported_ocr_language",
+                f"OCR pipeline only supports language={OCR_LANGUAGE}",
+            )
         model_version = str(context.config.node(self.task_name).options.get("model_version", "PP-OCRv5"))
         try:
             if self._engine is None:
@@ -45,7 +57,7 @@ class OcrLocalNode(TaskNode):
             relative_path=f"canonical/{context.video_id}/ocr.jsonl",
             payload=jsonl_bytes(records),
             schema_name="ocr_result",
-            schema_version="1.0.0",
+            schema_version=OCR_SCHEMA_VERSION,
             dataset_id=context.config.dataset_id,
             dataset_version=context.config.dataset_version,
             record_count=len(records),

@@ -8,6 +8,8 @@ from typing import Any
 
 PIPELINE_VERSION = "main-v1.0.0"
 SCHEMA_VERSION = "1.0.0"
+OCR_LANGUAGE = "vi"
+OCR_SCHEMA_VERSION = "2.0.0"
 
 
 @dataclass(frozen=True)
@@ -83,6 +85,9 @@ def normalize_ocr(
     confidence = float(result.get("confidence", 0.0))
     if not 0.0 <= confidence <= 1.0:
         raise ValueError("OCR confidence must be between 0 and 1")
+    language = str(result.get("language", OCR_LANGUAGE)).strip().lower()
+    if language != OCR_LANGUAGE:
+        raise ValueError(f"OCR language must be {OCR_LANGUAGE}")
     boxes = []
     for item in result.get("boxes", []):
         box = item.get("box", [])
@@ -104,9 +109,9 @@ def normalize_ocr(
         "normalized_text": text.casefold(),
         "boxes": boxes,
         "confidence": confidence,
-        "language": result.get("language", "vi"),
+        "language": language,
         "producer": "ocr:main",
         "model_version": model_version,
         "pipeline_version": PIPELINE_VERSION,
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": OCR_SCHEMA_VERSION,
     }

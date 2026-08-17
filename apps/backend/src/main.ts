@@ -16,7 +16,7 @@ async function bootstrap(): Promise<void> {
     origin: config.corsOrigins,
     credentials: false,
   });
-  app.use(createOperatorAuthMiddleware(config.operatorToken));
+  app.use(createOperatorAuthMiddleware(config.operatorToken, config.allowUnauthenticatedLocal));
   await app.listen(config.port, '0.0.0.0');
 }
 

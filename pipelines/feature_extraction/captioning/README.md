@@ -4,6 +4,9 @@ This module streams local keyframes to one Modal T4 container running
 `microsoft/Florence-2-base`. It generates English captions; translation is a
 separate downstream feature.
 
+Only the English output is used for the canonical `caption_result` and refined
+database artifacts. Any optional `captioning_vi/` output is not imported.
+
 The local machine owns the input and output folders. Frames are not uploaded
 to a Modal Volume. A small Modal Volume is used only for the Hugging Face
 model cache, so reruns do not download model weights again.

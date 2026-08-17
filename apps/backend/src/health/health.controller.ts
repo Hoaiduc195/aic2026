@@ -23,8 +23,10 @@ export class HealthController {
       this.database.health(),
       this.storage.health(),
     ]);
+    const databaseDegraded = this.database.isConfigured && !databaseHealthy;
+    const storageDegraded = this.storage.isConfigured && !storageHealthy;
     return {
-      status: databaseHealthy || !this.database.isConfigured ? 'ok' : 'degraded',
+      status: databaseDegraded || storageDegraded ? 'degraded' : 'ok',
       service: '@aic2026/backend',
       mode: 'offline-first',
       dependencies: {

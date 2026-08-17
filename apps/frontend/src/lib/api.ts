@@ -407,7 +407,7 @@ function optionalVersion(value: unknown): string | undefined {
 
 function requiredUri(value: unknown, field: string): string {
   const uri = requiredText(value, field);
-  if (!/^(file|s3|r2|gs|azure|https?):\/\/[^\s?#]+$/.test(uri)) {
+  if (!/^(file|s3|r2|gs|azure|https?):\/\/[^\s]+$/.test(uri)) {
     throw new Error(`${field} phải là storage URI hợp lệ`);
   }
   return uri;

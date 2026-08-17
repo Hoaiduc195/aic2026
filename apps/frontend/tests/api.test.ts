@@ -42,6 +42,20 @@ afterEach(() => {
 });
 
 describe('search API boundary', () => {
+  it('accepts signed R2 preview URLs with query parameters', () => {
+    const parsed = parseSearchResponse({
+      ...validResponse,
+      results: [
+        {
+          ...validResponse.results[0],
+          preview_uri: 'https://cdn.example.com/frame.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=test',
+        },
+      ],
+    });
+
+    expect(parsed.results[0].preview_uri).toContain('?X-Amz-Algorithm=');
+  });
+
   it('normalizes legacy timestamp aliases and validates response versions', () => {
     const parsed = parseSearchResponse({
       ...validResponse,

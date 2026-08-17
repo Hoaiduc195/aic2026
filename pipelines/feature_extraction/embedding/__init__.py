@@ -1,0 +1,1 @@
+"""Visual embedding extraction helpers."""

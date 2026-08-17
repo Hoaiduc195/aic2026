@@ -1,1 +1,1 @@
-"""Image captioning and Vietnamese translation task."""
+"""English-only image captioning task."""

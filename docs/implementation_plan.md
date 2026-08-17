@@ -37,5 +37,4 @@
 ## Current gate
 
 Backend and frontend tests are green. Refined artifacts remain staging-only
-until exact frame mapping, R2 object keys, embedding revision and missing object
-sources are resolved.
+until exact frame mapping, R2 object keys and embedding revision are resolved.

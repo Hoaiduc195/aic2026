@@ -43,16 +43,33 @@ tra một danh sách bảng, nên khi import cần chạy cả hai bước xác 
 `aic/data/refined/` đã được chuẩn hóa theo frame-first:
 
 - `keyframe_manifest.parquet/csv`
+- `canonical_frame_candidates.parquet/csv` — one representative candidate per
+  `(video_id, original_frame_id)`; duplicate occurrences are represented by
+  `frame_aliases`.
+- `frame_aliases.parquet/csv` — every keyframe/map occurrence keyed by
+  `(video_id, keyframe_no)`, including occurrences that share one canonical
+  frame candidate.
+- `source_map_index.parquet/csv` — coverage summary for the authoritative
+  sparse `map-keyframes` files.
 - `captions_en.parquet` — chỉ caption tiếng Anh
 - `asr_spans.parquet` — interval theo timeline
 - `embedding_index.parquet` và `embeddings/*.npy`
 - `objects.parquet`
 - `object_frame_manifest.parquet`
 
-Các cột identity cũ đã được loại khỏi artifact refined. Dữ liệu vẫn là staging,
-chưa import-ready vì còn thiếu canonical full-frame manifest, mapping exact
-frame ở một số nguồn, R2 URI, revision đầy đủ của text encoder và 30 object
-JSON bị thiếu.
+Caption dùng tiếng Anh (`language = en`); OCR là modality tiếng Việt
+(`language = vi`). Không tạo hoặc import `caption_vi`.
+
+Các cột identity cũ đã được loại khỏi artifact refined. Map `map-keyframes` đã
+được kiểm tra đủ 873 video và 177.321 occurrence; `original_frame_id` hiện là
+`frame_idx` chính xác trong video, với 176.707 canonical frame và các occurrence
+trùng vẫn được giữ nguyên. Đây là sparse selected-frame map, không phải manifest
+liệt kê mọi frame của video.
+
+Dữ liệu có thể import vào PostgreSQL + pgvector local bằng
+`pipelines/ingestion/import_refined.py`; vector `.npy` được đọc trực tiếp từ
+local nên không bắt buộc upload lên R2. Exact revision của text encoder vẫn là
+điều kiện để bật visual text-to-vector retrieval khi chạy backend.
 
 ## Luồng import đề xuất
 
@@ -75,8 +92,5 @@ failed`. Không nên import toàn bộ 873 video trước khi thử một batch 
 
 ## Những việc còn thiếu
 
-- Bổ sung manifest đầy đủ của video và source-frame timeline.
-- Xác nhận `original_frame_id` của embedding không chỉ là row ordinal.
-- Bổ sung object source bị thiếu hoặc đánh dấu rõ khi import.
-- Khai báo chính xác checkpoint/revision của embedding image và text encoder.
-- Upload artifact immutable lên R2 rồi mới chạy importer Neon.
+- Khai báo chính xác revision của text encoder.
+- Chạy bulk import local, kiểm tra row count/checksum, rồi mới build HNSW/GIN indexes.

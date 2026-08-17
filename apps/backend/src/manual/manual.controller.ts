@@ -1,8 +1,10 @@
 import { BadRequestException, Body, Controller, Get, Inject, Param, Put, Query } from '@nestjs/common';
 
-import { RETRIEVAL_STORE } from '../common/tokens';
+import { OBJECT_STORAGE, RETRIEVAL_STORE } from '../common/tokens';
 import type { RetrievalStore } from '../retrieval/retrieval.store';
 import { buildSubmissionPreview, parseSubmissionInput } from './submission-preview';
+import type { ObjectStorage } from '../storage/object-storage';
+import { signPreviewUris } from '../storage/preview-url';
 
 function id(value: string): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(value)) throw new BadRequestException('query_id has an invalid format');
@@ -18,11 +20,19 @@ function pageInteger(value: string | undefined, fallback: number, minimum: numbe
 
 @Controller('v1/queries')
 export class ManualController {
-  constructor(@Inject(RETRIEVAL_STORE) private readonly store: RetrievalStore) {}
+  constructor(
+    @Inject(RETRIEVAL_STORE) private readonly store: RetrievalStore,
+    @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
+  ) {}
 
   @Get(':queryId/candidates')
-  candidates(@Param('queryId') queryId: string, @Query('limit') limit?: string, @Query('offset') offset?: string) {
-    return this.store.listCandidates(id(queryId), pageInteger(limit, 100, 1, 1000), pageInteger(offset, 0, 0, 1_000_000));
+  async candidates(@Param('queryId') queryId: string, @Query('limit') limit?: string, @Query('offset') offset?: string) {
+    const page = await this.store.listCandidates(
+      id(queryId),
+      pageInteger(limit, 100, 1, 1000),
+      pageInteger(offset, 0, 0, 1_000_000),
+    );
+    return { ...page, candidates: await signPreviewUris(page.candidates, this.storage) };
   }
 
   @Get(':queryId/selection')

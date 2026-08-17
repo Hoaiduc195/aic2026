@@ -8,10 +8,19 @@ function tokensMatch(actual: string, expected: string): boolean {
   return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
 }
 
-export function createOperatorAuthMiddleware(expectedToken?: string) {
+export function createOperatorAuthMiddleware(expectedToken?: string, allowUnauthenticatedLocal = false) {
   return (request: Request, response: Response, next: NextFunction): void => {
-    if (!expectedToken || request.path === '/health') {
+    if (request.path === '/health') {
       next();
+      return;
+    }
+
+    if (!expectedToken) {
+      if (allowUnauthenticatedLocal) {
+        next();
+        return;
+      }
+      response.status(503).json({ message: 'operator authentication is not configured' });
       return;
     }
 

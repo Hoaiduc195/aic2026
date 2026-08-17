@@ -19,6 +19,8 @@ database migrations, or organizer-specific submission payloads.
   `original_frame_id` internally.
 - Evidence is independently addressable through `evidence_id` and carries its
   producer/model provenance.
+- Caption evidence is English-only (`language: "en"`); OCR evidence is
+  Vietnamese-only (`language: "vi"`).
 - Published results identify one coherent dataset, pipeline, schema, and index
   version tuple.
 - A failed retrieval branch is represented by a normalized `branch_result` and

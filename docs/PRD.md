@@ -70,5 +70,4 @@ Next.js workbench → manual revision → submission preview
 - Complete the canonical full-frame manifest for all videos.
 - Resolve the five embedding count mismatches and verify source frame mapping.
 - Record the exact embedding image/text model revisions.
-- Restore the 30 missing object source files or explicitly exclude them.
 - Run a small Neon import and activate one verified index release.

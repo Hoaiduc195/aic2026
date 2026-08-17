@@ -421,6 +421,7 @@ class QualificationContractTest(unittest.TestCase):
                 "text": "xin chao",
                 "boxes": [],
                 "confidence": 0.8,
+                "language": "vi",
             },
         )
         self.assert_valid(
@@ -501,6 +502,36 @@ class QualificationContractTest(unittest.TestCase):
                     "evidence_ids": [],
                 },
             )
+
+    def test_caption_and_ocr_language_contracts(self):
+        caption = {
+            "video_id": "vid_01",
+            "original_frame_id": 148,
+            "timestamp_ms": 4933,
+            "caption_en": "A person is holding a bottle.",
+            "language": "en",
+            "confidence": 0.9,
+            "producer": "florence-caption:v1",
+            "model_version": "florence-2-base",
+            "pipeline_version": "caption-v2",
+            "schema_version": "2.0.0",
+        }
+        self.assert_valid("caption_result", caption)
+        self.assert_invalid("caption_result", {**caption, "language": "vi"})
+        self.assert_invalid("caption_result", {**caption, "caption_vi": "Một người cầm chai."})
+
+        ocr = {
+            "video_id": "vid_01",
+            "original_frame_id": 148,
+            "timestamp_ms": 4933,
+            "text": "Cửa hàng",
+            "boxes": [],
+            "confidence": 0.9,
+            "language": "vi",
+            "producer": "ocr:v1",
+        }
+        self.assert_valid("ocr_result", ocr)
+        self.assert_invalid("ocr_result", {**ocr, "language": "en"})
 
 
 if __name__ == "__main__":

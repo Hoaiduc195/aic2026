@@ -1,16 +1,29 @@
-# Modal Vietnamese OCR
+# Modal Vietnamese OCR with PP-OCRv6 + PP-OCRv5 Mobile
 
 `modal_paddleocr.py` processes a local directory of image frames with
-PaddleOCR running on a Modal GPU. The local process only enumerates files,
-uploads bounded batches, and writes results; it does not load PaddleOCR or a
-GPU model locally.
+PaddleOCR text detection and lightweight PaddleOCR recognition running on a
+Modal GPU. The
+local process only enumerates files, uploads bounded batches, and writes
+results; it does not load OCR models locally.
 
 The default remote configuration is:
 
-- PaddleOCR `3.2.0` on the official PaddlePaddle GPU image;
-- PP-OCRv5 with `lang=vi`;
-- `PP-OCRv5_mobile_det` and the Latin/Vietnamese recognizer;
-- one long-lived T4 worker with dynamic batches of eight images.
+- PaddleOCR `3.7.0` `PP-OCRv6_small_det` for fast text detection;
+- PaddleOCR `latin_PP-OCRv5_mobile_rec` for Latin-script recognition,
+  including Vietnamese, with a 14 MB model;
+- PaddlePaddle `3.2.1` with CUDA 11.8 as the inference runtime;
+- OpenCV Linux runtime libraries (`libgl1`, `libglib2.0-0`, `libsm6`,
+  `libxext6`, `libxrender1`);
+- detector batches of eight frames and recognition batches of up to 64 crops;
+- standard Paddle inference in FP32 on one long-lived T4 worker.
+
+Set `OCR_DETECTION_MODEL=PP-OCRv6_medium_det` when accuracy is more important
+than detection throughput. The default `PP-OCRv6_small_det` is chosen for the
+177k-frame throughput target.
+
+The command accepts `--input-dir` and `--output-dir`. `--max-images 0` is the
+default, so omitting that option processes every supported frame, including a
+dataset of approximately 177k frames.
 
 ## Input and output
 
@@ -46,8 +59,17 @@ modal token new
 ```
 
 PaddlePaddle, PaddleOCR, Pillow, and the GPU runtime are installed in the
-remote Modal image. The model cache is kept in the Modal Volume
-`aic-paddleocr-model-cache` so repeated runs do not redownload model files.
+remote Modal image. The model cache is kept in the Modal
+Volume `aic-paddleocr-model-cache` so repeated runs do not redownload model
+files.
+The image first installs a wheel-based `PyYAML>=6.0,<7` with
+`--ignore-installed`; this works around the distutils-installed PyYAML package
+included in the PaddlePaddle base image.
+
+The base image is pinned to PaddlePaddle `3.2.1`. It also installs the Linux
+runtime libraries required by the non-headless OpenCV wheel. If an older Modal
+image logs `Type of attribute: strides is not right` or
+`libGL.so.1: cannot open shared object file`, rerun after the image rebuilds.
 
 ## Run a pilot
 
@@ -83,9 +105,24 @@ modal run pipelines/feature_extraction/ocr/modal_paddleocr.py `
   --batch-size 64
 ```
 
+There is no `--max-images` flag in this full-run command, so all frames are
+processed. The local process keeps only a bounded upload window in memory; it
+does not load all 177k images at once.
+
 Existing non-empty JSON result files are skipped. Use `--overwrite` only when
 intentionally regenerating results. `--batch-size` is the local upload window;
-the remote GPU batch remains bounded at eight.
+the detector GPU batch remains bounded at eight and recognition is batched
+separately in groups of up to 64 text crops. Progress logs include
+`batch_fps` for the latest window, `fps` for end-to-end completed frames, and
+`remote_fps` for remote inference time excluding local file writes.
+
+To regenerate JSON files produced by the previous recognizer, pass `--overwrite`
+or use a new output directory. To test another PaddleOCR recognition model,
+set its model name before running:
+
+```powershell
+$env:OCR_RECOGNITION_MODEL = "latin_PP-OCRv5_mobile_rec"
+```
 
 For independent runs, split the deterministic input list. Uneven partitions
 are supported:
