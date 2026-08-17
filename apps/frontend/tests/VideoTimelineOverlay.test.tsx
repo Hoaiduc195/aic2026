@@ -44,4 +44,32 @@ describe('VideoTimelineOverlay', () => {
     expect(onSeek).toHaveBeenCalledWith(2_000);
     expect(onFrameSelect).toHaveBeenCalledWith(frames[1]);
   });
+
+  it('keeps a dense ASR timeline compact instead of growing vertically for every overlap', () => {
+    const denseSpans: StudioAsrSpan[] = Array.from({ length: 12 }, (_, index) => ({
+      evidence_id: `dense-${index}`,
+      start_ms: 0,
+      end_ms: 10_000,
+      text: `Span ${index}`,
+      language: 'vi',
+      producer: 'asr:v1',
+    }));
+
+    render(
+      <VideoTimelineOverlay
+        durationMs={10_000}
+        currentTimeMs={1_500}
+        frames={frames}
+        asrSpans={denseSpans}
+        selectedFrameId={0}
+        onSeek={vi.fn()}
+        onFrameSelect={vi.fn()}
+      />,
+    );
+
+    const stage = document.querySelector('.video-timeline-stage');
+    expect(stage).not.toBeNull();
+    expect(stage).toHaveStyle({ minHeight: '78px' });
+    expect(document.querySelectorAll('[data-testid^="timeline-asr-"]')).toHaveLength(12);
+  });
 });
