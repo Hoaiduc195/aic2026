@@ -114,6 +114,18 @@ describe('workbench answer model', () => {
     expect(validateTrakeSequence([candidate, { ...next, video_id: 'video_02' }])).toBe(false);
   });
 
+  it('keeps object evidence visible and filters bounded ASR to the frame timestamp', () => {
+    const groups = groupEvidence([
+      { evidence_id: 'object-1', type: 'object', snippet: 'person', producer: 'object:v1' },
+      { evidence_id: 'asr-1', type: 'asr', start_ms: 1_000, end_ms: 2_000, snippet: 'đang đi', producer: 'asr:v1' },
+      { evidence_id: 'asr-2', type: 'asr', start_ms: 4_000, end_ms: 5_000, snippet: 'đã rẽ', producer: 'asr:v1' },
+    ], 1_500);
+
+    expect(groups.object).toHaveLength(1);
+    expect(groups.object[0].snippet).toBe('person');
+    expect(groups.asr.map((item) => item.evidence_id)).toEqual(['asr-1']);
+  });
+
   it('reorders ranked frames immutably and exports only the first 100 textual answers', () => {
     const frames = Array.from({ length: 101 }, (_, index) => ({
       result_key: `video_${index}`,

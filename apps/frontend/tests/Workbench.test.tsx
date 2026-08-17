@@ -230,6 +230,32 @@ describe('qualification frame-first workbench', () => {
     expect(screen.queryByText('visual')).not.toBeInTheDocument();
   });
 
+  it('renders object evidence and only ASR overlapping the active frame', async () => {
+    const user = userEvent.setup();
+    const evidenceResponse: SearchResponse = {
+      ...response,
+      results: [{
+        ...response.results[0],
+        evidence: [
+          { evidence_id: 'object-1', type: 'object', snippet: 'person', producer: 'object:v1' },
+          { evidence_id: 'asr-overlap', type: 'asr', start_ms: 12_000, end_ms: 13_000, snippet: 'đang đi', producer: 'asr:v1' },
+          { evidence_id: 'asr-outside', type: 'asr', start_ms: 20_000, end_ms: 21_000, snippet: 'đã rẽ', producer: 'asr:v1' },
+        ],
+        matched_modalities: ['object', 'asr'],
+      }],
+    };
+    renderWorkbench({ searchResponse: evidenceResponse });
+
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+    await user.click(await screen.findByRole('button', { name: 'Chọn frame video_01 · 385' }));
+
+    expect(screen.getByText('Object detection')).toBeInTheDocument();
+    expect(screen.getByText('person')).toBeInTheDocument();
+    expect(screen.getByText('đang đi')).toBeInTheDocument();
+    expect(screen.queryByText('đã rẽ')).not.toBeInTheDocument();
+  });
+
   it('adds the selected frame and reveals answers only through the drawer badge', async () => {
     const user = userEvent.setup();
     const writeText = vi.fn(async () => undefined);
