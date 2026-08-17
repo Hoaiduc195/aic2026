@@ -292,6 +292,66 @@ export function SearchSidebar({
           </label>
         </div>
 
+        <div className="vlm-rerank-controls" style={{ marginTop: '12px', padding: '10px', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '8px' }}>
+            <input
+              id="vlm-rerank-enabled-sidebar"
+              type="checkbox"
+              checked={Boolean(retrievalSettings.vlm_rerank?.enabled)}
+              onChange={(event) => onRetrievalChange({
+                ...retrievalSettings,
+                vlm_rerank: {
+                  ...retrievalSettings.vlm_rerank,
+                  enabled: event.target.checked,
+                  top_k: retrievalSettings.vlm_rerank?.top_k ?? 15,
+                  weight: retrievalSettings.vlm_rerank?.weight ?? 0.6,
+                },
+              })}
+            />
+            <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>Bật VLM Visual Rerank (Qwen2.5-VL / Gemini)</span>
+          </label>
+
+          {retrievalSettings.vlm_rerank?.enabled && (
+            <div className="retrieval-settings-grid" style={{ marginTop: '6px' }}>
+              <label htmlFor="vlm-rerank-top-k">
+                <span>Top K rerank</span>
+                <input
+                  id="vlm-rerank-top-k"
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={displayNumberInput(retrievalSettings.vlm_rerank.top_k ?? 15)}
+                  onChange={(event) => onRetrievalChange({
+                    ...retrievalSettings,
+                    vlm_rerank: {
+                      ...retrievalSettings.vlm_rerank,
+                      top_k: parseNumberInput(event.target.value),
+                    },
+                  })}
+                />
+              </label>
+              <label htmlFor="vlm-rerank-weight">
+                <span>Trọng số VLM (0-1)</span>
+                <input
+                  id="vlm-rerank-weight"
+                  type="number"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={displayNumberInput(retrievalSettings.vlm_rerank.weight ?? 0.6)}
+                  onChange={(event) => onRetrievalChange({
+                    ...retrievalSettings,
+                    vlm_rerank: {
+                      ...retrievalSettings.vlm_rerank,
+                      weight: parseNumberInput(event.target.value),
+                    },
+                  })}
+                />
+              </label>
+            </div>
+          )}
+        </div>
+
         {retrievalError && <p className="settings-error" role="alert">{retrievalError}</p>}
         <p className="sidebar-help">
           Số frame là kết quả cuối cùng; candidate và fusion pool lớn hơn giúp RRF có thêm dữ liệu nhưng có thể chậm hơn.

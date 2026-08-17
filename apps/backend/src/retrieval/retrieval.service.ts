@@ -4,7 +4,7 @@ import { performance } from 'node:perf_hooks';
 
 import {
   APP_CONFIG, EMBEDDING_SERVICE, EVIDENCE_REPOSITORY, OBJECT_STORAGE,
-  RETRIEVAL_BRANCHES, RETRIEVAL_STORE, TASK_EXECUTOR_REGISTRY,
+  RETRIEVAL_BRANCHES, RETRIEVAL_STORE, TASK_EXECUTOR_REGISTRY, VLM_RERANKER,
 } from '../common/tokens';
 import type {
   BranchName,
@@ -24,6 +24,8 @@ import type { EvidenceRepository, EvidenceView } from './evidence.repository';
 import type { ObjectStorage } from '../storage/object-storage';
 import { signPreviewUris, withPreviewReferences } from '../storage/preview-url';
 import type { EmbeddingService } from '../embedding_services/embedding.service';
+
+import type { VlmRerankerService } from './vlm-reranker.service';
 
 const DEFAULT_BRANCH_K = 100;
 const DEFAULT_FUSION_K = 500;
@@ -61,6 +63,7 @@ export class RetrievalService {
     @Optional() @Inject(EVIDENCE_REPOSITORY) private readonly evidenceRepository?: EvidenceRepository,
     @Optional() @Inject(OBJECT_STORAGE) private readonly storage?: ObjectStorage,
     @Optional() @Inject(EMBEDDING_SERVICE) private readonly embeddingService?: EmbeddingService,
+    @Optional() @Inject(VLM_RERANKER) private readonly vlmReranker?: VlmRerankerService,
   ) {}
 
   createPlan(request: SearchRequest): RetrievalExecutionPlan {
@@ -111,6 +114,19 @@ export class RetrievalService {
       } catch (error) {
         this.logger.warn(`preview signing failed: ${error instanceof Error ? error.message : 'unknown error'}`);
         warnings.push('preview_signing_failed');
+      }
+    }
+
+    if (this.vlmReranker) {
+      try {
+        responseCandidates = await this.vlmReranker.rerank(
+          request.query,
+          responseCandidates,
+          request.retrieval?.vlm_rerank,
+        );
+      } catch (error) {
+        this.logger.warn(`vlm reranking failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+        warnings.push('vlm_reranking_failed');
       }
     }
 

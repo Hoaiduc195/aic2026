@@ -50,12 +50,19 @@ export interface SearchEmbeddingConfig {
   timeout_ms: number;
 }
 
+export interface VlmRerankConfig {
+  enabled?: boolean;
+  top_k?: number;
+  weight?: number;
+}
+
 export interface SearchRetrievalConfig {
   display_k: number;
   branch_k: number;
   fusion_k: number;
   rrf_k?: number;
   channel_weights?: Partial<Record<SearchRrfBranch, number>>;
+  vlm_rerank?: VlmRerankConfig;
 }
 
 export interface RetrievalCandidate {

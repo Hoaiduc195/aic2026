@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: aic-postgres
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: aic
+      POSTGRES_PASSWORD: aic_c85d934992674be59c6e39b45af7c450
+      POSTGRES_DB: aic_local
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aic -d aic_local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  embedding:
+    build:
+      context: .
+      dockerfile: embedding_services/Dockerfile
+    container_name: aic-embedding
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      EMBEDDING_PORT: 8001
+      EMBEDDING_DEVICE: cpu
+    volumes:
+      - model_cache:/models/huggingface
+
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    container_name: aic-backend
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    env_file:
+      - apps/backend/.env
+    environment:
+      PORT: 4000
+      CORS_ORIGINS: "http://localhost:3000"
+      DATABASE_URL: "postgresql://aic:aic_c85d934992674be59c6e39b45af7c450@postgres:5432/aic_local"
+      DATABASE_DIRECT_URL: "postgresql://aic:aic_c85d934992674be59c6e39b45af7c450@postgres:5432/aic_local"
+      EMBEDDING_SERVICE_URL: "http://embedding:8001/embed"
+      DATASET_ID: aic2026
+      DATASET_VERSION: aic2026
+      INDEX_VERSION: aic2026-local-v1
+      VERSION_STATUS: active
+    depends_on:
+      postgres:
+        condition: service_healthy
+      embedding:
+        condition: service_started
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    container_name: aic-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      BACKEND_API_URL: "http://backend:4000"
+      NEXT_PUBLIC_API_BASE_URL: "/api"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  model_cache:

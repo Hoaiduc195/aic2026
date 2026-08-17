@@ -18,6 +18,7 @@ export interface VqaGroundingContext {
   readonly video_id: string;
   readonly original_frame_id: number;
   readonly timestamp_ms: number;
+  readonly thumbnail_object_key?: string | null;
   readonly evidence: readonly VqaGroundingEvidence[];
 }
 
@@ -43,8 +44,8 @@ export class PostgresVqaGroundingRepository implements VqaGroundingRepository {
   constructor(private readonly database: DatabaseClient) {}
 
   async find(queryId: string, videoId: string, originalFrameId: number): Promise<VqaGroundingContext | null> {
-    const result = await this.database.query<VqaGroundingRow>(`
-      SELECT r.query_id, r.task, f.video_id, f.original_frame_id, f.timestamp_ms,
+    const result = await this.database.query<VqaGroundingRow & { thumbnail_object_key?: string | null }>(`
+      SELECT r.query_id, r.task, f.video_id, f.original_frame_id, f.timestamp_ms, f.thumbnail_object_key,
              e.evidence_id, e.evidence_type AS type, e.start_ms, e.end_ms,
              COALESCE(t.text_content, o.label, e.payload->>'snippet') AS snippet,
              COALESCE(fs.producer, 'unknown') AS producer
@@ -67,6 +68,7 @@ export class PostgresVqaGroundingRepository implements VqaGroundingRepository {
       video_id: first.video_id,
       original_frame_id: Number(first.original_frame_id),
       timestamp_ms: Number(first.timestamp_ms),
+      thumbnail_object_key: first.thumbnail_object_key,
       evidence: result.rows
         .filter((row) => row.evidence_id && row.type && row.start_ms !== null && row.end_ms !== null)
         .map((row) => ({

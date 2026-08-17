@@ -7,10 +7,15 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 
-import { LANGUAGE_MODEL, VQA_GROUNDING_REPOSITORY } from '../../common/tokens';
+import {
+  LANGUAGE_MODEL, OBJECT_STORAGE, VISION_LANGUAGE_MODEL, VQA_GROUNDING_REPOSITORY,
+} from '../../common/tokens';
 import { OpenAICompatibleLanguageModel, type LanguageModel } from '../../compute/model-ports';
+import type { VisionLanguageModel } from '../../compute/vlm-vision.client';
+import type { ObjectStorage } from '../../storage/object-storage';
 import type { VqaAnswerRequest } from './vqa-answer.request';
 import type { VqaGroundingEvidence, VqaGroundingRepository } from './vqa-grounding.repository';
+import { Optional } from '@nestjs/common';
 
 export type VqaAnswerStatus = 'answered' | 'needs_more_evidence' | 'abstained';
 export type VqaConfidenceLevel = 'low' | 'medium' | 'high';
@@ -39,6 +44,7 @@ interface ModelAnswer {
 }
 
 const PRODUCER = 'llm-vqa-openai-compatible';
+const VLM_PRODUCER = 'vlm-vision-openai-compatible';
 const MAX_EVIDENCE = 20;
 const MAX_SNIPPET_LENGTH = 500;
 const MAX_PROMPT_LENGTH = 8_000;
@@ -53,6 +59,7 @@ function baseResponse(
   answer: string | null = null,
   normalizedAnswer: string | null = null,
   confidence: { readonly level: VqaConfidenceLevel; readonly score: number } = { level: 'low', score: 0 },
+  producer: string = PRODUCER,
 ): VqaAnswerResponse {
   return {
     result_id: randomUUID(),
@@ -65,7 +72,7 @@ function baseResponse(
     normalized_answer: normalizedAnswer,
     evidence_ids: [...evidenceIds],
     confidence,
-    producer: PRODUCER,
+    producer,
     model_version: modelVersion,
     verification,
   };
@@ -113,9 +120,45 @@ export class VqaAnswerService {
   constructor(
     @Inject(VQA_GROUNDING_REPOSITORY) private readonly grounding: VqaGroundingRepository,
     @Inject(LANGUAGE_MODEL) private readonly languageModel: LanguageModel,
+    @Optional() @Inject(VISION_LANGUAGE_MODEL) private readonly vlm?: VisionLanguageModel,
+    @Optional() @Inject(OBJECT_STORAGE) private readonly storage?: ObjectStorage,
   ) {}
 
   async answer(request: VqaAnswerRequest): Promise<VqaAnswerResponse> {
+    const context = await this.grounding.find(request.query_id, request.video_id, request.original_frame_id);
+    if (!context) throw new NotFoundException('VQA query or frame was not found');
+
+    const selectedEvidence = compactEvidence(context.evidence);
+
+    // Multimodal VLM visual path
+    if (this.vlm?.isConfigured && context.thumbnail_object_key && this.storage?.isConfigured) {
+      try {
+        const imageUrl = await this.storage.signReadUrl(context.thumbnail_object_key);
+        const vlmResult = await this.vlm.answerVisualQuestion({
+          question: request.question,
+          imageUrl,
+          evidenceText: selectedEvidence.text,
+        });
+
+        if (vlmResult.answer_status === 'answered' && vlmResult.answer) {
+          return baseResponse(
+            request,
+            context,
+            this.vlm.modelName,
+            selectedEvidence.rows.map((item) => item.evidence_id),
+            'answered',
+            { reason: vlmResult.reason ?? 'grounded_vlm_visual_answer' },
+            vlmResult.answer,
+            vlmResult.normalized_answer || vlmResult.answer,
+            vlmResult.confidence,
+            VLM_PRODUCER,
+          );
+        }
+      } catch {
+        // Fallback to text LLM if VLM fails
+      }
+    }
+
     const languageModel = request.llm
       ? new OpenAICompatibleLanguageModel({
         baseUrl: request.llm.base_url,
@@ -129,10 +172,7 @@ export class VqaAnswerService {
     if (!languageModel.isConfigured) {
       throw new ServiceUnavailableException('LLM answer service is not configured');
     }
-    const context = await this.grounding.find(request.query_id, request.video_id, request.original_frame_id);
-    if (!context) throw new NotFoundException('VQA query or frame was not found');
 
-    const selectedEvidence = compactEvidence(context.evidence);
     if (selectedEvidence.rows.length === 0) {
       return baseResponse(request, context, languageModel.modelName, [], 'abstained', {
         reason: 'no_grounded_evidence',

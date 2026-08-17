@@ -35,6 +35,12 @@ export interface QueryAtom {
 export type QueryViews = Partial<Record<BranchName, string>>;
 export type ChannelWeights = Partial<Record<BranchName, number>>;
 
+export interface VlmRerankOverrides {
+  readonly enabled?: boolean;
+  readonly top_k?: number;
+  readonly weight?: number;
+}
+
 export interface RetrievalOverrides {
   readonly branch_k?: number;
   readonly fusion_k?: number;
@@ -42,6 +48,7 @@ export interface RetrievalOverrides {
   readonly latency_budget_ms?: number;
   readonly rrf_k?: number;
   readonly channel_weights?: ChannelWeights;
+  readonly vlm_rerank?: VlmRerankOverrides;
 }
 
 export interface EmbeddingRequestConfig {
@@ -126,7 +133,7 @@ export interface BranchResult {
 }
 
 export interface FusionTraceEntry {
-  readonly branch: BranchName;
+  readonly branch: BranchName | 'vlm_rerank';
   readonly channel_rank: number;
   readonly channel_weight: number;
   readonly rrf_contribution: number;
@@ -134,6 +141,8 @@ export interface FusionTraceEntry {
   readonly occurrence_count: number;
   readonly evidence_ids: string[];
   readonly matched_terms: string[];
+  readonly vlm_score?: number;
+  readonly vlm_reason?: string;
 }
 
 export interface FusedCandidate {

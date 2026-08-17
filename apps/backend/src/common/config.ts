@@ -21,6 +21,14 @@ export interface BackendConfig {
   readonly llmTimeoutMs: number;
   readonly llmMaxTokens: number;
   readonly llmTemperature: number;
+  readonly vlmEnabled: boolean;
+  readonly vlmBaseUrl?: string;
+  readonly vlmApiKey?: string;
+  readonly vlmModel?: string;
+  readonly vlmTimeoutMs: number;
+  readonly vlmTopK: number;
+  readonly vlmWeight: number;
+  readonly vlmConcurrency: number;
   readonly datasetVersion: string;
   readonly pipelineVersion: string;
   readonly indexVersion: string;
@@ -120,6 +128,14 @@ export function loadConfig(): BackendConfig {
     llmTimeoutMs: positiveInteger(process.env.LLM_TIMEOUT_MS, 15_000),
     llmMaxTokens: positiveInteger(process.env.LLM_MAX_TOKENS, 128),
     llmTemperature: boundedNumber(process.env.LLM_TEMPERATURE, 0, 0, 2),
+    vlmEnabled: optionalEnv('VLM_ENABLED') === 'true',
+    vlmBaseUrl: optionalEnv('VLM_BASE_URL') || llmBaseUrl,
+    vlmApiKey: optionalEnv('VLM_API_KEY') || optionalEnv('LLM_API_KEY'),
+    vlmModel: optionalEnv('VLM_MODEL') || llmModel || 'Qwen/Qwen2.5-VL-7B-Instruct',
+    vlmTimeoutMs: positiveInteger(process.env.VLM_TIMEOUT_MS, 4_000),
+    vlmTopK: positiveInteger(process.env.VLM_TOP_K, 15),
+    vlmWeight: boundedNumber(process.env.VLM_WEIGHT, 0.6, 0, 1),
+    vlmConcurrency: positiveInteger(process.env.VLM_CONCURRENCY, 5),
     datasetVersion: optionalEnv('DATASET_VERSION') ?? 'local',
     pipelineVersion: optionalEnv('PIPELINE_VERSION') ?? 'preprocessing-artifacts',
     indexVersion,
