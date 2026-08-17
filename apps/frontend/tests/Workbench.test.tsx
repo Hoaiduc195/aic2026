@@ -338,6 +338,29 @@ describe('qualification frame-first workbench', () => {
     });
   });
 
+  it('keeps numeric settings editable after clearing them and opens settings as a modal', async () => {
+    const user = userEvent.setup();
+    renderWorkbench();
+
+    const settingsTrigger = screen.getByRole('button', { name: 'Cài đặt' });
+    await user.click(settingsTrigger);
+
+    const dialog = screen.getByRole('dialog', { name: 'Cài đặt LLM' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveClass('settings-popover');
+    expect(document.querySelector('.settings-modal-backdrop')).toBeInTheDocument();
+
+    const displayK = screen.getByLabelText('Số frame hiển thị');
+    await user.clear(displayK);
+    expect(displayK).toHaveValue(null);
+    await user.type(displayK, '40');
+    expect(displayK).toHaveValue(40);
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Cài đặt LLM' })).not.toBeInTheDocument();
+    expect(settingsTrigger).toHaveFocus();
+  });
+
   it('builds an ordered TRAKE sequence from the selected frame and its filmstrip', async () => {
     const user = userEvent.setup();
     renderWorkbench();
