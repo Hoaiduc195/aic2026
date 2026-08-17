@@ -379,6 +379,7 @@ describe('qualification frame-first workbench', () => {
     fireEvent.pointerMove(cards()[0]!, { pointerId: 1, clientX: 10, clientY: 0 });
     expect(document.querySelectorAll('.frame-list-item--dragging')).toHaveLength(1);
     expect(screen.getByText('Thả để xếp ở vị trí #1')).toBeInTheDocument();
+    expect(screen.getByLabelText('Đang kéo frame video_03 · 530')).toBeInTheDocument();
     fireEvent.pointerUp(cards()[0]!, { pointerId: 1, clientX: 10, clientY: 0 });
 
     expect(screen.getAllByRole('button', { name: /^Chọn frame/ }).map((card) => card.getAttribute('aria-label'))).toEqual([

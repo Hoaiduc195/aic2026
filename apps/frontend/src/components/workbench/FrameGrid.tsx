@@ -52,6 +52,7 @@ export function FrameGrid({
   const suppressClickRef = useRef(false);
   const [draggedKey, setDraggedKey] = useState<string | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const [pointerPosition, setPointerPosition] = useState<{ x: number; y: number } | null>(null);
   const [focusResultKey, setFocusResultKey] = useState<string | null>(null);
 
   useEffect(() => {
@@ -159,6 +160,7 @@ export function FrameGrid({
       started: false,
     };
     suppressClickRef.current = false;
+    setPointerPosition(null);
   }
 
   function handlePointerMove(
@@ -179,6 +181,8 @@ export function FrameGrid({
       setDraggedKey(pending.sourceKey);
       setDropIndex(pending.sourceIndex);
     }
+
+    setPointerPosition({ x: event.clientX, y: event.clientY });
 
     const sourceKey = pending.sourceKey;
     if (placeholderPosition !== undefined) {
@@ -221,6 +225,7 @@ export function FrameGrid({
     pointerDragRef.current = null;
     setDraggedKey(null);
     setDropIndex(null);
+    setPointerPosition(null);
   }
 
   function cancelPointerDrag() {
@@ -228,6 +233,7 @@ export function FrameGrid({
     suppressClickRef.current = false;
     setDraggedKey(null);
     setDropIndex(null);
+    setPointerPosition(null);
   }
 
   function moveWithKeyboard(index: number, offset: number) {
@@ -238,6 +244,12 @@ export function FrameGrid({
   }
 
   const entries = buildListEntries(frames, draggedKey, dropIndex);
+  const draggedFrame = draggedKey
+    ? frames.find((frame) => frame.result_key === draggedKey) ?? null
+    : null;
+  const draggedRank = draggedFrame
+    ? frames.findIndex((frame) => frame.result_key === draggedFrame.result_key) + 1
+    : null;
 
   return (
     <section className="results-workspace" aria-labelledby="frame-results-title">
@@ -382,7 +394,42 @@ export function FrameGrid({
           );
         })}
       </ol>
+      {draggedFrame && pointerPosition && draggedRank !== null && (
+        <DragPreview frame={draggedFrame} rank={draggedRank} position={pointerPosition} />
+      )}
     </section>
+  );
+}
+
+function DragPreview({
+  frame,
+  rank,
+  position,
+}: {
+  frame: FrameCandidate;
+  rank: number;
+  position: { x: number; y: number };
+}) {
+  const modalityLabel = displayMatchedModalities(frame.matched_modalities);
+  return (
+    <div
+      className="frame-card frame-drag-preview"
+      role="img"
+      aria-label={`Đang kéo frame ${frame.video_id} · ${frame.original_frame_id}`}
+      style={{ transform: `translate3d(${position.x + 14}px, ${position.y + 14}px, 0)` }}
+    >
+      <div className="frame-thumbnail">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={frame.thumbnail_uri} alt="" />
+        <span className="rank-label">#{rank}</span>
+        <span className="score-label">{Math.round(frame.score * 100)}%</span>
+      </div>
+      <div className="frame-card-body">
+        <strong>{frame.video_id}</strong>
+        <span>Frame {frame.original_frame_id} · {formatMs(frame.timestamp_ms)}</span>
+        <small>{modalityLabel || '—'}</small>
+      </div>
+    </div>
   );
 }
 

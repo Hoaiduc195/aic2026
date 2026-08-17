@@ -21,15 +21,16 @@ As a qualification operator, I want ranked frame results rendered as a vertical 
 
 The follow-up test first failed because the list had no animation/sizing hooks. The fix adds a FLIP-style layout transition for items displaced by the insertion placeholder, plus a larger thumbnail and row layout. A later browser check found that native HTML5 drag was not reliably starting after React preview updates, so the interaction now uses pointer events with a six-pixel movement threshold. This supports mouse and touch drag while preserving normal click selection and the separate ↑/↓ controls.
 
-The browser smoke test moved the third result to the first position and observed one active drag item plus the `#1` insertion placeholder.
+The browser smoke test moved the third result to the first position and observed one active drag item, the `#1` insertion placeholder, and a `.frame-drag-preview` whose transform followed the pointer coordinates during the drag.
 
 ## Coverage
 
-`pnpm test:coverage` passed with 79 tests. Coverage was 88.07% statements, 88.07% lines, 82.25% functions and 77.05% branches. The branch percentage remains below 80% because of existing untested branches across the frontend; `FrameGrid.tsx` is covered at 87.42% statements and 75.4% branches.
+`pnpm test:coverage` passed with 79 tests. Coverage was 88.18% statements, 88.18% lines, 82.32% functions and 77.12% branches. The branch percentage remains below 80% because of existing untested branches across the frontend; `FrameGrid.tsx` is covered at 88.42% statements and 76.11% branches.
 
 ## Implementation notes
 
 - The list uses stable `result_key` values while dragging instead of stale array indexes.
 - A local insertion placeholder previews the final position; the parent ranking state changes only after drop.
 - Pointer drag keeps the source mounted, previews the insertion position, and suppresses accidental click selection after a real drag begins.
+- A fixed drag preview mirrors the dragged frame and follows the pointer without intercepting drop targets.
 - The committed order remains the source for the existing top-100 JSON export.
