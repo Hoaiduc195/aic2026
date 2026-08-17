@@ -203,6 +203,33 @@ describe('qualification frame-first workbench', () => {
     expect(screen.getByText('Frame 351')).toBeInTheDocument();
   });
 
+  it('does not render visual embedding evidence in the frame inspector', async () => {
+    const user = userEvent.setup();
+    const visualEmbeddingResponse: SearchResponse = {
+      ...response,
+      results: [{
+        ...response.results[0],
+        evidence_ids: ['ev_visual'],
+        evidence: [{
+          evidence_id: 'ev_visual',
+          type: 'frame',
+          snippet: 'visual embedding vector',
+          producer: 'visual-embedding:v2',
+        }],
+        matched_modalities: ['visual'],
+      }],
+    };
+    renderWorkbench({ searchResponse: visualEmbeddingResponse });
+
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+    await user.click(await screen.findByRole('button', { name: 'Chọn frame video_01 · 385' }));
+
+    expect(screen.queryByText('Bằng chứng hình ảnh')).not.toBeInTheDocument();
+    expect(screen.queryByText('visual embedding vector')).not.toBeInTheDocument();
+    expect(screen.queryByText('visual')).not.toBeInTheDocument();
+  });
+
   it('adds the selected frame and reveals answers only through the drawer badge', async () => {
     const user = userEvent.setup();
     const writeText = vi.fn(async () => undefined);

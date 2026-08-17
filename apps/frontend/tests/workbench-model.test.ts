@@ -42,6 +42,7 @@ const result: SearchResult = {
 describe('workbench answer model', () => {
   it('hides the visual embedding modality from user-facing labels', () => {
     expect(displayMatchedModalities(['embedding', 'object', 'ocr'])).toBe('object · ocr');
+    expect(displayMatchedModalities(['visual', 'ocr'])).toBe('ocr');
     expect(displayMatchedModalities(['embedding'])).toBe('');
   });
 

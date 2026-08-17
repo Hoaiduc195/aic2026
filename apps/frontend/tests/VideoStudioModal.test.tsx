@@ -39,7 +39,10 @@ describe('VideoStudioModal', () => {
     expect(screen.getByText('Một cảnh trong studio.')).toBeInTheDocument();
     expect(screen.getAllByText('person').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('Xin chào').length).toBeGreaterThan(0);
-    expect(screen.getByTestId('studio-object-box-object-1')).toBeInTheDocument();
+    const objectBox = screen.getByTestId('studio-object-box-object-1');
+    expect(objectBox).toBeInTheDocument();
+    expect(objectBox.querySelector('rect')).toHaveAttribute('stroke-width', '0.014');
+    expect(objectBox.querySelector('text')).toHaveAttribute('font-size', '0.06');
 
     await user.click(screen.getByRole('button', { name: 'Dùng frame 50' }));
     expect(onSelectFrame).toHaveBeenCalledWith(studio.frames[0]);
