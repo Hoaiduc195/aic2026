@@ -615,6 +615,7 @@ textarea:focus-visible,
 }
 
 .frame-list {
+  position: relative;
   display: grid;
   gap: 12px;
   margin: 18px 0 0;
@@ -624,6 +625,21 @@ textarea:focus-visible,
 
 .frame-list-animated .frame-list-item {
   will-change: transform;
+}
+
+.frame-list-item--dragging {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  min-width: 0;
+  height: 1px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .frame-card {

@@ -71,7 +71,8 @@ export function FrameGrid({
     const list = listRef.current;
     if (!list) return undefined;
 
-    const nodes = Array.from(list.querySelectorAll<HTMLElement>('[data-frame-key]'));
+    const nodes = Array.from(list.querySelectorAll<HTMLElement>('[data-frame-key]'))
+      .filter((node) => node.dataset.frameKey !== draggedKey);
     const previousRects = frameRectsRef.current;
     const nextRects = new Map(
       nodes.flatMap((node) => {
@@ -178,16 +179,7 @@ export function FrameGrid({
     onReorder(index, index + offset);
   }
 
-  const visibleFrames = draggedKey
-    ? frames.filter((frame) => frame.result_key !== draggedKey)
-    : frames;
-  const entries: ListEntry[] = draggedKey && dropIndex !== null
-    ? [
-        ...visibleFrames.slice(0, Math.min(dropIndex, visibleFrames.length)).map((frame) => ({ kind: 'frame' as const, frame })),
-        { kind: 'placeholder' as const, position: Math.min(dropIndex, visibleFrames.length) },
-        ...visibleFrames.slice(Math.min(dropIndex, visibleFrames.length)).map((frame) => ({ kind: 'frame' as const, frame })),
-      ]
-    : frames.map((frame) => ({ kind: 'frame' as const, frame }));
+  const entries = buildListEntries(frames, draggedKey, dropIndex);
 
   return (
     <section className="results-workspace" aria-labelledby="frame-results-title">
@@ -261,12 +253,15 @@ export function FrameGrid({
 
           const { frame } = entry;
           const index = frames.findIndex((candidate) => candidate.result_key === frame.result_key);
-          const rank = entryIndex + 1;
+          const rank = entries
+            .slice(0, entryIndex)
+            .filter((candidate) => candidate.kind === 'placeholder' || !candidate.dragging)
+            .length + 1;
           const selected = frame.result_key === selectedKey;
           const modalityLabel = displayMatchedModalities(frame.matched_modalities);
           return (
             <li
-              className={`frame-card frame-list-item frame-list-item--spacious${selected ? ' selected' : ''}`}
+              className={`frame-card frame-list-item frame-list-item--spacious${entry.dragging ? ' frame-list-item--dragging' : ''}${selected ? ' selected' : ''}`}
               data-frame-key={frame.result_key}
               key={frame.result_key}
               draggable
@@ -327,8 +322,47 @@ export function FrameGrid({
 }
 
 type ListEntry =
-  | { kind: 'frame'; frame: FrameCandidate }
+  | { kind: 'frame'; frame: FrameCandidate; dragging?: boolean }
   | { kind: 'placeholder'; position: number };
+
+function buildListEntries(
+  frames: readonly FrameCandidate[],
+  draggedKey: string | null,
+  dropIndex: number | null,
+): ListEntry[] {
+  if (!draggedKey || dropIndex === null) {
+    return frames.map((frame) => ({ kind: 'frame', frame }));
+  }
+
+  const sourceIndex = frames.findIndex((frame) => frame.result_key === draggedKey);
+  if (sourceIndex < 0) return frames.map((frame) => ({ kind: 'frame', frame }));
+
+  const visibleLength = frames.length - 1;
+  const insertionIndex = Math.min(Math.max(dropIndex, 0), visibleLength);
+  const entries: ListEntry[] = [];
+  let visibleIndex = 0;
+  let placeholderAdded = false;
+
+  frames.forEach((frame) => {
+    if (!placeholderAdded && visibleIndex === insertionIndex) {
+      entries.push({ kind: 'placeholder', position: insertionIndex });
+      placeholderAdded = true;
+    }
+
+    if (frame.result_key === draggedKey) {
+      entries.push({ kind: 'frame', frame, dragging: true });
+      return;
+    }
+
+    entries.push({ kind: 'frame', frame });
+    visibleIndex += 1;
+  });
+
+  if (!placeholderAdded) {
+    entries.push({ kind: 'placeholder', position: insertionIndex });
+  }
+  return entries;
+}
 
 function readDraggedKey(event: DragEvent<HTMLElement>, frames: readonly FrameCandidate[]): string | null {
   const rawValue = event.dataTransfer.getData('application/x-aic-result-key')
