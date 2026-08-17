@@ -1550,19 +1550,17 @@ textarea:focus-visible,
 }
 
 .studio-object-overlay rect {
-  fill: rgba(255, 205, 73, 0.08);
-  stroke: #ffd249;
-  stroke-width: 0.008;
-  vector-effect: non-scaling-stroke;
+  fill: rgba(255, 184, 0, 0.2);
+  stroke: #ffc107;
+  stroke-width: 0.014;
 }
 
 .studio-object-overlay text {
-  fill: #211a00;
-  font-size: 0.035px;
-  font-weight: 800;
+  fill: #fff;
+  font-weight: 900;
   paint-order: stroke;
-  stroke: #ffd249;
-  stroke-width: 0.012px;
+  stroke: #071018;
+  stroke-width: 0.008;
 }
 
 .studio-toolbar {

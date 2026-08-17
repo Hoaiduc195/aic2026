@@ -46,13 +46,12 @@ interface Props {
 }
 
 const EVIDENCE_LABELS: ReadonlyArray<{
-  key: 'ocr' | 'asr' | 'caption' | 'visual' | 'other';
+  key: 'ocr' | 'asr' | 'caption' | 'other';
   label: string;
 }> = [
   { key: 'ocr', label: 'Văn bản trong hình (OCR)' },
   { key: 'asr', label: 'Lời thoại (ASR)' },
   { key: 'caption', label: 'Mô tả cảnh' },
-  { key: 'visual', label: 'Bằng chứng hình ảnh' },
   { key: 'other', label: 'Bằng chứng khác' },
 ];
 

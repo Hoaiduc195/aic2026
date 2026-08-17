@@ -24,9 +24,9 @@ export interface EvidenceGroups {
   other: SearchEvidence[];
 }
 
-const HIDDEN_USER_MODALITIES = new Set(['embedding']);
+const HIDDEN_USER_MODALITIES = new Set(['embedding', 'visual']);
 
-/** Embedding is a retrieval signal, not a user-facing evidence label. */
+/** Embedding/visual retrieval signals are not user-facing evidence labels. */
 export function displayMatchedModalities(modalities: readonly string[]): string {
   return modalities
     .filter((modality) => !HIDDEN_USER_MODALITIES.has(modality))

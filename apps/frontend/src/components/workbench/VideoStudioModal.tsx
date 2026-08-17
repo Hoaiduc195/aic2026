@@ -188,8 +188,18 @@ export function VideoStudioModal({ studio, initialFrameId, initialTimestampMs = 
                             y={object.normalized_bbox[1]}
                             width={Math.max(0, object.normalized_bbox[2] - object.normalized_bbox[0])}
                             height={Math.max(0, object.normalized_bbox[3] - object.normalized_bbox[1])}
+                            strokeWidth="0.014"
                           />
-                          <text x={object.normalized_bbox[0]} y={Math.max(0.04, object.normalized_bbox[1] - 0.01)}>{object.label}</text>
+                          <text
+                            x={object.normalized_bbox[0]}
+                            y={Math.max(0.06, object.normalized_bbox[1] - 0.01)}
+                            fontSize="0.06"
+                            stroke="#071018"
+                            strokeWidth="0.008"
+                            paintOrder="stroke"
+                          >
+                            {object.label}
+                          </text>
                         </g>
                       ))}
                     </svg>
