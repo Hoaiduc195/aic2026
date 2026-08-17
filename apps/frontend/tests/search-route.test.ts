@@ -114,6 +114,56 @@ describe('search proxy route', () => {
     });
   });
 
+  it('forwards validated retrieval limits and uses display_k as the public top_k', async () => {
+    process.env.BACKEND_API_URL = 'http://backend.internal';
+    let forwardedBody: unknown;
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      forwardedBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ query_id: 'query_01', results: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }));
+
+    const request = new NextRequest('http://localhost/api/v1/search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        query: 'cửa hàng',
+        task: 'textual_kis',
+        top_k: 20,
+        retrieval: { display_k: 40, branch_k: 150, fusion_k: 600 },
+      }),
+    });
+    const response = await POST(request);
+
+    expect(response.status).toBe(200);
+    expect(forwardedBody).toMatchObject({
+      top_k: 40,
+      retrieval: { display_k: 40, branch_k: 150, fusion_k: 600 },
+    });
+  });
+
+  it('rejects retrieval limits outside the frontend safety boundary', async () => {
+    process.env.BACKEND_API_URL = 'http://backend.internal';
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const request = new NextRequest('http://localhost/api/v1/search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        query: 'cửa hàng',
+        task: 'textual_kis',
+        retrieval: { display_k: 101, branch_k: 150, fusion_k: 600 },
+      }),
+    });
+    const response = await POST(request);
+
+    expect(response.status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('rejects unsafe embedding URLs at the BFF boundary', async () => {
     process.env.BACKEND_API_URL = 'http://backend.internal';
     const fetchMock = vi.fn();

@@ -313,6 +313,30 @@ describe('qualification frame-first workbench', () => {
     });
   });
 
+  it('sends the retrieval limits configured in frontend settings', async () => {
+    const user = userEvent.setup();
+    const search = vi.fn(async () => response);
+    renderWorkbench({ search });
+
+    await user.click(screen.getByRole('button', { name: 'Cài đặt' }));
+    await user.clear(screen.getByLabelText('Số frame hiển thị'));
+    await user.type(screen.getByLabelText('Số frame hiển thị'), '40');
+    await user.clear(screen.getByLabelText('Candidate mỗi modality'));
+    await user.type(screen.getByLabelText('Candidate mỗi modality'), '150');
+    await user.clear(screen.getByLabelText('Fusion candidate pool'));
+    await user.type(screen.getByLabelText('Fusion candidate pool'), '600');
+    await user.click(screen.getByRole('button', { name: 'Lưu cài đặt truy hồi' }));
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+
+    expect(search).toHaveBeenCalledWith({
+      query: 'Một cửa hàng trên phố',
+      task: 'textual_kis',
+      top_k: 40,
+      retrieval: { display_k: 40, branch_k: 150, fusion_k: 600 },
+    });
+  });
+
   it('builds an ordered TRAKE sequence from the selected frame and its filmstrip', async () => {
     const user = userEvent.setup();
     renderWorkbench();
