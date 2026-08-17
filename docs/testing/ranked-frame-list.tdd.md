@@ -30,4 +30,5 @@ The follow-up test first failed because the list had no animation/sizing hooks. 
 
 - The list uses stable `result_key` values while dragging instead of stale array indexes.
 - A local insertion placeholder previews the final position; the parent ranking state changes only after drop.
+- The dragged source remains mounted in the list and is taken out of layout flow, preventing native HTML5 drag cancellation while React re-renders the preview.
 - The committed order remains the source for the existing top-100 JSON export.
