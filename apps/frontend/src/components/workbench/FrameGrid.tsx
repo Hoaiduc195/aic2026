@@ -58,8 +58,9 @@ export function FrameGrid({
 
   function handleDrop(event: DragEvent<HTMLElement>, index: number) {
     event.preventDefault();
-    const dataIndex = Number(event.dataTransfer.getData('text/plain'));
-    const sourceIndex = draggedIndex ?? (Number.isInteger(dataIndex) ? dataIndex : null);
+    const rawDataIndex = event.dataTransfer.getData('text/plain');
+    const dataIndex = rawDataIndex === '' ? null : Number(rawDataIndex);
+    const sourceIndex = draggedIndex ?? (dataIndex !== null && Number.isInteger(dataIndex) ? dataIndex : null);
     if (sourceIndex !== null && Number.isInteger(sourceIndex)) {
       onReorder(sourceIndex, index);
     }
