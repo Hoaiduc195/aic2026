@@ -253,6 +253,68 @@ describe('qualification frame-first workbench', () => {
     expect(screen.queryByRole('dialog', { name: 'Hàng đợi đáp án' })).not.toBeInTheDocument();
   });
 
+  it('reorders result frames and exports the ranked textual top 100', async () => {
+    const user = userEvent.setup();
+    const rankedResponse: SearchResponse = {
+      ...response,
+      results: [
+        response.results[0],
+        {
+          ...response.results[0],
+          video_id: 'video_02',
+          original_frame_id: 410,
+          representative_frame: { original_frame_id: 410, timestamp_ms: 15_000, preview_uri: null },
+        },
+        {
+          ...response.results[0],
+          video_id: 'video_03',
+          original_frame_id: 530,
+          representative_frame: { original_frame_id: 530, timestamp_ms: 18_000, preview_uri: null },
+        },
+      ],
+    };
+    renderWorkbench({ searchResponse: rankedResponse });
+
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+
+    const rankedCards = () => screen.getAllByRole('button', { name: /^Chọn frame/ });
+    expect(rankedCards().map((card) => card.getAttribute('aria-label'))).toEqual([
+      'Chọn frame video_01 · 385',
+      'Chọn frame video_02 · 410',
+      'Chọn frame video_03 · 530',
+    ]);
+
+    await user.click(screen.getByRole('button', { name: 'Đưa frame video_01 · 385 xuống' }));
+    expect(rankedCards().map((card) => card.getAttribute('aria-label'))).toEqual([
+      'Chọn frame video_02 · 410',
+      'Chọn frame video_01 · 385',
+      'Chọn frame video_03 · 530',
+    ]);
+
+    const createObjectURL = vi.fn(() => 'blob:ranked-json');
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+
+    await user.click(screen.getByRole('button', { name: 'Xuất JSON top 100' }));
+
+    const blob = createObjectURL.mock.calls[0][0] as Blob;
+    expect(JSON.parse(await blob.text())).toEqual({
+      query_id: 'query_0001',
+      task: 'textual_kis',
+      answers: [
+        { video_id: 'video_02', frame_id: 410 },
+        { video_id: 'video_01', frame_id: 385 },
+        { video_id: 'video_03', frame_id: 530 },
+      ],
+    });
+    expect(click).toHaveBeenCalledOnce();
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:ranked-json');
+    click.mockRestore();
+  });
+
   it('saves the answer queue and creates a backend preview', async () => {
     const user = userEvent.setup();
     const saveSelection = vi.fn(async (): Promise<SelectionRevision> => ({

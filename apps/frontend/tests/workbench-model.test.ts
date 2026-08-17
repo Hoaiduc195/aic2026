@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildAnswer,
+  buildRankedTextualSubmission,
   buildSubmission,
   displayMatchedModalities,
   formatMs,
   groupEvidence,
   parseFrame,
+  reorderFrames,
   resultKey,
   toFrameCandidates,
   validateTrakeSequence,
@@ -110,5 +112,31 @@ describe('workbench answer model', () => {
     expect(validateTrakeSequence([candidate, next])).toBe(true);
     expect(validateTrakeSequence([next, candidate])).toBe(false);
     expect(validateTrakeSequence([candidate, { ...next, video_id: 'video_02' }])).toBe(false);
+  });
+
+  it('reorders ranked frames immutably and exports only the first 100 textual answers', () => {
+    const frames = Array.from({ length: 101 }, (_, index) => ({
+      result_key: `video_${index}`,
+      video_id: `video_${index}`,
+      original_frame_id: index,
+      timestamp_ms: index * 1_000,
+      thumbnail_uri: `/frame/${index}`,
+      start_ms: index * 1_000,
+      end_ms: index * 1_000 + 500,
+      score: 1 - index / 200,
+      evidence: [],
+      matched_modalities: [],
+    } satisfies FrameCandidate));
+
+    const reordered = reorderFrames(frames, 2, 0);
+    const submission = buildRankedTextualSubmission('query_ranked', reordered);
+
+    expect(reordered).not.toBe(frames);
+    expect(reordered.slice(0, 4).map((frame) => frame.original_frame_id)).toEqual([2, 0, 1, 3]);
+    expect(frames.slice(0, 3).map((frame) => frame.original_frame_id)).toEqual([0, 1, 2]);
+    expect(submission).toMatchObject({ query_id: 'query_ranked', task: 'textual_kis' });
+    expect(submission?.answers).toHaveLength(100);
+    expect(submission?.answers[0]).toEqual({ video_id: 'video_2', frame_id: 2 });
+    expect(submission?.answers[99]).toEqual({ video_id: 'video_98', frame_id: 98 });
   });
 });
