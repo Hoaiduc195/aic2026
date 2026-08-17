@@ -4,12 +4,20 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
 import { loadConfig } from './common/config';
 import {
-  APP_CONFIG, DATABASE, EVIDENCE_REPOSITORY, MEDIA_REPOSITORY, OBJECT_STORAGE, RETRIEVAL_BRANCHES,
-  QUERY_EMBEDDER, RETRIEVAL_STORE, TASK_EXECUTOR_REGISTRY,
+  APP_CONFIG, DATABASE, EMBEDDING_SERVICE, EVIDENCE_REPOSITORY, LANGUAGE_MODEL, MEDIA_REPOSITORY,
+  OBJECT_STORAGE, RETRIEVAL_BRANCHES, QUERY_EMBEDDER, RETRIEVAL_STORE, TASK_EXECUTOR_REGISTRY,
+  VQA_GROUNDING_REPOSITORY,
 } from './common/tokens';
-import { HttpQueryEmbeddingProvider, type QueryEmbeddingProvider, UnavailableQueryEmbeddingProvider } from './compute/model-ports';
+import {
+  HttpQueryEmbeddingProvider,
+  OpenAICompatibleLanguageModel,
+  type QueryEmbeddingProvider,
+  UnavailableLanguageModel,
+  UnavailableQueryEmbeddingProvider,
+} from './compute/model-ports';
 import type { DatabaseClient } from './database/database.client';
 import { PostgresDatabase } from './database/postgres.database';
+import { EmbeddingService } from './embedding_services/embedding.service';
 import { HealthController } from './health/health.controller';
 import { ManualController } from './manual/manual.controller';
 import { SubmissionController } from './manual/submission.controller';
@@ -26,7 +34,10 @@ import { SearchController } from './search/search.controller';
 import { TextualKisExecutor } from './tasks/textual-kis/textual-kis.executor';
 import { TaskExecutorRegistry } from './tasks/task-registry';
 import { TrakeExecutor } from './tasks/trake/trake.executor';
+import { VqaAnswerController } from './tasks/vqa/vqa-answer.controller';
 import { VqaExecutor } from './tasks/vqa/vqa.executor';
+import { VqaAnswerService } from './tasks/vqa/vqa-answer.service';
+import { PostgresVqaGroundingRepository, UnavailableVqaGroundingRepository } from './tasks/vqa/vqa-grounding.repository';
 import { R2ObjectStorage } from './storage/r2-object-storage';
 import { UnavailableObjectStorage } from './storage/object-storage';
 
@@ -71,7 +82,7 @@ function createTaskRegistry(config: ReturnType<typeof loadConfig>): TaskExecutor
 
 @Module({
   imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }])],
-  controllers: [HealthController, SearchController, MediaController, ManualController, SubmissionController],
+  controllers: [HealthController, SearchController, MediaController, ManualController, SubmissionController, VqaAnswerController],
   providers: [
     { provide: APP_CONFIG, useFactory: loadConfig },
     {
@@ -84,6 +95,27 @@ function createTaskRegistry(config: ReturnType<typeof loadConfig>): TaskExecutor
       useFactory: (config: ReturnType<typeof loadConfig>) => config.embeddingServiceUrl
         ? new HttpQueryEmbeddingProvider(config.embeddingServiceUrl, config.embeddingDimensions, config.embeddingServiceToken)
         : new UnavailableQueryEmbeddingProvider(config.embeddingDimensions),
+      inject: [APP_CONFIG],
+    },
+    {
+      provide: EMBEDDING_SERVICE,
+      useFactory: (database: DatabaseClient, defaultProvider: QueryEmbeddingProvider) => (
+        new EmbeddingService(database, defaultProvider)
+      ),
+      inject: [DATABASE, QUERY_EMBEDDER],
+    },
+    {
+      provide: LANGUAGE_MODEL,
+      useFactory: (config: ReturnType<typeof loadConfig>) => config.llmBaseUrl && config.llmModel
+        ? new OpenAICompatibleLanguageModel({
+          baseUrl: config.llmBaseUrl,
+          model: config.llmModel,
+          apiKey: config.llmApiKey,
+          timeoutMs: config.llmTimeoutMs,
+          maxTokens: config.llmMaxTokens,
+          temperature: config.llmTemperature,
+        })
+        : new UnavailableLanguageModel(),
       inject: [APP_CONFIG],
     },
     { provide: RETRIEVAL_BRANCHES, useFactory: createBranches, inject: [DATABASE, QUERY_EMBEDDER] },
@@ -123,12 +155,20 @@ function createTaskRegistry(config: ReturnType<typeof loadConfig>): TaskExecutor
       inject: [DATABASE],
     },
     {
+      provide: VQA_GROUNDING_REPOSITORY,
+      useFactory: (database: DatabaseClient) => database.isConfigured
+        ? new PostgresVqaGroundingRepository(database)
+        : new UnavailableVqaGroundingRepository(),
+      inject: [DATABASE],
+    },
+    {
       provide: TASK_EXECUTOR_REGISTRY,
       useFactory: createTaskRegistry,
       inject: [APP_CONFIG],
     },
     RetrievalService,
     MediaService,
+    VqaAnswerService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })

@@ -42,12 +42,19 @@ export interface RetrievalOverrides {
   readonly latency_budget_ms?: number;
 }
 
+export interface EmbeddingRequestConfig {
+  readonly base_url: string;
+  readonly api_key?: string;
+  readonly timeout_ms: number;
+}
+
 export interface SearchRequest {
   readonly query: string;
   readonly task: TaskType;
   readonly top_k?: number;
   readonly session_id?: string;
   readonly retrieval?: RetrievalOverrides;
+  readonly embedding?: EmbeddingRequestConfig;
 }
 
 export interface RetrievalExecutionPlan {

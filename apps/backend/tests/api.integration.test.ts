@@ -11,6 +11,8 @@ import { MediaController } from '../src/media/media.controller';
 import { MediaService } from '../src/media/media.service';
 import { RetrievalService } from '../src/retrieval/retrieval.service';
 import { SearchController } from '../src/search/search.controller';
+import { VqaAnswerController } from '../src/tasks/vqa/vqa-answer.controller';
+import { VqaAnswerService } from '../src/tasks/vqa/vqa-answer.service';
 
 describe('backend HTTP API', () => {
   let app: INestApplication;
@@ -32,15 +34,25 @@ describe('backend HTTP API', () => {
     signReadUrl: vi.fn(async (key: string) => `https://signed/${key}`),
     health: vi.fn(async () => true),
   };
+  const vqaAnswer = {
+    answer: vi.fn(async (input) => ({
+      result_id: 'result-1', query_id: input.query_id, video_id: input.video_id,
+      original_frame_id: input.original_frame_id, timestamp_ms: 4200,
+      answer_status: 'answered', answer: 'a bottle', normalized_answer: 'a bottle',
+      evidence_ids: ['caption-1'], confidence: { level: 'high', score: 0.9 },
+      producer: 'test', model_version: 'test-v1',
+    })),
+  };
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({
-      controllers: [SearchController, MediaController, ManualController, SubmissionController],
+      controllers: [SearchController, MediaController, ManualController, SubmissionController, VqaAnswerController],
       providers: [
         { provide: RetrievalService, useValue: retrieval },
         { provide: MediaService, useValue: media },
         { provide: RETRIEVAL_STORE, useValue: store },
         { provide: OBJECT_STORAGE, useValue: storage },
+        { provide: VqaAnswerService, useValue: vqaAnswer },
       ],
     }).compile();
     app = module.createNestApplication();
@@ -67,6 +79,22 @@ describe('backend HTTP API', () => {
       .set('x-operator-token', 'operator-secret').expect(200);
     await request(app.getHttpServer()).get('/v1/videos/bad%20id/playback')
       .set('x-operator-token', 'operator-secret').expect(400);
+  });
+
+  it('protects and validates the LLM VQA answer endpoint', async () => {
+    await request(app.getHttpServer()).post('/v1/vqa/answer')
+      .send({ query_id: 'q-1', question: 'What is held?', video_id: 'video-1', original_frame_id: 42 })
+      .expect(401);
+    await request(app.getHttpServer()).post('/v1/vqa/answer')
+      .set('x-operator-token', 'operator-secret').send({ query_id: 'bad id' }).expect(400);
+    await request(app.getHttpServer()).post('/v1/vqa/answer')
+      .set('x-operator-token', 'operator-secret')
+      .send({ query_id: 'q-1', question: 'What is held?', video_id: 'video-1', original_frame_id: 42 })
+      .expect(201)
+      .expect(({ body }) => expect(body).toMatchObject({ answer_status: 'answered', answer: 'a bottle' }));
+    expect(vqaAnswer.answer).toHaveBeenCalledWith({
+      query_id: 'q-1', question: 'What is held?', video_id: 'video-1', original_frame_id: 42,
+    });
   });
 
   it('supports configurable manual top-k, revision save and preview-only export', async () => {

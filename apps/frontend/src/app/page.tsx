@@ -8,6 +8,7 @@ import {
   getVideoPlayback,
   saveSelection,
   searchMedia,
+  suggestVqaAnswer,
 } from '../lib/api';
 
 export default function HomePage() {
@@ -19,6 +20,7 @@ export default function HomePage() {
         loadFrames={getVideoFrames}
         saveSelection={saveSelection}
         createPreview={createSubmissionPreview}
+        suggestVqaAnswer={suggestVqaAnswer}
       />
     </Providers>
   );

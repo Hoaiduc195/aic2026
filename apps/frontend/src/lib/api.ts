@@ -10,6 +10,8 @@ import type {
   SearchTask,
   SelectionRevision,
   SubmissionPreview,
+  VqaAnswerRequest,
+  VqaAnswerSuggestion,
   VideoFrame,
   VideoFramesResponse,
   VideoPlayback,
@@ -48,6 +50,21 @@ export async function searchMedia(
   }
 
   return parseSearchResponse(payload);
+}
+
+export async function suggestVqaAnswer(
+  request: VqaAnswerRequest,
+  signal?: AbortSignal,
+): Promise<VqaAnswerSuggestion> {
+  const response = await fetch(`${API_BASE}/v1/vqa/answer`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(request),
+    signal,
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw apiError(payload, response.status, 'Không thể sinh gợi ý câu trả lời.');
+  return parseVqaAnswerSuggestion(payload);
 }
 
 export async function getVideoPlayback(videoId: string, frameId: number, signal?: AbortSignal): Promise<VideoPlayback> {
@@ -236,6 +253,33 @@ export function parseSearchResponse(value: unknown): SearchResponse {
   return response;
 }
 
+export function parseVqaAnswerSuggestion(value: unknown): VqaAnswerSuggestion {
+  if (!isObject(value)) throw new Error('VQA answer response phải là object');
+  const answerStatus = value.answer_status;
+  if (answerStatus !== 'answered' && answerStatus !== 'needs_more_evidence' && answerStatus !== 'abstained') {
+    throw new Error('answer_status không hợp lệ');
+  }
+  const answer = value.answer === null ? null : requiredText(value.answer, 'answer');
+  const normalizedAnswer = value.normalized_answer === null
+    ? null
+    : requiredText(value.normalized_answer, 'normalized_answer');
+  return {
+    result_id: requiredText(value.result_id, 'result_id'),
+    query_id: requiredText(value.query_id, 'query_id'),
+    video_id: requiredText(value.video_id, 'video_id'),
+    original_frame_id: nonNegativeInteger(value.original_frame_id, 'original_frame_id'),
+    timestamp_ms: nonNegativeInteger(value.timestamp_ms, 'timestamp_ms'),
+    answer_status: answerStatus,
+    answer,
+    normalized_answer: normalizedAnswer,
+    evidence_ids: stringArray(value.evidence_ids ?? [], 'evidence_ids'),
+    confidence: parseVqaConfidence(value.confidence),
+    producer: requiredText(value.producer, 'producer'),
+    model_version: value.model_version === null ? null : optionalText(value.model_version) ?? null,
+    verification: value.verification === undefined ? undefined : isObject(value.verification) ? value.verification : undefined,
+  };
+}
+
 function parseResult(value: unknown, index: number): SearchResult {
   if (!isObject(value)) {
     throw new Error(`results[${index}] phải là object`);
@@ -380,6 +424,13 @@ function parseConfidence(value: unknown): SearchResponse['confidence'] {
     fallbacks_applied: value.fallbacks_applied === undefined ? undefined : stringArray(value.fallbacks_applied, 'confidence.fallbacks_applied'),
     action: value.action === undefined ? undefined : requiredAction(value.action),
   };
+}
+
+function parseVqaConfidence(value: unknown): VqaAnswerSuggestion['confidence'] {
+  if (!isObject(value)) throw new Error('confidence phải là object');
+  const level = value.level;
+  if (level !== 'low' && level !== 'medium' && level !== 'high') throw new Error('confidence.level không hợp lệ');
+  return { level, score: probability(value.score, 'confidence.score') };
 }
 
 function requiredAction(value: unknown): NonNullable<SearchResponse['confidence']>['action'] {

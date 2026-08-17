@@ -1,0 +1,7 @@
+fastapi==0.115.6
+numpy==2.2.2
+open_clip_torch==2.31.0
+Pillow==11.1.0
+torch==2.5.1+cpu
+torchvision==0.20.1+cpu
+uvicorn[standard]==0.34.0

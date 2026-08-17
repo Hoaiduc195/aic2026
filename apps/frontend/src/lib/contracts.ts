@@ -25,6 +25,13 @@ export interface SearchRequest {
   task: SearchTask;
   top_k: number;
   session_id?: string;
+  embedding?: SearchEmbeddingConfig;
+}
+
+export interface SearchEmbeddingConfig {
+  base_url: string;
+  api_key?: string;
+  timeout_ms: number;
 }
 
 export interface RetrievalCandidate {
@@ -97,6 +104,42 @@ export interface SearchResponse {
   results: SearchResult[];
   timing?: Record<string, unknown>;
   warnings?: string[];
+}
+
+export interface VqaAnswerRequest {
+  query_id: string;
+  question: string;
+  video_id: string;
+  original_frame_id: number;
+  llm?: VqaLlmConfig;
+}
+
+export interface VqaLlmConfig {
+  base_url: string;
+  api_key?: string;
+  model: string;
+  timeout_ms: number;
+  max_tokens: number;
+  temperature: number;
+}
+
+export interface VqaAnswerSuggestion {
+  result_id: string;
+  query_id: string;
+  video_id: string;
+  original_frame_id: number;
+  timestamp_ms: number;
+  answer_status: 'answered' | 'needs_more_evidence' | 'abstained';
+  answer: string | null;
+  normalized_answer: string | null;
+  evidence_ids: string[];
+  confidence: {
+    level: 'low' | 'medium' | 'high';
+    score: number;
+  };
+  producer: string;
+  model_version?: string | null;
+  verification?: Record<string, unknown>;
 }
 
 export interface FrameCandidate {

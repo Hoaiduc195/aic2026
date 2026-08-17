@@ -73,4 +73,64 @@ describe('search proxy route', () => {
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({ message: 'Không thể kết nối tới backend tìm kiếm.' });
   });
+
+  it('forwards a validated per-request embedding override without replacing the server backend token', async () => {
+    process.env.BACKEND_API_URL = 'http://backend.internal';
+    process.env.BACKEND_OPERATOR_TOKEN = 'server-only-secret';
+    let forwardedBody: unknown;
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(new Headers(init?.headers).get('x-operator-token')).toBe('server-only-secret');
+      forwardedBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ query_id: 'query_01', results: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const request = new NextRequest('http://localhost/api/v1/search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        query: 'cửa hàng',
+        task: 'textual_kis',
+        top_k: 20,
+        embedding: {
+          base_url: 'http://127.0.0.1:8001/embed',
+          api_key: 'browser-tab-secret',
+          timeout_ms: 2500,
+        },
+      }),
+    });
+    const response = await POST(request);
+
+    expect(response.status).toBe(200);
+    expect(forwardedBody).toMatchObject({
+      embedding: {
+        base_url: 'http://127.0.0.1:8001/embed',
+        api_key: 'browser-tab-secret',
+        timeout_ms: 2500,
+      },
+    });
+  });
+
+  it('rejects unsafe embedding URLs at the BFF boundary', async () => {
+    process.env.BACKEND_API_URL = 'http://backend.internal';
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const request = new NextRequest('http://localhost/api/v1/search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        query: 'cửa hàng',
+        task: 'textual_kis',
+        embedding: { base_url: 'ftp://embedding.local/embed', timeout_ms: 2500 },
+      }),
+    });
+    const response = await POST(request);
+
+    expect(response.status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

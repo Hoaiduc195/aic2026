@@ -26,6 +26,8 @@ interface Props {
   onClose: () => void;
   onFrameSelect: (frame: VideoFrame) => void;
   onQaAnswerChange: (value: string) => void;
+  onSuggestVqaAnswer?: () => void;
+  vqaAnswerLoading?: boolean;
   onAddAnswer: () => void;
   onAssignEvent: (index: number) => void;
 }
@@ -53,6 +55,8 @@ export function FrameInspector({
   onClose,
   onFrameSelect,
   onQaAnswerChange,
+  onSuggestVqaAnswer,
+  vqaAnswerLoading = false,
   onAddAnswer,
   onAssignEvent,
 }: Props) {
@@ -176,6 +180,16 @@ export function FrameInspector({
               onChange={(event) => onQaAnswerChange(event.target.value)}
             />
           </label>
+        )}
+        {task === 'qa' && (
+          <button
+            type="button"
+            className="secondary-button full-width"
+            disabled={!onSuggestVqaAnswer || vqaAnswerLoading}
+            onClick={() => onSuggestVqaAnswer?.()}
+          >
+            {vqaAnswerLoading ? 'Đang hỏi LLM…' : 'Gợi ý answer bằng LLM'}
+          </button>
         )}
         {task === 'trake' ? (
           <div className="event-assignments">

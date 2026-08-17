@@ -149,12 +149,29 @@ textarea:focus-visible,
   position: absolute;
   top: 52px;
   right: 128px;
+  z-index: 100;
   width: 280px;
+  max-height: calc(100vh - 68px);
+  overflow-y: auto;
+  display: grid;
+  gap: 10px;
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 9px;
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.settings-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.settings-heading h2 {
+  margin: 0;
+  font-size: 15px;
 }
 
 .settings-popover label,
@@ -171,7 +188,7 @@ textarea:focus-visible,
   font-weight: 700;
 }
 
-.settings-popover input,
+.settings-popover input:not([type="checkbox"]),
 .input-field input,
 .input-field textarea,
 .event-input textarea {
@@ -181,10 +198,58 @@ textarea:focus-visible,
   background: #fff;
 }
 
-.settings-popover input,
+.settings-popover input:not([type="checkbox"]),
 .input-field input {
   height: 42px;
   padding: 0 11px;
+}
+
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.settings-help {
+  margin: -3px 0 0;
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.settings-actions button {
+  min-height: 34px;
+  padding: 0 9px;
+  font-size: 11px;
+}
+
+.settings-error {
+  margin: 0;
+  padding: 7px 9px;
+  color: var(--danger);
+  border-radius: 6px;
+  background: #fff0ee;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .input-field textarea,
@@ -867,9 +932,14 @@ textarea:focus-visible,
     padding: 0 12px;
   }
 
-  .quiet-button,
+  .quiet-button:not(.settings-trigger),
   .confidence-badge {
     display: none;
+  }
+
+  .settings-popover {
+    right: 12px;
+    width: min(320px, calc(100vw - 24px));
   }
 
   .workbench-layout {

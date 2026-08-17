@@ -3,8 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 
 import {
-  APP_CONFIG, EVIDENCE_REPOSITORY, OBJECT_STORAGE, RETRIEVAL_BRANCHES,
-  RETRIEVAL_STORE, TASK_EXECUTOR_REGISTRY,
+  APP_CONFIG, EMBEDDING_SERVICE, EVIDENCE_REPOSITORY, OBJECT_STORAGE,
+  RETRIEVAL_BRANCHES, RETRIEVAL_STORE, TASK_EXECUTOR_REGISTRY,
 } from '../common/tokens';
 import type {
   BranchName,
@@ -23,6 +23,7 @@ import type { RetrievalStore } from './retrieval.store';
 import type { EvidenceRepository, EvidenceView } from './evidence.repository';
 import type { ObjectStorage } from '../storage/object-storage';
 import { signPreviewUris, withPreviewReferences } from '../storage/preview-url';
+import type { EmbeddingService } from '../embedding_services/embedding.service';
 
 const DEFAULT_BRANCH_K = 100;
 const DEFAULT_FUSION_K = 500;
@@ -58,9 +59,17 @@ export class RetrievalService {
     @Optional() @Inject(RETRIEVAL_STORE) private readonly store?: RetrievalStore,
     @Optional() @Inject(EVIDENCE_REPOSITORY) private readonly evidenceRepository?: EvidenceRepository,
     @Optional() @Inject(OBJECT_STORAGE) private readonly storage?: ObjectStorage,
+    @Optional() @Inject(EMBEDDING_SERVICE) private readonly embeddingService?: EmbeddingService,
   ) {}
 
   createPlan(request: SearchRequest): RetrievalExecutionPlan {
+    return this.createPlanForBranches(request, this.resolveBranches(request));
+  }
+
+  private createPlanForBranches(
+    request: SearchRequest,
+    branches: readonly RetrievalBranch[],
+  ): RetrievalExecutionPlan {
     const displayK = request.retrieval?.display_k ?? request.top_k ?? DEFAULT_DISPLAY_K;
     const fusionK = Math.max(request.retrieval?.fusion_k ?? DEFAULT_FUSION_K, displayK);
     const branchK = Math.max(request.retrieval?.branch_k ?? DEFAULT_BRANCH_K, fusionK > DEFAULT_FUSION_K ? displayK : 1);
@@ -68,7 +77,7 @@ export class RetrievalService {
       request,
       randomUUID(),
       this.config.indexVersion,
-      this.branches,
+      branches,
       { branchK, fusionK, displayK, latencyBudgetMs: request.retrieval?.latency_budget_ms ?? 5000 },
     );
     this.logger.debug(JSON.stringify({ event: 'query_plan_created', plan }));
@@ -76,10 +85,11 @@ export class RetrievalService {
   }
 
   async search(request: SearchRequest): Promise<SearchResponse> {
-    const plan = this.createPlan(request);
+    const branches = this.resolveBranches(request);
+    const plan = this.createPlanForBranches(request, branches);
     const startedAt = performance.now();
     const branchResults = await Promise.all(
-      this.branches
+      branches
         .filter((branch) => plan.branches.includes(branch.name))
         .map((branch) => this.runBranchVariants(branch, plan)),
     );
@@ -124,6 +134,10 @@ export class RetrievalService {
     return warnings.length > 0
       ? { ...response, warnings: [...response.warnings, ...warnings] }
       : response;
+  }
+
+  private resolveBranches(request: SearchRequest): readonly RetrievalBranch[] {
+    return this.embeddingService?.resolveBranches(this.branches, request) ?? this.branches;
   }
 
   private async runBranch(

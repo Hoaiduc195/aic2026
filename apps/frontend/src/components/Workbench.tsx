@@ -15,15 +15,34 @@ import type {
   SubmissionPreview,
   TextualKisAnswer,
   TrakeAnswer,
+  VqaAnswerRequest,
+  VqaAnswerSuggestion,
   VideoFrame,
   VideoFramesResponse,
   VideoPlayback,
 } from '../lib/contracts';
+import {
+  DEFAULT_LLM_SETTINGS,
+  buildVqaLlmConfig,
+  loadLlmSettings,
+  saveLlmSettings,
+  validateLlmSettings,
+  type LlmSettings,
+} from '../lib/llm-settings';
+import {
+  buildSearchEmbeddingConfig,
+  DEFAULT_EMBEDDING_SETTINGS,
+  loadEmbeddingSettings,
+  saveEmbeddingSettings,
+  validateEmbeddingSettings,
+  type EmbeddingSettings,
+} from '../lib/embedding-settings';
 import { toFrameCandidates, validateTrakeSequence } from '../lib/workbench-model';
 import { useWorkbenchStore } from '../lib/workbench-store';
 import { AnswerDrawer } from './workbench/AnswerDrawer';
 import { FrameGrid } from './workbench/FrameGrid';
 import { FrameInspector } from './workbench/FrameInspector';
+import { LlmSettingsPopover } from './workbench/LlmSettingsPopover';
 import { SearchSidebar } from './workbench/SearchSidebar';
 
 interface Props {
@@ -32,13 +51,14 @@ interface Props {
   loadFrames: (videoId: string, centerFrameId: number, limit: number) => Promise<VideoFramesResponse>;
   saveSelection: (queryId: string, task: QualificationTask, answers: readonly QualificationAnswer[]) => Promise<SelectionRevision>;
   createPreview: (queryId: string, task: QualificationTask, answers: readonly QualificationAnswer[]) => Promise<SubmissionPreview>;
+  suggestVqaAnswer: (request: VqaAnswerRequest) => Promise<VqaAnswerSuggestion>;
 }
 
 function initialEvents(): QualificationEventInput[] {
   return [{ event_id: 'event-1', event_ordinal: 1, description: '' }];
 }
 
-export function Workbench({ search, loadPlayback, loadFrames, saveSelection, createPreview }: Props) {
+export function Workbench({ search, loadPlayback, loadFrames, saveSelection, createPreview, suggestVqaAnswer }: Props) {
   const task = useWorkbenchStore((state) => state.task);
   const answers = useWorkbenchStore((state) => state.answers);
   const setTask = useWorkbenchStore((state) => state.setTask);
@@ -58,9 +78,17 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [llmSettings, setLlmSettings] = useState<LlmSettings>(DEFAULT_LLM_SETTINGS);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [embeddingSettings, setEmbeddingSettings] = useState<EmbeddingSettings>(DEFAULT_EMBEDDING_SETTINGS);
+  const [embeddingError, setEmbeddingError] = useState<string | null>(null);
 
   const searchMutation = useMutation({
     mutationFn: (request: SearchRequest) => search(request),
+  });
+  const vqaAnswerMutation = useMutation({
+    mutationFn: (request: VqaAnswerRequest) => suggestVqaAnswer(request),
   });
   const normalized = useMemo(
     () => response ? toFrameCandidates(response) : { frames: [], skipped: 0 },
@@ -68,6 +96,11 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
   );
 
   useEffect(() => () => reset(), [reset]);
+
+  useEffect(() => {
+    setLlmSettings(loadLlmSettings());
+    setEmbeddingSettings(loadEmbeddingSettings());
+  }, []);
 
   function changeTask(nextTask: QualificationTask) {
     setTask(nextTask);
@@ -103,8 +136,20 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
     setResponse(null);
     setSelectedAnchor(null);
     setActiveFrame(null);
+    const embeddingValidationError = validateEmbeddingSettings(embeddingSettings);
+    if (embeddingValidationError) {
+      setEmbeddingError(embeddingValidationError);
+      setSettingsOpen(true);
+      return;
+    }
     try {
-      const next = await searchMutation.mutateAsync({ query, task: backendTask, top_k: 20 });
+      const embedding = buildSearchEmbeddingConfig(embeddingSettings);
+      const next = await searchMutation.mutateAsync({
+        query,
+        task: backendTask,
+        top_k: 20,
+        ...(embedding ? { embedding } : {}),
+      });
       setResponse(next);
     } catch (reason) {
       setError(readError(reason, 'Tìm kiếm thất bại.'));
@@ -165,6 +210,70 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
     setNotice('Đã thêm frame vào hàng đợi đáp án.');
   }
 
+  async function suggestAnswer() {
+    if (task !== 'qa' || !response?.query_id || !activeFrame || !question.trim()) return;
+    setError(null);
+    setNotice(null);
+    try {
+      const llm = buildVqaLlmConfig(llmSettings);
+      const suggestion = await vqaAnswerMutation.mutateAsync({
+        query_id: response.query_id,
+        question: question.trim(),
+        video_id: activeFrame.video_id,
+        original_frame_id: activeFrame.original_frame_id,
+        ...(llm ? { llm } : {}),
+      });
+      if (suggestion.answer_status === 'answered' && suggestion.answer?.trim()) {
+        setQaAnswer(suggestion.answer.trim());
+        setNotice('LLM đã gợi ý câu trả lời. Hãy kiểm tra trước khi lưu.');
+      } else {
+        setNotice(suggestion.answer_status === 'needs_more_evidence'
+          ? 'LLM chưa đủ bằng chứng để trả lời frame này.'
+          : 'LLM không đưa ra câu trả lời an toàn cho frame này.');
+      }
+    } catch (reason) {
+      setError(readError(reason, 'Không thể sinh gợi ý câu trả lời.'));
+    }
+  }
+
+  function saveSettings() {
+    const validationError = validateLlmSettings(llmSettings);
+    if (validationError) {
+      setSettingsError(validationError);
+      return;
+    }
+    saveLlmSettings(llmSettings);
+    setSettingsError(null);
+    setSettingsOpen(false);
+    setNotice(llmSettings.enabled ? 'Đã lưu cấu hình LLM cho frontend.' : 'Đã tắt cấu hình LLM riêng của frontend.');
+  }
+
+  function resetSettings() {
+    setLlmSettings({ ...DEFAULT_LLM_SETTINGS });
+    saveLlmSettings(DEFAULT_LLM_SETTINGS);
+    setSettingsError(null);
+  }
+
+  function saveEmbeddingSettingsForSession() {
+    const validationError = validateEmbeddingSettings(embeddingSettings);
+    if (validationError) {
+      setEmbeddingError(validationError);
+      return;
+    }
+    saveEmbeddingSettings(embeddingSettings);
+    setEmbeddingError(null);
+    setSettingsOpen(false);
+    setNotice(embeddingSettings.enabled
+      ? 'Đã lưu cấu hình embedding cho frontend.'
+      : 'Đã tắt cấu hình embedding riêng của frontend.');
+  }
+
+  function resetEmbeddingSettings() {
+    setEmbeddingSettings({ ...DEFAULT_EMBEDDING_SETTINGS });
+    saveEmbeddingSettings(DEFAULT_EMBEDDING_SETTINGS);
+    setEmbeddingError(null);
+  }
+
   function addEvent() {
     setEvents((current) => {
       const nextOrdinal = current.length + 1;
@@ -193,8 +302,36 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
               {response.degraded ? 'Suy giảm' : 'Tin cậy'} · {Math.round(response.confidence.score * 100)}%
             </span>
           )}
+          <button
+            type="button"
+            className="quiet-button settings-trigger"
+            aria-expanded={settingsOpen}
+            aria-controls="llm-settings"
+            onClick={() => {
+              setSettingsError(null);
+              setEmbeddingError(null);
+              setSettingsOpen((open) => !open);
+            }}
+          >
+            Cài đặt
+          </button>
           <button type="button" className="answer-badge" onClick={() => setDrawerOpen(true)}>Đáp án ({answers.length})</button>
         </div>
+        {settingsOpen && (
+          <LlmSettingsPopover
+            settings={llmSettings}
+            error={settingsError}
+            onChange={setLlmSettings}
+            onSave={saveSettings}
+            onReset={resetSettings}
+            embeddingSettings={embeddingSettings}
+            embeddingError={embeddingError}
+            onEmbeddingChange={setEmbeddingSettings}
+            onEmbeddingSave={saveEmbeddingSettingsForSession}
+            onEmbeddingReset={resetEmbeddingSettings}
+            onClose={() => setSettingsOpen(false)}
+          />
+        )}
       </header>
 
       <div className="workbench-layout" id="main-workspace">
@@ -240,6 +377,8 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
               }}
               onFrameSelect={selectNeighborFrame}
               onQaAnswerChange={setQaAnswer}
+              onSuggestVqaAnswer={task === 'qa' ? suggestAnswer : undefined}
+              vqaAnswerLoading={vqaAnswerMutation.isPending}
               onAddAnswer={addCurrentAnswer}
               onAssignEvent={(index) => setAssignedFrames((current) => current.map((frame, frameIndex) => (
                 frameIndex === index ? activeFrame : frame

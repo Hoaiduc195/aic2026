@@ -15,6 +15,12 @@ export interface BackendConfig {
   readonly embeddingServiceUrl?: string;
   readonly embeddingServiceToken?: string;
   readonly embeddingDimensions: number;
+  readonly llmBaseUrl?: string;
+  readonly llmApiKey?: string;
+  readonly llmModel?: string;
+  readonly llmTimeoutMs: number;
+  readonly llmMaxTokens: number;
+  readonly llmTemperature: number;
   readonly datasetVersion: string;
   readonly pipelineVersion: string;
   readonly indexVersion: string;
@@ -34,6 +40,12 @@ function positiveInteger(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function boundedNumber(value: string | undefined, fallback: number, minimum: number, maximum: number): number {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= minimum && parsed <= maximum ? parsed : fallback;
 }
 
 function stringMap(value: string | undefined, fallback: Readonly<Record<string, string>>): Readonly<Record<string, string>> {
@@ -70,6 +82,12 @@ export function loadConfig(): BackendConfig {
     throw new Error('R2_ENDPOINT_URL, R2_BUCKET, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY must be configured together');
   }
 
+  const llmBaseUrl = optionalEnv('LLM_BASE_URL');
+  const llmModel = optionalEnv('LLM_MODEL');
+  if (Boolean(llmBaseUrl) !== Boolean(llmModel)) {
+    throw new Error('LLM_BASE_URL and LLM_MODEL must be configured together');
+  }
+
   const versionStatus = optionalEnv('VERSION_STATUS') ?? 'staged';
   if (!['staged', 'active', 'retired'].includes(versionStatus)) throw new Error('VERSION_STATUS must be staged, active or retired');
   const indexChecksum = optionalEnv('INDEX_CHECKSUM');
@@ -96,6 +114,12 @@ export function loadConfig(): BackendConfig {
     embeddingServiceUrl: optionalEnv('EMBEDDING_SERVICE_URL'),
     embeddingServiceToken: optionalEnv('EMBEDDING_SERVICE_TOKEN'),
     embeddingDimensions: positiveInteger(process.env.EMBEDDING_DIMENSIONS, 1024),
+    llmBaseUrl,
+    llmApiKey: optionalEnv('LLM_API_KEY'),
+    llmModel,
+    llmTimeoutMs: positiveInteger(process.env.LLM_TIMEOUT_MS, 15_000),
+    llmMaxTokens: positiveInteger(process.env.LLM_MAX_TOKENS, 128),
+    llmTemperature: boundedNumber(process.env.LLM_TEMPERATURE, 0, 0, 2),
     datasetVersion: optionalEnv('DATASET_VERSION') ?? 'local',
     pipelineVersion: optionalEnv('PIPELINE_VERSION') ?? 'preprocessing-artifacts',
     indexVersion,

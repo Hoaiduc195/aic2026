@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 
+import { parseEmbeddingOverride } from '../embedding_services/embedding-request';
 import { TASK_TYPES, type RetrievalOverrides, type SearchRequest, type TaskType } from './types';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -48,5 +49,6 @@ export function parseSearchRequest(value: unknown): SearchRequest {
     top_k: topK,
     session_id: sessionId as string | undefined,
     retrieval: optionalOverrides(value.retrieval),
+    embedding: parseEmbeddingOverride(value.embedding),
   };
 }

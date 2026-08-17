@@ -1,10 +1,21 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { Workbench } from '@/components/Workbench';
-import type { SearchResponse, SelectionRevision, SubmissionPreview, VideoFramesResponse, VideoPlayback } from '@/lib/contracts';
+import type {
+  SearchResponse,
+  SelectionRevision,
+  SubmissionPreview,
+  VqaAnswerSuggestion,
+  VideoFramesResponse,
+  VideoPlayback,
+} from '@/lib/contracts';
+
+afterEach(() => {
+  localStorage.clear();
+});
 
 const response: SearchResponse = {
   request_id: 'request_0001',
@@ -41,6 +52,28 @@ const response: SearchResponse = {
   ],
 };
 
+const vqaResponse: SearchResponse = {
+  ...response,
+  query: 'Một cửa hàng trên phố\nCâu hỏi: Người phụ nữ đang cầm gì?',
+  task: 'vqa',
+  task_executor: 'vqa-retrieval-manual-ready-v1',
+};
+
+const vqaSuggestion: VqaAnswerSuggestion = {
+  result_id: 'result-1',
+  query_id: 'query_0001',
+  video_id: 'video_01',
+  original_frame_id: 385,
+  timestamp_ms: 12_800,
+  answer_status: 'answered',
+  answer: 'Rẽ phải',
+  normalized_answer: 'rẽ phải',
+  evidence_ids: ['ev_ocr', 'ev_asr'],
+  confidence: { level: 'high', score: 0.9 },
+  producer: 'llm-vqa-openai-compatible',
+  model_version: 'aic-qa-v1',
+};
+
 const playback: VideoPlayback = {
   video_id: 'video_01',
   playback_uri: '/api/v1/media/videos/video_01',
@@ -72,6 +105,7 @@ const frameContext: VideoFramesResponse = {
 
 function renderWorkbench({
   searchResponse = response,
+  search = vi.fn(async () => searchResponse),
   loadPlayback = vi.fn(async () => playback),
   loadFrames = vi.fn(async () => frameContext),
   saveSelection = vi.fn(async (): Promise<SelectionRevision> => ({
@@ -81,20 +115,22 @@ function renderWorkbench({
   createPreview = vi.fn(async (): Promise<SubmissionPreview> => ({
     query_id: 'query_0001', task: 'textual_kis', answer_count: 1, answers: [], csv: '', submittable: false, warnings: [],
   })),
+  suggestVqaAnswer = vi.fn(async (): Promise<VqaAnswerSuggestion> => vqaSuggestion),
 } = {}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = render(
     <QueryClientProvider client={queryClient}>
       <Workbench
-        search={async () => searchResponse}
+        search={search}
         loadPlayback={loadPlayback}
         loadFrames={loadFrames}
         saveSelection={saveSelection}
         createPreview={createPreview}
+        suggestVqaAnswer={suggestVqaAnswer}
       />
     </QueryClientProvider>,
   );
-  return { ...view, loadPlayback, loadFrames, saveSelection, createPreview };
+  return { ...view, search, loadPlayback, loadFrames, saveSelection, createPreview };
 }
 
 describe('qualification frame-first workbench', () => {
@@ -213,6 +249,68 @@ describe('qualification frame-first workbench', () => {
     await user.click(screen.getByRole('button', { name: 'Thêm vào đáp án' }));
     await user.click(screen.getByRole('button', { name: 'Đáp án (1)' }));
     expect(screen.getByText('Rẽ phải')).toBeInTheDocument();
+  });
+
+  it('suggests a VQA answer for the selected frame without queueing it automatically', async () => {
+    const user = userEvent.setup();
+    const suggestVqaAnswer = vi.fn(async () => vqaSuggestion);
+    renderWorkbench({ searchResponse: vqaResponse, suggestVqaAnswer });
+
+    await user.click(screen.getByRole('tab', { name: 'Hỏi & Đáp' }));
+    await user.click(screen.getByRole('button', { name: 'Cài đặt' }));
+    await user.click(screen.getByLabelText('Bật cấu hình LLM từ frontend'));
+    await user.type(screen.getByLabelText('Endpoint LLM'), 'https://llm.test/v1');
+    await user.type(screen.getByLabelText('API key LLM'), 'request-secret');
+    await user.type(screen.getByLabelText('Model LLM'), 'custom-v1');
+    await user.clear(screen.getByLabelText('Timeout (ms)'));
+    await user.type(screen.getByLabelText('Timeout (ms)'), '2500');
+    await user.clear(screen.getByLabelText('Max tokens'));
+    await user.type(screen.getByLabelText('Max tokens'), '64');
+    await user.clear(screen.getByLabelText('Temperature'));
+    await user.type(screen.getByLabelText('Temperature'), '0.2');
+    await user.click(screen.getByRole('button', { name: 'Lưu cài đặt LLM' }));
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.type(screen.getByLabelText('Câu hỏi'), 'Người phụ nữ đang cầm gì?');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+    await user.click(await screen.findByRole('button', { name: 'Chọn frame video_01 · 385' }));
+    await user.click(screen.getByRole('button', { name: 'Gợi ý answer bằng LLM' }));
+
+    expect(suggestVqaAnswer).toHaveBeenCalledWith({
+      query_id: 'query_0001', question: 'Người phụ nữ đang cầm gì?', video_id: 'video_01', original_frame_id: 385,
+      llm: {
+        base_url: 'https://llm.test/v1', api_key: 'request-secret', model: 'custom-v1',
+        timeout_ms: 2500, max_tokens: 64, temperature: 0.2,
+      },
+    });
+    expect(screen.getByRole('textbox', { name: 'Câu trả lời' })).toHaveValue('Rẽ phải');
+    expect(screen.queryByText('Đáp án (1)')).not.toBeInTheDocument();
+  });
+
+  it('sends the current tab embedding settings with the search request', async () => {
+    const user = userEvent.setup();
+    const search = vi.fn(async () => response);
+    renderWorkbench({ search });
+
+    await user.click(screen.getByRole('button', { name: 'Cài đặt' }));
+    await user.click(screen.getByLabelText('Bật cấu hình embedding từ frontend'));
+    await user.type(screen.getByLabelText('Embedding service URL'), 'http://127.0.0.1:8001/embed');
+    await user.type(screen.getByLabelText('API token embedding'), 'tab-secret');
+    await user.clear(screen.getByLabelText('Timeout embedding (ms)'));
+    await user.type(screen.getByLabelText('Timeout embedding (ms)'), '2500');
+    await user.click(screen.getByRole('button', { name: 'Lưu cài đặt embedding' }));
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+
+    expect(search).toHaveBeenCalledWith({
+      query: 'Một cửa hàng trên phố',
+      task: 'textual_kis',
+      top_k: 20,
+      embedding: {
+        base_url: 'http://127.0.0.1:8001/embed',
+        api_key: 'tab-secret',
+        timeout_ms: 2500,
+      },
+    });
   });
 
   it('builds an ordered TRAKE sequence from the selected frame and its filmstrip', async () => {
