@@ -305,7 +305,24 @@ describe('qualification frame-first workbench', () => {
       query: 'Một cửa hàng trên phố',
       task: 'textual_kis',
       top_k: 20,
-      retrieval: { display_k: 20, branch_k: 100, fusion_k: 500 },
+      retrieval: {
+        display_k: 20,
+        branch_k: 100,
+        fusion_k: 500,
+        rrf_k: 60,
+        channel_weights: {
+          visual: 1,
+          clip: 1,
+          ocr_lexical: 1.25,
+          ocr_semantic: 1.25,
+          asr_lexical: 1.25,
+          asr_semantic: 1.25,
+          caption: 1,
+          object: 1.2,
+          temporal: 1,
+          audio: 1,
+        },
+      },
       embedding: {
         base_url: 'http://127.0.0.1:8001/embed',
         api_key: 'tab-secret',
@@ -334,8 +351,46 @@ describe('qualification frame-first workbench', () => {
       query: 'Một cửa hàng trên phố',
       task: 'textual_kis',
       top_k: 40,
-      retrieval: { display_k: 40, branch_k: 150, fusion_k: 600 },
+      retrieval: {
+        display_k: 40,
+        branch_k: 150,
+        fusion_k: 600,
+        rrf_k: 60,
+        channel_weights: {
+          visual: 1,
+          clip: 1,
+          ocr_lexical: 1.25,
+          ocr_semantic: 1.25,
+          asr_lexical: 1.25,
+          asr_semantic: 1.25,
+          caption: 1,
+          object: 1.2,
+          temporal: 1,
+          audio: 1,
+        },
+      },
     });
+  });
+
+  it('sends RRF settings configured in the left sidebar', async () => {
+    const user = userEvent.setup();
+    const search = vi.fn(async () => response);
+    renderWorkbench({ search });
+
+    await user.clear(screen.getByLabelText('RRF K'));
+    await user.type(screen.getByLabelText('RRF K'), '30');
+    await user.clear(screen.getByLabelText('Trọng số object'));
+    await user.type(screen.getByLabelText('Trọng số object'), '0.5');
+    await user.click(screen.getByRole('button', { name: 'Lưu cấu hình RRF' }));
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+
+    expect(search).toHaveBeenCalledWith(expect.objectContaining({
+      retrieval: expect.objectContaining({
+        rrf_k: 30,
+        channel_weights: expect.objectContaining({ object: 0.5 }),
+      }),
+    }));
   });
 
   it('keeps numeric settings editable after clearing them and opens settings as a modal', async () => {

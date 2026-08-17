@@ -8,14 +8,31 @@ describe('parseSearchRequest', () => {
       query: 'find a person running',
       task: 'textual_kis',
       top_k: 20,
-      retrieval: { branch_k: 200, fusion_k: 500, display_k: 100 },
+      retrieval: {
+        branch_k: 200,
+        fusion_k: 500,
+        display_k: 100,
+        rrf_k: 30,
+        channel_weights: { clip: 1.4, object: 0.5 },
+      },
     })).toEqual({
       query: 'find a person running',
       task: 'textual_kis',
       top_k: 20,
       session_id: undefined,
-      retrieval: { branch_k: 200, fusion_k: 500, display_k: 100 },
+      retrieval: {
+        branch_k: 200,
+        fusion_k: 500,
+        display_k: 100,
+        rrf_k: 30,
+        channel_weights: { clip: 1.4, object: 0.5 },
+      },
     });
+    expect(() => parseSearchRequest({
+      query: 'query',
+      task: 'textual_kis',
+      retrieval: { rrf_k: 0 },
+    })).toThrow('retrieval.rrf_k');
   });
 
   it('rejects tasks outside the configured preliminary-round scope', () => {

@@ -54,13 +54,21 @@ describe('RetrievalService', () => {
       query: 'một người đang chạy',
       task: 'vqa',
       top_k: 20,
-      retrieval: { branch_k: 50, fusion_k: 80, display_k: 10 },
+      retrieval: {
+        branch_k: 50,
+        fusion_k: 80,
+        display_k: 10,
+        rrf_k: 30,
+        channel_weights: { clip: 1.5 },
+      },
     });
 
     expect(plan.branches).toEqual(['clip']);
     expect(plan.top_k_per_branch).toBe(50);
     expect(plan.fusion_k).toBe(80);
     expect(plan.display_k).toBe(10);
+    expect(plan.rrf_k).toBe(30);
+    expect(plan.channel_weights.clip).toBe(1.5);
     expect(plan.language).toBe('vi');
   });
 

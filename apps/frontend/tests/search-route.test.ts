@@ -132,7 +132,13 @@ describe('search proxy route', () => {
         query: 'cửa hàng',
         task: 'textual_kis',
         top_k: 20,
-        retrieval: { display_k: 40, branch_k: 150, fusion_k: 600 },
+        retrieval: {
+          display_k: 40,
+          branch_k: 150,
+          fusion_k: 600,
+          rrf_k: 30,
+          channel_weights: { clip: 1.4, object: 0.5 },
+        },
       }),
     });
     const response = await POST(request);
@@ -140,7 +146,13 @@ describe('search proxy route', () => {
     expect(response.status).toBe(200);
     expect(forwardedBody).toMatchObject({
       top_k: 40,
-      retrieval: { display_k: 40, branch_k: 150, fusion_k: 600 },
+      retrieval: {
+        display_k: 40,
+        branch_k: 150,
+        fusion_k: 600,
+        rrf_k: 30,
+        channel_weights: { clip: 1.4, object: 0.5 },
+      },
     });
   });
 

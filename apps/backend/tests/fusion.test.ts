@@ -6,6 +6,7 @@ import { aggregateBranchCandidates, fuseBranchResults } from '../src/retrieval/f
 const plan = {
   top_k_per_branch: 100,
   fusion_k: 100,
+  rrf_k: 10,
   channel_weights: { caption: 1, object: 2 },
 } as RetrievalExecutionPlan;
 
@@ -40,5 +41,6 @@ describe('frame aggregation and weighted RRF', () => {
     expect(objectTrace?.channel_weight).toBe(2);
     expect(objectTrace!.rrf_contribution).toBeCloseTo(2 * captionTrace!.rrf_contribution);
     expect(objectTrace?.matched_terms).toEqual(['bottle']);
+    expect(captionTrace?.rrf_contribution).toBeCloseTo(1 / 11);
   });
 });
