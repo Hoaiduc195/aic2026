@@ -392,6 +392,51 @@ describe('qualification frame-first workbench', () => {
     ]);
   });
 
+  it('renders ranked frames as a thumbnail list and shifts items while dragging', async () => {
+    const user = userEvent.setup();
+    const rankedResponse: SearchResponse = {
+      ...response,
+      results: [
+        response.results[0],
+        {
+          ...response.results[0],
+          video_id: 'video_02',
+          original_frame_id: 410,
+          representative_frame: { original_frame_id: 410, timestamp_ms: 15_000, preview_uri: null },
+        },
+        {
+          ...response.results[0],
+          video_id: 'video_03',
+          original_frame_id: 530,
+          representative_frame: { original_frame_id: 530, timestamp_ms: 18_000, preview_uri: null },
+        },
+      ],
+    };
+    renderWorkbench({ searchResponse: rankedResponse });
+
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+
+    const list = screen.getByRole('list', { name: 'Danh sách kết quả frame' });
+    expect(list).toHaveClass('frame-list');
+    expect(list.querySelectorAll('.frame-thumbnail')).toHaveLength(3);
+
+    const items = () => Array.from(list.querySelectorAll('.frame-list-item'));
+    const dataTransfer = {
+      effectAllowed: '',
+      dropEffect: '',
+      setData: vi.fn(),
+      getData: vi.fn(() => '2'),
+    } as unknown as DataTransfer;
+    fireEvent.dragStart(items()[2]!, { dataTransfer });
+    fireEvent.dragOver(items()[0]!, { dataTransfer, clientY: 0 });
+
+    expect(screen.getByText('Thả để xếp ở vị trí #1')).toBeInTheDocument();
+    expect(items()).toHaveLength(2);
+    expect(items()[0]).toHaveTextContent('video_01');
+    expect(items()[1]).toHaveTextContent('video_02');
+  });
+
   it('saves the answer queue and creates a backend preview', async () => {
     const user = userEvent.setup();
     const saveSelection = vi.fn(async (): Promise<SelectionRevision> => ({
