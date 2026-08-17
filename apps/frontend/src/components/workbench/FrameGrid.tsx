@@ -53,6 +53,7 @@ export function FrameGrid({
   const [draggedKey, setDraggedKey] = useState<string | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const [pointerPosition, setPointerPosition] = useState<{ x: number; y: number } | null>(null);
+  const [previewSize, setPreviewSize] = useState<{ width: number; height: number } | null>(null);
   const [focusResultKey, setFocusResultKey] = useState<string | null>(null);
 
   useEffect(() => {
@@ -161,6 +162,10 @@ export function FrameGrid({
     };
     suppressClickRef.current = false;
     setPointerPosition(null);
+    const bounds = event.currentTarget.getBoundingClientRect();
+    setPreviewSize(bounds.width > 0 && bounds.height > 0
+      ? { width: bounds.width, height: bounds.height }
+      : null);
   }
 
   function handlePointerMove(
@@ -226,6 +231,7 @@ export function FrameGrid({
     setDraggedKey(null);
     setDropIndex(null);
     setPointerPosition(null);
+    setPreviewSize(null);
   }
 
   function cancelPointerDrag() {
@@ -234,6 +240,7 @@ export function FrameGrid({
     setDraggedKey(null);
     setDropIndex(null);
     setPointerPosition(null);
+    setPreviewSize(null);
   }
 
   function moveWithKeyboard(index: number, offset: number) {
@@ -395,7 +402,12 @@ export function FrameGrid({
         })}
       </ol>
       {draggedFrame && pointerPosition && draggedRank !== null && (
-        <DragPreview frame={draggedFrame} rank={draggedRank} position={pointerPosition} />
+        <DragPreview
+          frame={draggedFrame}
+          rank={draggedRank}
+          position={pointerPosition}
+          size={previewSize}
+        />
       )}
     </section>
   );
@@ -405,29 +417,45 @@ function DragPreview({
   frame,
   rank,
   position,
+  size,
 }: {
   frame: FrameCandidate;
   rank: number;
   position: { x: number; y: number };
+  size: { width: number; height: number } | null;
 }) {
   const modalityLabel = displayMatchedModalities(frame.matched_modalities);
   return (
     <div
-      className="frame-card frame-drag-preview"
+      className="frame-card frame-list-item frame-list-item--spacious frame-drag-preview"
       role="img"
       aria-label={`Đang kéo frame ${frame.video_id} · ${frame.original_frame_id}`}
-      style={{ transform: `translate3d(${position.x + 14}px, ${position.y + 14}px, 0)` }}
+      style={{
+        width: size ? `${size.width}px` : undefined,
+        height: size ? `${size.height}px` : undefined,
+        transform: `translate3d(${position.x + 14}px, ${position.y + 14}px, 0)`,
+      }}
     >
-      <div className="frame-thumbnail">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={frame.thumbnail_uri} alt="" />
-        <span className="rank-label">#{rank}</span>
-        <span className="score-label">{Math.round(frame.score * 100)}%</span>
+      <div className="frame-list-main">
+        <span className="frame-drag-handle" aria-hidden="true">⠿</span>
+        <div className="frame-card-select frame-drag-preview-select">
+          <div className="frame-thumbnail">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={frame.thumbnail_uri} alt="" />
+            <span className="rank-label">#{rank}</span>
+            <span className="score-label">{Math.round(frame.score * 100)}%</span>
+          </div>
+          <div className="frame-card-body">
+            <strong>{frame.video_id}</strong>
+            <span>Frame {frame.original_frame_id} · {formatMs(frame.timestamp_ms)}</span>
+            <small>{modalityLabel || '—'}</small>
+          </div>
+        </div>
       </div>
-      <div className="frame-card-body">
-        <strong>{frame.video_id}</strong>
-        <span>Frame {frame.original_frame_id} · {formatMs(frame.timestamp_ms)}</span>
-        <small>{modalityLabel || '—'}</small>
+      <div className="frame-card-controls frame-drag-preview-controls" aria-hidden="true">
+        <span className="drag-hint">Kéo để xếp hạng</span>
+        <span className="frame-drag-preview-button">↑</span>
+        <span className="frame-drag-preview-button">↓</span>
       </div>
     </div>
   );

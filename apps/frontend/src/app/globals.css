@@ -675,6 +675,18 @@ textarea:focus-visible,
   padding: 14px 16px;
 }
 
+.frame-drag-preview-button {
+  width: 27px;
+  min-height: 27px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  font-weight: 750;
+}
+
 .frame-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
