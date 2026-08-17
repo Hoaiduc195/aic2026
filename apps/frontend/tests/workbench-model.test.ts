@@ -35,6 +35,7 @@ const result: SearchResult = {
   ],
   matched_modalities: ['visual', 'ocr'],
   representative_frame: {
+    keyframe_no: 5,
     original_frame_id: 385,
     timestamp_ms: 15_400,
     preview_uri: null,
@@ -93,6 +94,7 @@ describe('workbench answer model', () => {
     expect(normalized.frames[0]).toMatchObject({
       video_id: 'video_01',
       original_frame_id: 385,
+      keyframe_no: 5,
       timestamp_ms: 15_400,
       thumbnail_uri: '/api/v1/media/keyframes/video_01/by-frame/385',
     });

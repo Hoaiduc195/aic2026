@@ -256,6 +256,32 @@ describe('qualification frame-first workbench', () => {
     expect(screen.queryByText('đã rẽ')).not.toBeInTheDocument();
   });
 
+  it('shows the keyframe ordinal and source frame in the object result list', async () => {
+    const user = userEvent.setup();
+    const objectResponse: SearchResponse = {
+      ...response,
+      results: [{
+        ...response.results[0],
+        representative_frame: {
+          ...response.results[0].representative_frame!,
+          keyframe_no: 5,
+        },
+        evidence_ids: ['object-1'],
+        evidence: [{ evidence_id: 'object-1', type: 'object', snippet: 'person', producer: 'object:v1' }],
+        matched_modalities: ['object'],
+      }],
+    };
+    renderWorkbench({ searchResponse: objectResponse });
+
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một người');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+
+    expect(await screen.findByRole('button', {
+      name: 'Chọn keyframe video_01 · 5 · source frame 385',
+    })).toBeInTheDocument();
+    expect(screen.getByText('Keyframe 5 · Source frame 385 · 12.80s')).toBeInTheDocument();
+  });
+
   it('adds the selected frame and reveals answers only through the drawer badge', async () => {
     const user = userEvent.setup();
     const writeText = vi.fn(async () => undefined);
