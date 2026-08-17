@@ -20,6 +20,7 @@ export interface EvidenceGroups {
   ocr: SearchEvidence[];
   asr: SearchEvidence[];
   caption: SearchEvidence[];
+  object: SearchEvidence[];
   visual: SearchEvidence[];
   other: SearchEvidence[];
 }
@@ -145,19 +146,32 @@ export function toFrameCandidates(response: SearchResponse): NormalizedFrames {
   return { frames, skipped: response.results.length - frames.length };
 }
 
-export function groupEvidence(evidence: readonly SearchEvidence[]): EvidenceGroups {
+export function groupEvidence(evidence: readonly SearchEvidence[], frameTimestampMs?: number): EvidenceGroups {
   return evidence.reduce<EvidenceGroups>((groups, item) => {
+    const isAsr = item.type === 'asr' || item.type === 'audio';
+    if (
+      isAsr
+      && frameTimestampMs !== undefined
+      && item.start_ms !== undefined
+      && item.end_ms !== undefined
+      && (frameTimestampMs < item.start_ms || frameTimestampMs > item.end_ms)
+    ) {
+      return groups;
+    }
+
     const key = item.type === 'ocr'
       ? 'ocr'
-      : item.type === 'asr' || item.type === 'audio'
+      : isAsr
         ? 'asr'
         : item.type === 'caption'
           ? 'caption'
-          : ['frame', 'object', 'track', 'temporal'].includes(item.type)
+          : item.type === 'object'
+            ? 'object'
+            : ['frame', 'track', 'temporal'].includes(item.type)
             ? 'visual'
             : 'other';
     return { ...groups, [key]: [...groups[key], item] };
-  }, { ocr: [], asr: [], caption: [], visual: [], other: [] });
+  }, { ocr: [], asr: [], caption: [], object: [], visual: [], other: [] });
 }
 
 export function validateTrakeSequence(frames: readonly FrameCandidate[]): boolean {

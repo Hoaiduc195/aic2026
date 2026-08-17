@@ -46,12 +46,13 @@ interface Props {
 }
 
 const EVIDENCE_LABELS: ReadonlyArray<{
-  key: 'ocr' | 'asr' | 'caption' | 'other';
+  key: 'ocr' | 'asr' | 'caption' | 'object' | 'other';
   label: string;
 }> = [
   { key: 'ocr', label: 'Văn bản trong hình (OCR)' },
   { key: 'asr', label: 'Lời thoại (ASR)' },
   { key: 'caption', label: 'Mô tả cảnh' },
+  { key: 'object', label: 'Object detection' },
   { key: 'other', label: 'Bằng chứng khác' },
 ];
 
@@ -77,7 +78,10 @@ export function FrameInspector({
   const [showFrames, setShowFrames] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartRef = useRef<{ clientX: number; width: number } | null>(null);
-  const evidence = useMemo(() => groupEvidence(active.evidence), [active.evidence]);
+  const evidence = useMemo(
+    () => groupEvidence(active.evidence, active.timestamp_ms),
+    [active.evidence, active.timestamp_ms],
+  );
   const modalityLabel = displayMatchedModalities(active.matched_modalities);
 
   const framesQuery = useQuery({
