@@ -562,6 +562,13 @@ textarea:focus-visible,
   gap: 16px;
 }
 
+.workspace-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .result-summary {
   color: var(--ink-muted);
   font-size: 12px;
@@ -622,6 +629,31 @@ textarea:focus-visible,
   border-radius: 9px;
   background: var(--surface);
   transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.frame-card.dragging {
+  opacity: 0.52;
+}
+
+.frame-card.drag-over {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(21, 94, 239, 0.16);
+}
+
+.frame-card-select {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+}
+
+.frame-card-select:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline-offset: -3px;
 }
 
 .frame-card:hover {
@@ -693,6 +725,31 @@ textarea:focus-visible,
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.frame-card-controls {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 9px;
+  border-top: 1px solid var(--line);
+  background: #fbfcfd;
+}
+
+.frame-card-controls button {
+  width: 27px;
+  min-height: 27px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  font-weight: 750;
+}
+
+.drag-hint {
+  flex: 1;
+  color: var(--ink-muted);
+  font-size: 10px;
 }
 
 .frame-inspector {

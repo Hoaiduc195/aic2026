@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -291,8 +291,9 @@ describe('qualification frame-first workbench', () => {
       'Chọn frame video_01 · 385',
       'Chọn frame video_03 · 530',
     ]);
+    expect(document.activeElement).toHaveAttribute('aria-label', 'Chọn frame video_01 · 385');
 
-    const createObjectURL = vi.fn(() => 'blob:ranked-json');
+    const createObjectURL = vi.fn((_blob: Blob) => 'blob:ranked-json');
     const revokeObjectURL = vi.fn();
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
@@ -301,7 +302,13 @@ describe('qualification frame-first workbench', () => {
     await user.click(screen.getByRole('button', { name: 'Xuất JSON top 100' }));
 
     const blob = createObjectURL.mock.calls[0][0] as Blob;
-    expect(JSON.parse(await blob.text())).toEqual({
+    const blobText = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(blob);
+    });
+    expect(JSON.parse(blobText)).toEqual({
       query_id: 'query_0001',
       task: 'textual_kis',
       answers: [
@@ -313,6 +320,50 @@ describe('qualification frame-first workbench', () => {
     expect(click).toHaveBeenCalledOnce();
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:ranked-json');
     click.mockRestore();
+  });
+
+  it('supports native drag and drop for changing frame rank', async () => {
+    const user = userEvent.setup();
+    const rankedResponse: SearchResponse = {
+      ...response,
+      results: [
+        response.results[0],
+        {
+          ...response.results[0],
+          video_id: 'video_02',
+          original_frame_id: 410,
+          representative_frame: { original_frame_id: 410, timestamp_ms: 15_000, preview_uri: null },
+        },
+        {
+          ...response.results[0],
+          video_id: 'video_03',
+          original_frame_id: 530,
+          representative_frame: { original_frame_id: 530, timestamp_ms: 18_000, preview_uri: null },
+        },
+      ],
+    };
+    renderWorkbench({ searchResponse: rankedResponse });
+
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+
+    const cards = () => screen.getAllByRole('button', { name: /^Chọn frame/ })
+      .map((button) => button.closest('.frame-card'));
+    const dataTransfer = {
+      effectAllowed: '',
+      dropEffect: '',
+      setData: vi.fn(),
+      getData: vi.fn(() => '2'),
+    } as unknown as DataTransfer;
+    fireEvent.dragStart(cards()[2]!, { dataTransfer });
+    fireEvent.dragOver(cards()[0]!, { dataTransfer });
+    fireEvent.drop(cards()[0]!, { dataTransfer });
+
+    expect(screen.getAllByRole('button', { name: /^Chọn frame/ }).map((card) => card.getAttribute('aria-label'))).toEqual([
+      'Chọn frame video_03 · 530',
+      'Chọn frame video_01 · 385',
+      'Chọn frame video_02 · 410',
+    ]);
   });
 
   it('saves the answer queue and creates a backend preview', async () => {

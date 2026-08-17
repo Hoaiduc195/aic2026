@@ -1,6 +1,6 @@
 'use client';
 
-import { type KeyboardEvent, useRef } from 'react';
+import { type DragEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react';
 
 import type { FrameCandidate } from '../../lib/contracts';
 import { displayMatchedModalities, formatMs } from '../../lib/workbench-model';
@@ -12,10 +12,32 @@ interface Props {
   searched: boolean;
   skipped: number;
   onSelect: (frame: FrameCandidate) => void;
+  onReorder: (from: number, to: number) => void;
+  onExport?: () => void;
 }
 
-export function FrameGrid({ frames, selectedKey, loading, searched, skipped, onSelect }: Props) {
+export function FrameGrid({
+  frames,
+  selectedKey,
+  loading,
+  searched,
+  skipped,
+  onSelect,
+  onReorder,
+  onExport,
+}: Props) {
   const cardRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [focusResultKey, setFocusResultKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!focusResultKey) return;
+    const target = cardRefs.current.find((button) => button?.dataset.resultKey === focusResultKey);
+    if (!target) return;
+    target.focus();
+    setFocusResultKey(null);
+  }, [focusResultKey, frames]);
 
   function handleKeys(event: KeyboardEvent<HTMLDivElement>) {
     if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key) || frames.length === 0) return;
@@ -27,6 +49,36 @@ export function FrameGrid({ frames, selectedKey, loading, searched, skipped, onS
     cardRefs.current[nextIndex]?.focus();
   }
 
+  function handleDragStart(event: DragEvent<HTMLElement>, index: number) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(index));
+    setDraggedIndex(index);
+    setDragOverIndex(index);
+  }
+
+  function handleDrop(event: DragEvent<HTMLElement>, index: number) {
+    event.preventDefault();
+    const dataIndex = Number(event.dataTransfer.getData('text/plain'));
+    const sourceIndex = draggedIndex ?? (Number.isInteger(dataIndex) ? dataIndex : null);
+    if (sourceIndex !== null && Number.isInteger(sourceIndex)) {
+      onReorder(sourceIndex, index);
+    }
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  }
+
+  function clearDragState() {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  }
+
+  function moveWithKeyboard(index: number, offset: number) {
+    const targetIndex = index + offset;
+    if (targetIndex < 0 || targetIndex >= frames.length) return;
+    setFocusResultKey(frames[index].result_key);
+    onReorder(index, index + offset);
+  }
+
   return (
     <section className="results-workspace" aria-labelledby="frame-results-title">
       <header className="workspace-heading">
@@ -34,9 +86,21 @@ export function FrameGrid({ frames, selectedKey, loading, searched, skipped, onS
           <p className="section-kicker">Kết quả truy hồi</p>
           <h2 id="frame-results-title">Kết quả frame</h2>
         </div>
-        <span className="result-summary">
-          {loading ? 'Đang tìm' : searched ? `${frames.length} frame` : 'Chưa tìm kiếm'}
-        </span>
+        <div className="workspace-heading-actions">
+          <span className="result-summary">
+            {loading ? 'Đang tìm' : searched ? `${frames.length} frame` : 'Chưa tìm kiếm'}
+          </span>
+          {onExport && searched && (
+            <button
+              type="button"
+              className="secondary-button result-export-button"
+              disabled={frames.length === 0}
+              onClick={onExport}
+            >
+              Xuất JSON top 100
+            </button>
+          )}
+        </div>
       </header>
 
       {skipped > 0 && (
@@ -64,27 +128,63 @@ export function FrameGrid({ frames, selectedKey, loading, searched, skipped, onS
           const selected = frame.result_key === selectedKey;
           const modalityLabel = displayMatchedModalities(frame.matched_modalities);
           return (
-            <button
-              type="button"
-              className={`frame-card${selected ? ' selected' : ''}`}
+            <article
+              className={`frame-card${selected ? ' selected' : ''}${draggedIndex === index ? ' dragging' : ''}${dragOverIndex === index && draggedIndex !== index ? ' drag-over' : ''}`}
               key={frame.result_key}
-              aria-label={`Chọn frame ${frame.video_id} · ${frame.original_frame_id}`}
-              aria-pressed={selected}
-              ref={(element) => { cardRefs.current[index] = element; }}
-              onClick={() => onSelect(frame)}
+              draggable
+              onDragStart={(event) => handleDragStart(event, index)}
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+                setDragOverIndex(index);
+              }}
+              onDragLeave={() => {
+                if (dragOverIndex === index) setDragOverIndex(null);
+              }}
+              onDrop={(event) => handleDrop(event, index)}
+              onDragEnd={clearDragState}
             >
-              <div className="frame-thumbnail">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={frame.thumbnail_uri} alt="" loading="lazy" />
-                <span className="rank-label">#{index + 1}</span>
-                <span className="score-label">{Math.round(frame.score * 100)}%</span>
+              <button
+                type="button"
+                className="frame-card-select"
+                aria-label={`Chọn frame ${frame.video_id} · ${frame.original_frame_id}`}
+                aria-pressed={selected}
+                data-result-key={frame.result_key}
+                ref={(element) => { cardRefs.current[index] = element; }}
+                onClick={() => onSelect(frame)}
+              >
+                <div className="frame-thumbnail">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={frame.thumbnail_uri} alt="" loading="lazy" />
+                  <span className="rank-label">#{index + 1}</span>
+                  <span className="score-label">{Math.round(frame.score * 100)}%</span>
+                </div>
+                <div className="frame-card-body">
+                  <strong>{frame.video_id}</strong>
+                  <span>Frame {frame.original_frame_id} · {formatMs(frame.timestamp_ms)}</span>
+                  <small>{modalityLabel || '—'}</small>
+                </div>
+              </button>
+              <div className="frame-card-controls" onKeyDown={(event) => event.stopPropagation()}>
+                <span className="drag-hint">Kéo để xếp hạng</span>
+                <button
+                  type="button"
+                  aria-label={`Đưa frame ${frame.video_id} · ${frame.original_frame_id} lên`}
+                  disabled={index === 0}
+                  onClick={() => moveWithKeyboard(index, -1)}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Đưa frame ${frame.video_id} · ${frame.original_frame_id} xuống`}
+                  disabled={index === frames.length - 1}
+                  onClick={() => moveWithKeyboard(index, 1)}
+                >
+                  ↓
+                </button>
               </div>
-              <div className="frame-card-body">
-                <strong>{frame.video_id}</strong>
-                <span>Frame {frame.original_frame_id} · {formatMs(frame.timestamp_ms)}</span>
-                <small>{modalityLabel || '—'}</small>
-              </div>
-            </button>
+            </article>
           );
         })}
       </div>

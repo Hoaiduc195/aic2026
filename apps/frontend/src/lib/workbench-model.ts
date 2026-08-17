@@ -79,6 +79,37 @@ export function buildSubmission(
   return { query_id: queryId, task, answers: [...answers] };
 }
 
+export function reorderFrames(
+  frames: readonly FrameCandidate[],
+  from: number,
+  to: number,
+): FrameCandidate[] {
+  if (
+    from < 0
+    || from >= frames.length
+    || to < 0
+    || to >= frames.length
+    || from === to
+  ) {
+    return [...frames];
+  }
+
+  const next = [...frames];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+}
+
+export function buildRankedTextualSubmission(
+  queryId: string,
+  frames: readonly FrameCandidate[],
+): QualificationSubmission | null {
+  const answers: TextualKisAnswer[] = frames
+    .slice(0, 100)
+    .map((frame) => ({ video_id: frame.video_id, frame_id: frame.original_frame_id }));
+  return buildSubmission('textual_kis', queryId, answers);
+}
+
 export function resultKey(result: SearchResult): string {
   return `${result.video_id}\u0000${result.original_frame_id ?? `${result.start_ms}:${result.end_ms}`}`;
 }

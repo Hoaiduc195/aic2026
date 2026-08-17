@@ -137,6 +137,6 @@ describe('workbench answer model', () => {
     expect(submission).toMatchObject({ query_id: 'query_ranked', task: 'textual_kis' });
     expect(submission?.answers).toHaveLength(100);
     expect(submission?.answers[0]).toEqual({ video_id: 'video_2', frame_id: 2 });
-    expect(submission?.answers[99]).toEqual({ video_id: 'video_98', frame_id: 98 });
+    expect(submission?.answers[99]).toEqual({ video_id: 'video_99', frame_id: 99 });
   });
 });

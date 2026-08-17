@@ -55,7 +55,12 @@ import {
   type RrfSettings,
 } from '../lib/rrf-settings';
 import { activeAsrSpans, frameThumbnailUri } from '../lib/video-studio-model';
-import { toFrameCandidates, validateTrakeSequence } from '../lib/workbench-model';
+import {
+  buildRankedTextualSubmission,
+  reorderFrames,
+  toFrameCandidates,
+  validateTrakeSequence,
+} from '../lib/workbench-model';
 import { useWorkbenchStore } from '../lib/workbench-store';
 import { AnswerDrawer } from './workbench/AnswerDrawer';
 import { FrameGrid } from './workbench/FrameGrid';
@@ -95,6 +100,7 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
   const [question, setQuestion] = useState('');
   const [events, setEvents] = useState<QualificationEventInput[]>(initialEvents);
   const [response, setResponse] = useState<SearchResponse | null>(null);
+  const [rankedFrames, setRankedFrames] = useState<FrameCandidate[]>([]);
   const [selectedAnchor, setSelectedAnchor] = useState<FrameCandidate | null>(null);
   const [activeFrame, setActiveFrame] = useState<FrameCandidate | null>(null);
   const [inspectorWidth, setInspectorWidth] = useState(DEFAULT_INSPECTOR_WIDTH);
@@ -133,6 +139,10 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
     () => response ? toFrameCandidates(response) : { frames: [], skipped: 0 },
     [response],
   );
+
+  useEffect(() => {
+    setRankedFrames(normalized.frames);
+  }, [normalized.frames]);
 
   useEffect(() => () => reset(), [reset]);
 
@@ -220,6 +230,23 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
     setActiveFrame(frame);
     setQaAnswer('');
     setError(null);
+  }
+
+  function exportRankedTextualFrames() {
+    if (task !== 'textual_kis' || !response?.query_id || rankedFrames.length === 0) return;
+    const payload = buildRankedTextualSubmission(response.query_id, rankedFrames);
+    if (!payload) return;
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `aic-${safeFilenamePart(response.query_id)}-textual_kis.json`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setNotice(`Đã export ${payload.answers.length} kết quả theo thứ tự hiện tại.`);
   }
 
   function selectNeighborFrame(frame: VideoFrame) {
@@ -513,12 +540,14 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
           style={{ '--inspector-width': `${inspectorWidth}px` } as CSSProperties}
         >
           <FrameGrid
-            frames={normalized.frames}
+            frames={rankedFrames}
             selectedKey={selectedAnchor?.result_key ?? null}
             loading={searchMutation.isPending}
             searched={response !== null}
             skipped={normalized.skipped}
             onSelect={selectSearchFrame}
+            onReorder={(from, to) => setRankedFrames((current) => reorderFrames(current, from, to))}
+            onExport={task === 'textual_kis' ? exportRankedTextualFrames : undefined}
           />
           {selectedAnchor && activeFrame && (
             <FrameInspector
@@ -603,4 +632,8 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
 
 function readError(value: unknown, fallback: string): string {
   return value instanceof Error ? value.message : fallback;
+}
+
+function safeFilenamePart(value: string): string {
+  return value.replace(/[^a-z0-9._-]/gi, '_').slice(0, 80) || 'query';
 }
