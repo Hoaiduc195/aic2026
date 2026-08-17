@@ -193,7 +193,8 @@ export function VideoStudioModal({ studio, initialFrameId, initialTimestampMs = 
                           <text
                             x={object.normalized_bbox[0]}
                             y={Math.max(0.06, object.normalized_bbox[1] - 0.01)}
-                            fontSize="0.06"
+                            fontSize="0.045"
+                            fontWeight="400"
                             stroke="#071018"
                             strokeWidth="0.008"
                             paintOrder="stroke"

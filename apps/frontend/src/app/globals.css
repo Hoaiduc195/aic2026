@@ -1557,7 +1557,8 @@ textarea:focus-visible,
 
 .studio-object-overlay text {
   fill: #fff;
-  font-weight: 900;
+  font-family: inherit;
+  font-weight: 400;
   paint-order: stroke;
   stroke: #071018;
   stroke-width: 0.008;
