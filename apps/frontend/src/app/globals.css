@@ -145,21 +145,31 @@ textarea:focus-visible,
   color: #b54708;
 }
 
+.settings-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(9, 18, 27, 0.42);
+  backdrop-filter: blur(2px);
+}
+
 .settings-popover {
-  position: absolute;
-  top: 52px;
-  right: 128px;
+  position: fixed;
+  top: 50%;
+  left: 50%;
   z-index: 100;
-  width: 280px;
-  max-height: calc(100vh - 68px);
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(820px, calc(100vh - 48px));
+  transform: translate(-50%, -50%);
   overflow-y: auto;
   display: grid;
-  gap: 10px;
-  padding: 14px;
+  gap: 14px;
+  padding: 24px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: 16px;
   background: var(--surface);
-  box-shadow: var(--shadow);
+  box-shadow: 0 24px 80px rgba(9, 18, 27, 0.24);
+  overscroll-behavior: contain;
 }
 
 .settings-heading {
@@ -240,6 +250,12 @@ textarea:focus-visible,
   min-height: 34px;
   padding: 0 9px;
   font-size: 11px;
+}
+
+.settings-divider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--line);
 }
 
 .settings-error {
@@ -938,8 +954,9 @@ textarea:focus-visible,
   }
 
   .settings-popover {
-    right: 12px;
-    width: min(320px, calc(100vw - 24px));
+    width: min(760px, calc(100vw - 24px));
+    max-height: calc(100vh - 24px);
+    padding: 18px;
   }
 
   .workbench-layout {

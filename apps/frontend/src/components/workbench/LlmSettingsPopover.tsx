@@ -6,6 +6,14 @@ import type { EmbeddingSettings } from '../../lib/embedding-settings';
 import type { LlmSettings } from '../../lib/llm-settings';
 import type { RetrievalSettings } from '../../lib/retrieval-settings';
 
+function parseNumberInput(value: string): number {
+  return value === '' ? Number.NaN : Number(value);
+}
+
+function displayNumberInput(value: number): number | '' {
+  return Number.isNaN(value) ? '' : value;
+}
+
 interface Props {
   settings: LlmSettings;
   error: string | null;
@@ -44,10 +52,14 @@ export function LlmSettingsPopover({
   onClose,
 }: Props) {
   const panelRef = useRef<HTMLElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const panel = panelRef.current;
     panel?.querySelector<HTMLElement>('input, button')?.focus();
+
+    return () => previousFocusRef.current?.focus();
   }, []);
 
   useEffect(() => {
@@ -71,7 +83,17 @@ export function LlmSettingsPopover({
   }
 
   return (
-    <section id="llm-settings" ref={panelRef} className="settings-popover" role="dialog" aria-label="Cài đặt LLM">
+    <>
+      <div className="settings-modal-backdrop" aria-hidden="true" onMouseDown={onClose} />
+      <section
+        id="llm-settings"
+        ref={panelRef}
+        className="settings-popover"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Cài đặt LLM"
+        tabIndex={-1}
+      >
       <header className="settings-heading">
         <div>
           <p className="section-kicker">Cấu hình theo phiên frontend</p>
@@ -131,8 +153,8 @@ export function LlmSettingsPopover({
             min={100}
             max={120000}
             step={100}
-            value={settings.timeout_ms}
-            onChange={(event) => update('timeout_ms', Number(event.target.value))}
+            value={displayNumberInput(settings.timeout_ms)}
+            onChange={(event) => update('timeout_ms', parseNumberInput(event.target.value))}
           />
         </label>
         <label htmlFor="llm-max-tokens">
@@ -143,8 +165,8 @@ export function LlmSettingsPopover({
             min={1}
             max={4096}
             step={1}
-            value={settings.max_tokens}
-            onChange={(event) => update('max_tokens', Number(event.target.value))}
+            value={displayNumberInput(settings.max_tokens)}
+            onChange={(event) => update('max_tokens', parseNumberInput(event.target.value))}
           />
         </label>
       </div>
@@ -156,8 +178,8 @@ export function LlmSettingsPopover({
           min={0}
           max={2}
           step={0.1}
-          value={settings.temperature}
-          onChange={(event) => update('temperature', Number(event.target.value))}
+          value={displayNumberInput(settings.temperature)}
+          onChange={(event) => update('temperature', parseNumberInput(event.target.value))}
         />
       </label>
 
@@ -180,8 +202,8 @@ export function LlmSettingsPopover({
             min={1}
             max={100}
             step={1}
-            value={retrievalSettings.display_k}
-            onChange={(event) => updateRetrieval('display_k', Number(event.target.value))}
+            value={displayNumberInput(retrievalSettings.display_k)}
+            onChange={(event) => updateRetrieval('display_k', parseNumberInput(event.target.value))}
           />
         </label>
         <div className="settings-grid">
@@ -193,8 +215,8 @@ export function LlmSettingsPopover({
               min={1}
               max={10_000}
               step={1}
-              value={retrievalSettings.branch_k}
-              onChange={(event) => updateRetrieval('branch_k', Number(event.target.value))}
+              value={displayNumberInput(retrievalSettings.branch_k)}
+              onChange={(event) => updateRetrieval('branch_k', parseNumberInput(event.target.value))}
             />
           </label>
           <label htmlFor="retrieval-fusion-k">
@@ -205,8 +227,8 @@ export function LlmSettingsPopover({
               min={1}
               max={10_000}
               step={1}
-              value={retrievalSettings.fusion_k}
-              onChange={(event) => updateRetrieval('fusion_k', Number(event.target.value))}
+              value={displayNumberInput(retrievalSettings.fusion_k)}
+              onChange={(event) => updateRetrieval('fusion_k', parseNumberInput(event.target.value))}
             />
           </label>
         </div>
@@ -261,8 +283,8 @@ export function LlmSettingsPopover({
             min={100}
             max={120000}
             step={100}
-            value={embeddingSettings.timeout_ms}
-            onChange={(event) => updateEmbedding('timeout_ms', Number(event.target.value))}
+          value={displayNumberInput(embeddingSettings.timeout_ms)}
+          onChange={(event) => updateEmbedding('timeout_ms', parseNumberInput(event.target.value))}
           />
         </label>
 
@@ -273,6 +295,7 @@ export function LlmSettingsPopover({
           <button type="button" className="primary-button" onClick={onEmbeddingSave}>Lưu cài đặt embedding</button>
         </div>
       </div>
-    </section>
+      </section>
+    </>
   );
 }
