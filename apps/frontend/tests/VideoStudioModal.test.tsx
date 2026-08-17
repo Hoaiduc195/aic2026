@@ -42,7 +42,8 @@ describe('VideoStudioModal', () => {
     const objectBox = screen.getByTestId('studio-object-box-object-1');
     expect(objectBox).toBeInTheDocument();
     expect(objectBox.querySelector('rect')).toHaveAttribute('stroke-width', '0.014');
-    expect(objectBox.querySelector('text')).toHaveAttribute('font-size', '0.06');
+    expect(objectBox.querySelector('text')).toHaveAttribute('font-size', '0.045');
+    expect(objectBox.querySelector('text')).toHaveAttribute('font-weight', '400');
 
     await user.click(screen.getByRole('button', { name: 'Dùng frame 50' }));
     expect(onSelectFrame).toHaveBeenCalledWith(studio.frames[0]);
