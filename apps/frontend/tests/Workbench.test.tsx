@@ -305,6 +305,7 @@ describe('qualification frame-first workbench', () => {
       query: 'Một cửa hàng trên phố',
       task: 'textual_kis',
       top_k: 20,
+      retrieval: { display_k: 20, branch_k: 100, fusion_k: 500 },
       embedding: {
         base_url: 'http://127.0.0.1:8001/embed',
         api_key: 'tab-secret',

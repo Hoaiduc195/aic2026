@@ -45,6 +45,6 @@ describe('retrieval settings', () => {
       ...DEFAULT_RETRIEVAL_SETTINGS,
       display_k: 40,
       fusion_k: 20,
-    })).toContain('fusion');
+    })?.toLowerCase()).toContain('fusion');
   });
 });

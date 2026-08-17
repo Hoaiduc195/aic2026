@@ -6,6 +6,7 @@ import type { QualificationEventInput, QualificationTask } from '../../lib/contr
 
 interface Props {
   task: QualificationTask;
+  displayK: number;
   description: string;
   question: string;
   events: readonly QualificationEventInput[];
@@ -27,6 +28,7 @@ const TASKS: ReadonlyArray<{ value: QualificationTask; label: string }> = [
 
 export function SearchSidebar({
   task,
+  displayK,
   description,
   question,
   events,
@@ -126,7 +128,7 @@ export function SearchSidebar({
         )}
 
         <div className="search-options">
-          <span>Top 20 frame</span>
+          <span>Top {displayK} frame</span>
           <span>Ảnh trước, video sau</span>
         </div>
         <button type="submit" className="primary-button full-width" disabled={pending || !hasQuery}>

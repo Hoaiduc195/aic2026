@@ -37,6 +37,14 @@ import {
   validateEmbeddingSettings,
   type EmbeddingSettings,
 } from '../lib/embedding-settings';
+import {
+  buildSearchRetrievalConfig,
+  DEFAULT_RETRIEVAL_SETTINGS,
+  loadRetrievalSettings,
+  saveRetrievalSettings,
+  validateRetrievalSettings,
+  type RetrievalSettings,
+} from '../lib/retrieval-settings';
 import { toFrameCandidates, validateTrakeSequence } from '../lib/workbench-model';
 import { useWorkbenchStore } from '../lib/workbench-store';
 import { AnswerDrawer } from './workbench/AnswerDrawer';
@@ -83,6 +91,8 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [embeddingSettings, setEmbeddingSettings] = useState<EmbeddingSettings>(DEFAULT_EMBEDDING_SETTINGS);
   const [embeddingError, setEmbeddingError] = useState<string | null>(null);
+  const [retrievalSettings, setRetrievalSettings] = useState<RetrievalSettings>(DEFAULT_RETRIEVAL_SETTINGS);
+  const [retrievalError, setRetrievalError] = useState<string | null>(null);
 
   const searchMutation = useMutation({
     mutationFn: (request: SearchRequest) => search(request),
@@ -100,6 +110,7 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
   useEffect(() => {
     setLlmSettings(loadLlmSettings());
     setEmbeddingSettings(loadEmbeddingSettings());
+    setRetrievalSettings(loadRetrievalSettings());
   }, []);
 
   function changeTask(nextTask: QualificationTask) {
@@ -142,12 +153,20 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
       setSettingsOpen(true);
       return;
     }
+    const retrievalValidationError = validateRetrievalSettings(retrievalSettings);
+    if (retrievalValidationError) {
+      setRetrievalError(retrievalValidationError);
+      setSettingsOpen(true);
+      return;
+    }
     try {
       const embedding = buildSearchEmbeddingConfig(embeddingSettings);
+      const retrieval = buildSearchRetrievalConfig(retrievalSettings);
       const next = await searchMutation.mutateAsync({
         query,
         task: backendTask,
-        top_k: 20,
+        top_k: retrieval.display_k,
+        retrieval,
         ...(embedding ? { embedding } : {}),
       });
       setResponse(next);
@@ -274,6 +293,24 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
     setEmbeddingError(null);
   }
 
+  function saveRetrievalSettingsForSession() {
+    const validationError = validateRetrievalSettings(retrievalSettings);
+    if (validationError) {
+      setRetrievalError(validationError);
+      return;
+    }
+    saveRetrievalSettings(retrievalSettings);
+    setRetrievalError(null);
+    setSettingsOpen(false);
+    setNotice('Đã lưu cài đặt số lượng frame và candidate cho frontend.');
+  }
+
+  function resetRetrievalSettings() {
+    setRetrievalSettings({ ...DEFAULT_RETRIEVAL_SETTINGS });
+    saveRetrievalSettings(DEFAULT_RETRIEVAL_SETTINGS);
+    setRetrievalError(null);
+  }
+
   function addEvent() {
     setEvents((current) => {
       const nextOrdinal = current.length + 1;
@@ -310,6 +347,7 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
             onClick={() => {
               setSettingsError(null);
               setEmbeddingError(null);
+              setRetrievalError(null);
               setSettingsOpen((open) => !open);
             }}
           >
@@ -329,6 +367,11 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
             onEmbeddingChange={setEmbeddingSettings}
             onEmbeddingSave={saveEmbeddingSettingsForSession}
             onEmbeddingReset={resetEmbeddingSettings}
+            retrievalSettings={retrievalSettings}
+            retrievalError={retrievalError}
+            onRetrievalChange={setRetrievalSettings}
+            onRetrievalSave={saveRetrievalSettingsForSession}
+            onRetrievalReset={resetRetrievalSettings}
             onClose={() => setSettingsOpen(false)}
           />
         )}
@@ -337,6 +380,7 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
       <div className="workbench-layout" id="main-workspace">
         <SearchSidebar
           task={task}
+          displayK={retrievalSettings.display_k}
           description={description}
           question={question}
           events={events}

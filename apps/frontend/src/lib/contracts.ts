@@ -26,12 +26,19 @@ export interface SearchRequest {
   top_k: number;
   session_id?: string;
   embedding?: SearchEmbeddingConfig;
+  retrieval?: SearchRetrievalConfig;
 }
 
 export interface SearchEmbeddingConfig {
   base_url: string;
   api_key?: string;
   timeout_ms: number;
+}
+
+export interface SearchRetrievalConfig {
+  display_k: number;
+  branch_k: number;
+  fusion_k: number;
 }
 
 export interface RetrievalCandidate {
