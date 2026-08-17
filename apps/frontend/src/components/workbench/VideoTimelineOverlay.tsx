@@ -21,8 +21,9 @@ interface AsrLane {
   lane: number;
 }
 
-const LANE_HEIGHT = 28;
+const LANE_HEIGHT = 24;
 const FRAME_TRACK_HEIGHT = 30;
+const MAX_ASR_LANES = 2;
 
 export function VideoTimelineOverlay({
   durationMs,
@@ -34,7 +35,10 @@ export function VideoTimelineOverlay({
   onFrameSelect,
 }: Props) {
   const lanes = useMemo(() => assignAsrLanes(asrSpans), [asrSpans]);
-  const timelineHeight = Math.max(LANE_HEIGHT, (lanes.length * LANE_HEIGHT) + FRAME_TRACK_HEIGHT);
+  const asrLaneCount = lanes.length === 0
+    ? 0
+    : Math.max(...lanes.map(({ lane }) => lane + 1));
+  const timelineHeight = (asrLaneCount * LANE_HEIGHT) + FRAME_TRACK_HEIGHT;
   const playhead = timelinePercent(currentTimeMs, durationMs);
 
   return (
@@ -141,13 +145,15 @@ export function VideoTimelineOverlay({
 }
 
 function assignAsrLanes(spans: readonly StudioAsrSpan[]): AsrLane[] {
-  const laneEnds: number[] = [];
+  const laneEnds = Array.from({ length: MAX_ASR_LANES }, () => 0);
   return [...spans]
     .sort((left, right) => left.start_ms - right.start_ms || left.end_ms - right.end_ms || left.evidence_id.localeCompare(right.evidence_id))
     .map((span) => {
       const availableLane = laneEnds.findIndex((endMs) => endMs <= span.start_ms);
-      const lane = availableLane >= 0 ? availableLane : laneEnds.length;
-      laneEnds[lane] = span.end_ms;
+      const lane = availableLane >= 0
+        ? availableLane
+        : laneEnds.reduce((earliestLane, endMs, index) => endMs < laneEnds[earliestLane] ? index : earliestLane, 0);
+      laneEnds[lane] = Math.max(laneEnds[lane], span.end_ms);
       return { span, lane };
     });
 }
