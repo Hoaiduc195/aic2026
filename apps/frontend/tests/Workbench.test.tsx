@@ -419,9 +419,11 @@ describe('qualification frame-first workbench', () => {
 
     const list = screen.getByRole('list', { name: 'Danh sách kết quả frame' });
     expect(list).toHaveClass('frame-list');
+    expect(list).toHaveClass('frame-list-animated');
     expect(list.querySelectorAll('.frame-thumbnail')).toHaveLength(3);
 
     const items = () => Array.from(list.querySelectorAll('.frame-list-item'));
+    expect(items()[0]).toHaveClass('frame-list-item--spacious');
     const dataTransfer = {
       effectAllowed: '',
       dropEffect: '',
