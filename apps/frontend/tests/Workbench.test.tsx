@@ -11,6 +11,7 @@ import type {
   VqaAnswerSuggestion,
   VideoFramesResponse,
   VideoPlayback,
+  VideoStudioResponse,
 } from '@/lib/contracts';
 
 afterEach(() => {
@@ -82,6 +83,31 @@ const playback: VideoPlayback = {
   mime_type: 'video/mp4',
 };
 
+const studio: VideoStudioResponse = {
+  video: playback,
+  frames: [
+    {
+      video_id: 'video_01',
+      keyframe_no: 5,
+      original_frame_id: 385,
+      timestamp_ms: 12_800,
+      captions: [{ evidence_id: 'cap_385', text: 'Một cửa hàng', language: 'en', producer: 'caption:v1' }],
+      objects: [{ evidence_id: 'obj_385', label: 'person', confidence: 0.9, normalized_bbox: [0.1, 0.2, 0.4, 0.8], producer: 'object:v1' }],
+    },
+    {
+      video_id: 'video_01',
+      keyframe_no: 6,
+      original_frame_id: 411,
+      timestamp_ms: 13_700,
+      captions: [],
+      objects: [],
+    },
+  ],
+  asr_spans: [{
+    evidence_id: 'asr_1', start_ms: 12_000, end_ms: 14_000, text: 'rẽ phải rồi đi thẳng', language: 'vi', producer: 'asr:v1',
+  }],
+};
+
 const frameContext: VideoFramesResponse = {
   video_id: 'video_01',
   center_frame_id: 385,
@@ -106,8 +132,8 @@ const frameContext: VideoFramesResponse = {
 function renderWorkbench({
   searchResponse = response,
   search = vi.fn(async () => searchResponse),
-  loadPlayback = vi.fn(async () => playback),
   loadFrames = vi.fn(async () => frameContext),
+  loadStudio = vi.fn(async () => studio),
   saveSelection = vi.fn(async (): Promise<SelectionRevision> => ({
     selection_id: 'selection_01', query_id: 'query_0001', revision: 1, task: 'textual_kis',
     answers: [], note: null,
@@ -122,15 +148,15 @@ function renderWorkbench({
     <QueryClientProvider client={queryClient}>
       <Workbench
         search={search}
-        loadPlayback={loadPlayback}
         loadFrames={loadFrames}
+        loadStudio={loadStudio}
         saveSelection={saveSelection}
         createPreview={createPreview}
         suggestVqaAnswer={suggestVqaAnswer}
       />
     </QueryClientProvider>,
   );
-  return { ...view, search, loadPlayback, loadFrames, saveSelection, createPreview };
+  return { ...view, search, loadFrames, loadStudio, saveSelection, createPreview };
 }
 
 describe('qualification frame-first workbench', () => {
@@ -151,9 +177,9 @@ describe('qualification frame-first workbench', () => {
     expect(screen.getByLabelText('Mô tả sự kiện 2')).toBeInTheDocument();
   });
 
-  it('opens frame evidence and lazily loads video and neighboring frames', async () => {
+  it('opens frame evidence and lazily loads the video studio and neighboring frames', async () => {
     const user = userEvent.setup();
-    const { loadPlayback, loadFrames } = renderWorkbench();
+    const { loadStudio, loadFrames } = renderWorkbench();
 
     await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
     await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
@@ -162,12 +188,12 @@ describe('qualification frame-first workbench', () => {
     expect(screen.queryByText(/embedding/)).not.toBeInTheDocument();
     expect(screen.getByText('Cửa hàng tạp hóa')).toBeInTheDocument();
     expect(screen.getByText('rẽ phải rồi đi thẳng')).toBeInTheDocument();
-    expect(loadPlayback).not.toHaveBeenCalled();
+    expect(loadStudio).not.toHaveBeenCalled();
     expect(loadFrames).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole('button', { name: 'Xem video' }));
+    await user.click(screen.getByRole('button', { name: 'Xem video studio' }));
     expect(await screen.findByLabelText('Video video_01')).toHaveAttribute('src', playback.playback_uri);
-    expect(loadPlayback).toHaveBeenCalledWith('video_01', 385);
+    expect(loadStudio).toHaveBeenCalledWith('video_01', expect.anything());
 
     await user.click(screen.getByRole('button', { name: 'Xem các frame cùng video' }));
     expect(await screen.findByRole('button', { name: 'Chọn frame 351' })).toBeInTheDocument();

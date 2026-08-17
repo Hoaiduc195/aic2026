@@ -4,7 +4,9 @@ import {
   createSubmissionPreview,
   getVideoFrames,
   getVideoPlayback,
+  getVideoStudio,
   parseSearchResponse,
+  parseVideoStudioResponse,
   saveSelection,
   searchMedia,
 } from '@/lib/api';
@@ -344,6 +346,49 @@ describe('search API boundary', () => {
     await expect(getVideoFrames('video_01', 385, 25)).resolves.toMatchObject({ center_frame_id: 385 });
     expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/videos/video_01/playback?frame_id=385');
     expect(fetchMock.mock.calls[1][0]).toBe('/api/v1/videos/video_01/frames?center_frame_id=385&limit=25');
+  });
+
+  it('loads and validates the video studio contract', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      video: {
+        video_id: 'video_01',
+        playback_uri: 'https://cdn.example/video.mp4?signature=x',
+        duration_ms: 60_000,
+        fps: 30,
+        mime_type: 'video/mp4',
+      },
+      frames: [{
+        video_id: 'video_01',
+        keyframe_no: 4,
+        original_frame_id: 385,
+        timestamp_ms: 12_800,
+        captions: [{ evidence_id: 'caption-1', text: 'A shop', language: 'en', producer: 'caption:v1' }],
+        objects: [{
+          evidence_id: 'object-1', label: 'person', confidence: 0.9,
+          normalized_bbox: [0.1, 0.2, 0.5, 0.9], producer: 'object:v1',
+        }],
+      }],
+      asr_spans: [{
+        evidence_id: 'asr-1', start_ms: 12_000, end_ms: 14_000,
+        text: 'Xin chào', language: 'vi', producer: 'asr:v1',
+      }],
+    }), { status: 200 }));
+
+    const studio = await getVideoStudio('video_01');
+
+    expect(studio.frames[0]).toMatchObject({
+      original_frame_id: 385,
+      captions: [{ text: 'A shop' }],
+      objects: [{ normalized_bbox: [0.1, 0.2, 0.5, 0.9] }],
+    });
+    expect(studio.asr_spans[0]).toMatchObject({ text: 'Xin chào', start_ms: 12_000 });
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/videos/video_01/studio');
+
+    expect(() => parseVideoStudioResponse({
+      video: studio.video,
+      frames: [{ ...studio.frames[0], objects: [{ ...studio.frames[0].objects[0], normalized_bbox: [0, 0, 2, 1] }] }],
+      asr_spans: studio.asr_spans,
+    })).toThrow('normalized_bbox');
   });
 
   it('rejects malformed playback and frame-context responses', async () => {

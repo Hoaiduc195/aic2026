@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MediaRepository } from '../src/media/media.repository';
 import { MediaService } from '../src/media/media.service';
@@ -13,6 +13,20 @@ const repository: MediaRepository = {
     video_id: 'video-1', keyframe_no: 2, original_frame_id: 50,
     timestamp_ms: 2000, thumbnail_object_key: 'keyframes/video-1/000050.jpg',
   }]),
+  findStudio: vi.fn(async () => ({
+    video: {
+      video_id: 'video-1', object_key: 'videos/video-1.mp4', duration_ms: 60000,
+      fps: 25, mime_type: 'video/mp4' as const,
+    },
+    frames: [{
+      video_id: 'video-1', keyframe_no: 2, original_frame_id: 50, timestamp_ms: 2000,
+      captions: [], objects: [],
+    }],
+    asr_spans: [{
+      evidence_id: 'asr-1', start_ms: 1000, end_ms: 3000,
+      text: 'Xin chào', language: 'vi', producer: 'asr:v1',
+    }],
+  })),
 };
 
 const storage: ObjectStorage = {
@@ -22,6 +36,10 @@ const storage: ObjectStorage = {
 };
 
 describe('MediaService', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('returns signed video playback metadata', async () => {
     const service = new MediaService(repository, storage);
     await expect(service.getPlayback('video-1')).resolves.toEqual({
@@ -34,5 +52,15 @@ describe('MediaService', () => {
     const service = new MediaService(repository, storage);
     const result = await service.getFrames('video-1', 50, 25);
     expect(result.frames[0].thumbnail_uri).toBe('https://media.example/keyframes/video-1/000050.jpg');
+  });
+
+  it('signs only the video in the studio response and leaves thumbnails lazy', async () => {
+    const service = new MediaService(repository, storage);
+    const result = await service.getStudio('video-1');
+
+    expect(result.video.playback_uri).toBe('https://media.example/videos/video-1.mp4');
+    expect(result.frames[0]).not.toHaveProperty('thumbnail_uri');
+    expect(result.asr_spans[0]).toMatchObject({ text: 'Xin chào', start_ms: 1000, end_ms: 3000 });
+    expect(storage.signReadUrl).toHaveBeenCalledTimes(1);
   });
 });

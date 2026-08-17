@@ -23,6 +23,22 @@ export class MediaService {
     };
   }
 
+  async getStudio(videoId: string) {
+    if (!this.storage.isConfigured) throw new ServiceUnavailableException('R2 object storage is not configured');
+    const studio = await this.repository.findStudio(videoId);
+    return {
+      video: {
+        video_id: studio.video.video_id,
+        playback_uri: await this.storage.signReadUrl(studio.video.object_key),
+        duration_ms: Number(studio.video.duration_ms),
+        fps: Number(studio.video.fps),
+        mime_type: studio.video.mime_type,
+      },
+      frames: studio.frames,
+      asr_spans: studio.asr_spans,
+    };
+  }
+
   async getFrames(videoId: string, centerFrameId: number, limit: number) {
     if (!this.storage.isConfigured) throw new ServiceUnavailableException('R2 object storage is not configured');
     const frames = await this.repository.findFramesAround(videoId, centerFrameId, limit);

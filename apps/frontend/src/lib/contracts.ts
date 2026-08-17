@@ -194,6 +194,45 @@ export interface VideoFramesResponse {
   frames: VideoFrame[];
 }
 
+export interface StudioCaption {
+  evidence_id: string;
+  text: string;
+  language: string;
+  producer: string;
+}
+
+export interface StudioObject {
+  evidence_id: string;
+  label: string;
+  confidence: number;
+  normalized_bbox: [number, number, number, number] | null;
+  producer: string;
+}
+
+export interface StudioFrame {
+  video_id: string;
+  keyframe_no: number;
+  original_frame_id: number;
+  timestamp_ms: number;
+  captions: StudioCaption[];
+  objects: StudioObject[];
+}
+
+export interface StudioAsrSpan {
+  evidence_id: string;
+  start_ms: number;
+  end_ms: number;
+  text: string;
+  language: string;
+  producer: string;
+}
+
+export interface VideoStudioResponse {
+  video: VideoPlayback;
+  frames: StudioFrame[];
+  asr_spans: StudioAsrSpan[];
+}
+
 export interface VideoPlayback {
   video_id: string;
   playback_uri: string;

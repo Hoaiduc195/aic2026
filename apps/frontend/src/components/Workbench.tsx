@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { type CSSProperties, type FormEvent, useEffect, useMemo, useState } from 'react';
 
 import type {
@@ -13,13 +13,14 @@ import type {
   SearchResponse,
   SelectionRevision,
   SubmissionPreview,
+  StudioFrame,
   TextualKisAnswer,
   TrakeAnswer,
   VqaAnswerRequest,
   VqaAnswerSuggestion,
   VideoFrame,
   VideoFramesResponse,
-  VideoPlayback,
+  VideoStudioResponse,
 } from '../lib/contracts';
 import {
   DEFAULT_LLM_SETTINGS,
@@ -53,6 +54,7 @@ import {
   validateRrfSettings,
   type RrfSettings,
 } from '../lib/rrf-settings';
+import { activeAsrSpans, frameThumbnailUri } from '../lib/video-studio-model';
 import { toFrameCandidates, validateTrakeSequence } from '../lib/workbench-model';
 import { useWorkbenchStore } from '../lib/workbench-store';
 import { AnswerDrawer } from './workbench/AnswerDrawer';
@@ -65,11 +67,12 @@ import {
 } from './workbench/FrameInspector';
 import { LlmSettingsPopover } from './workbench/LlmSettingsPopover';
 import { SearchSidebar } from './workbench/SearchSidebar';
+import { VideoStudioModal } from './workbench/VideoStudioModal';
 
 interface Props {
   search: (request: SearchRequest) => Promise<SearchResponse>;
-  loadPlayback: (videoId: string, frameId: number) => Promise<VideoPlayback>;
   loadFrames: (videoId: string, centerFrameId: number, limit: number) => Promise<VideoFramesResponse>;
+  loadStudio: (videoId: string, signal?: AbortSignal) => Promise<VideoStudioResponse>;
   saveSelection: (queryId: string, task: QualificationTask, answers: readonly QualificationAnswer[]) => Promise<SelectionRevision>;
   createPreview: (queryId: string, task: QualificationTask, answers: readonly QualificationAnswer[]) => Promise<SubmissionPreview>;
   suggestVqaAnswer: (request: VqaAnswerRequest) => Promise<VqaAnswerSuggestion>;
@@ -79,7 +82,7 @@ function initialEvents(): QualificationEventInput[] {
   return [{ event_id: 'event-1', event_ordinal: 1, description: '' }];
 }
 
-export function Workbench({ search, loadPlayback, loadFrames, saveSelection, createPreview, suggestVqaAnswer }: Props) {
+export function Workbench({ search, loadFrames, loadStudio, saveSelection, createPreview, suggestVqaAnswer }: Props) {
   const task = useWorkbenchStore((state) => state.task);
   const answers = useWorkbenchStore((state) => state.answers);
   const setTask = useWorkbenchStore((state) => state.setTask);
@@ -100,6 +103,8 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [studioOpen, setStudioOpen] = useState(false);
+  const [studioVideoId, setStudioVideoId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [llmSettings, setLlmSettings] = useState<LlmSettings>(DEFAULT_LLM_SETTINGS);
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -115,6 +120,14 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
   });
   const vqaAnswerMutation = useMutation({
     mutationFn: (request: VqaAnswerRequest) => suggestVqaAnswer(request),
+  });
+  const studioQuery = useQuery({
+    queryKey: ['video-studio', studioVideoId],
+    queryFn: ({ signal }) => {
+      if (!studioVideoId) throw new Error('Chưa chọn video để mở studio.');
+      return loadStudio(studioVideoId, signal);
+    },
+    enabled: studioOpen && studioVideoId !== null,
   });
   const normalized = useMemo(
     () => response ? toFrameCandidates(response) : { frames: [], skipped: 0 },
@@ -139,6 +152,8 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
     setResponse(null);
     setSelectedAnchor(null);
     setActiveFrame(null);
+    setStudioOpen(false);
+    setStudioVideoId(null);
     setError(null);
     setNotice(null);
   }
@@ -216,6 +231,46 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
       thumbnail_uri: frame.thumbnail_uri,
       evidence: frame.evidence ? [...frame.evidence] : [...selectedAnchor.evidence],
     });
+  }
+
+  function openStudio() {
+    if (!activeFrame) return;
+    setStudioVideoId(activeFrame.video_id);
+    setStudioOpen(true);
+  }
+
+  function selectStudioFrame(frame: StudioFrame) {
+    if (!selectedAnchor || !studioQuery.data) return;
+    const asrEvidence = activeAsrSpans(studioQuery.data.asr_spans, frame.timestamp_ms).map((span) => ({
+      evidence_id: span.evidence_id,
+      type: 'asr' as const,
+      snippet: span.text,
+      producer: span.producer,
+      start_ms: span.start_ms,
+      end_ms: span.end_ms,
+    }));
+    setActiveFrame({
+      ...selectedAnchor,
+      original_frame_id: frame.original_frame_id,
+      timestamp_ms: frame.timestamp_ms,
+      thumbnail_uri: frameThumbnailUri(frame.video_id, frame.original_frame_id),
+      evidence: [
+        ...frame.captions.map((caption) => ({
+          evidence_id: caption.evidence_id,
+          type: 'caption' as const,
+          snippet: caption.text,
+          producer: caption.producer,
+        })),
+        ...frame.objects.map((object) => ({
+          evidence_id: object.evidence_id,
+          type: 'object' as const,
+          snippet: object.label,
+          producer: object.producer,
+        })),
+        ...asrEvidence,
+      ],
+    });
+    setNotice(`Đã chọn frame ${frame.original_frame_id} làm bằng chứng hiện tại.`);
   }
 
   function resizeInspector(width: number) {
@@ -474,12 +529,13 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
               events={events}
               assignedFrames={assignedFrames}
               qaAnswer={qaAnswer}
-              loadPlayback={loadPlayback}
               loadFrames={loadFrames}
               onClose={() => {
                 setSelectedAnchor(null);
                 setActiveFrame(null);
+                setStudioOpen(false);
               }}
+              onOpenStudio={openStudio}
               onInspectorWidthChange={resizeInspector}
               onFrameSelect={selectNeighborFrame}
               onQaAnswerChange={setQaAnswer}
@@ -493,6 +549,37 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
           )}
         </div>
       </div>
+
+      {studioOpen && studioVideoId && studioQuery.isPending && (
+        <div className="video-studio-backdrop">
+          <div className="video-studio-status" role="dialog" aria-modal="true" aria-label={`Video studio ${studioVideoId}`}>
+            <span className="loading-spinner" aria-hidden="true" />
+            <p>Đang tải video studio…</p>
+            <button type="button" className="secondary-button" onClick={() => setStudioOpen(false)}>Đóng</button>
+          </div>
+        </div>
+      )}
+
+      {studioOpen && studioVideoId && studioQuery.error && !studioQuery.data && (
+        <div className="video-studio-backdrop">
+          <div className="video-studio-status" role="dialog" aria-modal="true" aria-label={`Video studio ${studioVideoId}`}>
+            <p className="inline-error">{readError(studioQuery.error, 'Không thể tải video studio.')}</p>
+            <button type="button" className="secondary-button" onClick={() => setStudioOpen(false)}>Đóng</button>
+          </div>
+        </div>
+      )}
+
+      {studioOpen && studioQuery.data && activeFrame && (
+        <VideoStudioModal
+          studio={studioQuery.data}
+          initialFrameId={activeFrame.video_id === studioQuery.data.video.video_id
+            ? activeFrame.original_frame_id
+            : studioQuery.data.frames[0]?.original_frame_id ?? 0}
+          initialTimestampMs={activeFrame.timestamp_ms}
+          onClose={() => setStudioOpen(false)}
+          onSelectFrame={selectStudioFrame}
+        />
+      )}
 
       <div className="toast-stack" aria-live="polite">
         {error && <p role="alert" className="toast error">{error}</p>}

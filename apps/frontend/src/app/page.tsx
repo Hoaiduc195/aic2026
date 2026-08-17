@@ -5,7 +5,7 @@ import { Workbench } from '../components/Workbench';
 import {
   createSubmissionPreview,
   getVideoFrames,
-  getVideoPlayback,
+  getVideoStudio,
   saveSelection,
   searchMedia,
   suggestVqaAnswer,
@@ -16,8 +16,8 @@ export default function HomePage() {
     <Providers>
       <Workbench
         search={searchMedia}
-        loadPlayback={getVideoPlayback}
         loadFrames={getVideoFrames}
+        loadStudio={getVideoStudio}
         saveSelection={saveSelection}
         createPreview={createSubmissionPreview}
         suggestVqaAnswer={suggestVqaAnswer}

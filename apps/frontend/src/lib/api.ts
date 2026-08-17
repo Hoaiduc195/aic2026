@@ -15,6 +15,7 @@ import type {
   VideoFrame,
   VideoFramesResponse,
   VideoPlayback,
+  VideoStudioResponse,
 } from './contracts';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api';
@@ -87,6 +88,13 @@ export async function getVideoFrames(
   const payload = await response.json().catch(() => null);
   if (!response.ok) throw apiError(payload, response.status, 'Không thể tải các frame cùng video.');
   return parseVideoFramesResponse(payload);
+}
+
+export async function getVideoStudio(videoId: string, signal?: AbortSignal): Promise<VideoStudioResponse> {
+  const response = await fetch(`${API_BASE}/v1/videos/${encodeURIComponent(videoId)}/studio`, { signal });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw apiError(payload, response.status, 'Không thể tải dữ liệu studio video.');
+  return parseVideoStudioResponse(payload);
 }
 
 export async function getCandidates(
@@ -175,6 +183,18 @@ export function parseVideoFramesResponse(value: unknown): VideoFramesResponse {
     video_id: requiredText(value.video_id, 'video_id'),
     center_frame_id: integer(value.center_frame_id, 'center_frame_id'),
     frames: value.frames.map(parseVideoFrame),
+  };
+}
+
+export function parseVideoStudioResponse(value: unknown): VideoStudioResponse {
+  if (!isObject(value) || !isObject(value.video)) throw new Error('studio response phải là object');
+  if (!Array.isArray(value.frames) || !Array.isArray(value.asr_spans)) {
+    throw new Error('studio frames và asr_spans phải là array');
+  }
+  return {
+    video: parseVideoPlayback(value.video),
+    frames: value.frames.map(parseStudioFrame),
+    asr_spans: value.asr_spans.map(parseStudioAsrSpan),
   };
 }
 
@@ -366,6 +386,61 @@ function parseVideoFrame(value: unknown, index: number): VideoFrame {
     timestamp_ms: integer(value.timestamp_ms, `frames[${index}].timestamp_ms`),
     thumbnail_uri: requiredBrowserUri(value.thumbnail_uri, `frames[${index}].thumbnail_uri`),
     evidence: value.evidence === undefined ? undefined : parseEvidence(value.evidence, index),
+  };
+}
+
+function parseStudioFrame(value: unknown, index: number): import('./contracts').StudioFrame {
+  if (!isObject(value)) throw new Error(`studio.frames[${index}] phải là object`);
+  if (!Array.isArray(value.captions) || !Array.isArray(value.objects)) {
+    throw new Error(`studio.frames[${index}] annotations không hợp lệ`);
+  }
+  return {
+    video_id: requiredText(value.video_id, `studio.frames[${index}].video_id`),
+    keyframe_no: positiveInteger(value.keyframe_no, `studio.frames[${index}].keyframe_no`),
+    original_frame_id: nonNegativeInteger(value.original_frame_id, `studio.frames[${index}].original_frame_id`),
+    timestamp_ms: nonNegativeInteger(value.timestamp_ms, `studio.frames[${index}].timestamp_ms`),
+    captions: value.captions.map((caption, captionIndex) => parseStudioCaption(caption, index, captionIndex)),
+    objects: value.objects.map((object, objectIndex) => parseStudioObject(object, index, objectIndex)),
+  };
+}
+
+function parseStudioCaption(value: unknown, frameIndex: number, captionIndex: number): import('./contracts').StudioCaption {
+  if (!isObject(value)) throw new Error(`studio.frames[${frameIndex}].captions[${captionIndex}] phải là object`);
+  return {
+    evidence_id: requiredText(value.evidence_id, 'studio caption evidence_id'),
+    text: requiredText(value.text, 'studio caption text'),
+    language: requiredText(value.language, 'studio caption language'),
+    producer: requiredText(value.producer, 'studio caption producer'),
+  };
+}
+
+function parseStudioObject(value: unknown, frameIndex: number, objectIndex: number): import('./contracts').StudioObject {
+  if (!isObject(value)) throw new Error(`studio.frames[${frameIndex}].objects[${objectIndex}] phải là object`);
+  const bbox = value.normalized_bbox;
+  if (bbox !== null && (!Array.isArray(bbox) || bbox.length !== 4 || bbox.some((item) => typeof item !== 'number' || !Number.isFinite(item) || item < 0 || item > 1))) {
+    throw new Error(`studio.frames[${frameIndex}].objects[${objectIndex}].normalized_bbox không hợp lệ`);
+  }
+  return {
+    evidence_id: requiredText(value.evidence_id, 'studio object evidence_id'),
+    label: requiredText(value.label, 'studio object label'),
+    confidence: probability(value.confidence, 'studio object confidence'),
+    normalized_bbox: bbox === null ? null : [...bbox] as [number, number, number, number],
+    producer: requiredText(value.producer, 'studio object producer'),
+  };
+}
+
+function parseStudioAsrSpan(value: unknown, index: number): import('./contracts').StudioAsrSpan {
+  if (!isObject(value)) throw new Error(`studio.asr_spans[${index}] phải là object`);
+  const start = nonNegativeInteger(value.start_ms, `studio.asr_spans[${index}].start_ms`);
+  const end = positiveInteger(value.end_ms, `studio.asr_spans[${index}].end_ms`);
+  if (end <= start) throw new Error(`studio.asr_spans[${index}] có interval không hợp lệ`);
+  return {
+    evidence_id: requiredText(value.evidence_id, 'studio ASR evidence_id'),
+    start_ms: start,
+    end_ms: end,
+    text: requiredText(value.text, 'studio ASR text'),
+    language: requiredText(value.language, 'studio ASR language'),
+    producer: requiredText(value.producer, 'studio ASR producer'),
   };
 }
 

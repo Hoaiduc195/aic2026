@@ -17,7 +17,6 @@ import type {
   SearchEvidence,
   VideoFrame,
   VideoFramesResponse,
-  VideoPlayback,
 } from '../../lib/contracts';
 import { displayMatchedModalities, formatMs, groupEvidence } from '../../lib/workbench-model';
 
@@ -34,9 +33,9 @@ interface Props {
   events: readonly QualificationEventInput[];
   assignedFrames: readonly (FrameCandidate | null)[];
   qaAnswer: string;
-  loadPlayback: (videoId: string, frameId: number) => Promise<VideoPlayback>;
   loadFrames: (videoId: string, centerFrameId: number, limit: number) => Promise<VideoFramesResponse>;
   onClose: () => void;
+  onOpenStudio: () => void;
   onInspectorWidthChange: (width: number) => void;
   onFrameSelect: (frame: VideoFrame) => void;
   onQaAnswerChange: (value: string) => void;
@@ -65,9 +64,9 @@ export function FrameInspector({
   events,
   assignedFrames,
   qaAnswer,
-  loadPlayback,
   loadFrames,
   onClose,
+  onOpenStudio,
   onInspectorWidthChange,
   onFrameSelect,
   onQaAnswerChange,
@@ -76,19 +75,12 @@ export function FrameInspector({
   onAddAnswer,
   onAssignEvent,
 }: Props) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [showVideo, setShowVideo] = useState(false);
   const [showFrames, setShowFrames] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartRef = useRef<{ clientX: number; width: number } | null>(null);
   const evidence = useMemo(() => groupEvidence(active.evidence), [active.evidence]);
   const modalityLabel = displayMatchedModalities(active.matched_modalities);
 
-  const playbackQuery = useQuery({
-    queryKey: ['video-playback', anchor.video_id, anchor.original_frame_id],
-    queryFn: () => loadPlayback(anchor.video_id, anchor.original_frame_id),
-    enabled: false,
-  });
   const framesQuery = useQuery({
     queryKey: ['video-frames', anchor.video_id, anchor.original_frame_id],
     queryFn: () => loadFrames(anchor.video_id, anchor.original_frame_id, 25),
@@ -96,21 +88,8 @@ export function FrameInspector({
   });
 
   useEffect(() => {
-    setShowVideo(false);
     setShowFrames(false);
   }, [anchor.result_key]);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    const nextTime = active.timestamp_ms / 1000;
-    if (Number.isFinite(nextTime)) video.currentTime = nextTime;
-  }, [active.timestamp_ms, playbackQuery.data]);
-
-  function requestVideo() {
-    setShowVideo(true);
-    void playbackQuery.refetch();
-  }
 
   function requestFrames() {
     setShowFrames(true);
@@ -183,21 +162,8 @@ export function FrameInspector({
       </header>
 
       <div className="inspector-media">
-        {showVideo && playbackQuery.data ? (
-          <video
-            ref={videoRef}
-            controls
-            preload="metadata"
-            aria-label={`Video ${active.video_id}`}
-            src={playbackQuery.data.playback_uri}
-            onLoadedMetadata={() => {
-              if (videoRef.current) videoRef.current.currentTime = active.timestamp_ms / 1000;
-            }}
-          />
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={active.thumbnail_uri} alt={`Frame ${active.original_frame_id} của ${active.video_id}`} />
-        )}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={active.thumbnail_uri} alt={`Frame ${active.original_frame_id} của ${active.video_id}`} />
       </div>
 
       <div className="inspector-meta">
@@ -207,16 +173,16 @@ export function FrameInspector({
       </div>
 
       <div className="media-actions">
-        <button type="button" className="secondary-button" disabled={playbackQuery.isFetching} onClick={requestVideo}>
-          {playbackQuery.isFetching ? 'Đang tải video…' : 'Xem video'}
+        <button type="button" className="secondary-button" onClick={onOpenStudio}>
+          Xem video studio
         </button>
         <button type="button" className="secondary-button" disabled={framesQuery.isFetching} onClick={requestFrames}>
           {framesQuery.isFetching ? 'Đang tải frame…' : 'Xem các frame cùng video'}
         </button>
       </div>
-      {(playbackQuery.error || framesQuery.error) && (
+      {framesQuery.error && (
         <p className="inline-error" role="alert">
-          {readError(playbackQuery.error ?? framesQuery.error)}
+          {readError(framesQuery.error)}
         </p>
       )}
 

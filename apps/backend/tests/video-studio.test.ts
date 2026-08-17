@@ -75,6 +75,7 @@ describe('video studio media repository', () => {
     const calls = vi.mocked(databaseClient.query).mock.calls;
     expect(calls).toHaveLength(4);
     expect(calls[2][0]).toContain("e.evidence_type IN ('caption', 'object')");
+    expect(calls[2][0]).toContain("t.language = 'en'");
     expect(calls[2][0]).toContain("ir.status = 'active'");
     expect(calls[3][0]).toContain("e.evidence_type = 'asr'");
   });

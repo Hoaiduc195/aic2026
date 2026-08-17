@@ -27,6 +27,11 @@ export class MediaController {
     return this.media.getPlayback(identifier(videoId, 'video_id'));
   }
 
+  @Get(':videoId/studio')
+  studio(@Param('videoId') videoId: string) {
+    return this.media.getStudio(identifier(videoId, 'video_id'));
+  }
+
   @Get(':videoId/frames')
   frames(
     @Param('videoId') videoId: string,
