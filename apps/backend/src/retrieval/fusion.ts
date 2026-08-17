@@ -2,7 +2,7 @@ import type {
   BranchCandidate, BranchName, BranchResult, FusedCandidate, FusionTraceEntry, RetrievalExecutionPlan,
 } from '../common/types';
 
-const RRF_K = 60;
+const DEFAULT_RRF_K = 60;
 const TOP_M = 3;
 const MAX_OCCURRENCE_BONUS = 0.10;
 
@@ -85,6 +85,7 @@ export function fuseBranchResults(
     matched_modalities: Set<string>;
     fusion_trace: FusionTraceEntry[];
   }>();
+  const rrfK = Number.isFinite(plan.rrf_k) ? plan.rrf_k : DEFAULT_RRF_K;
 
   for (const branchResult of branchResults) {
     if (branchResult.status !== 'completed') continue;
@@ -92,7 +93,7 @@ export function fuseBranchResults(
     if (!Number.isFinite(weight) || weight <= 0) continue;
     for (const candidate of aggregateBranchCandidates(branchResult.candidates, plan.top_k_per_branch)) {
       const key = candidateKey(candidate.video_id, candidate.original_frame_id, candidate.start_ms, candidate.end_ms);
-      const contribution = weight / (RRF_K + candidate.rank);
+      const contribution = weight / (rrfK + candidate.rank);
       const current = fused.get(key) ?? {
         video_id: candidate.video_id,
         video_object_key: candidate.video_object_key,

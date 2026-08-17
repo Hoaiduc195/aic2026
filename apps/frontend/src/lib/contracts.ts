@@ -10,6 +10,21 @@ export type SearchTask =
   | 'trake'
   | 'kisc';
 
+export const SEARCH_RRF_BRANCHES = [
+  'visual',
+  'ocr_lexical',
+  'ocr_semantic',
+  'asr_lexical',
+  'asr_semantic',
+  'caption',
+  'object',
+  'temporal',
+  'clip',
+  'audio',
+] as const;
+
+export type SearchRrfBranch = (typeof SEARCH_RRF_BRANCHES)[number];
+
 export type EvidenceType =
   | 'frame'
   | 'ocr'
@@ -39,6 +54,8 @@ export interface SearchRetrievalConfig {
   display_k: number;
   branch_k: number;
   fusion_k: number;
+  rrf_k?: number;
+  channel_weights?: Partial<Record<SearchRrfBranch, number>>;
 }
 
 export interface RetrievalCandidate {

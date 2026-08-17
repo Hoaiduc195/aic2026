@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { forwardJsonResponse, requestBackend } from '../../../../lib/backend-proxy';
 import { mockSearchResponse } from '../../../../lib/mock-data';
-import type { SearchEmbeddingConfig, SearchRequest, SearchRetrievalConfig } from '../../../../lib/contracts';
+import {
+  SEARCH_RRF_BRANCHES,
+  type SearchEmbeddingConfig,
+  type SearchRequest,
+  type SearchRetrievalConfig,
+  type SearchRrfBranch,
+} from '../../../../lib/contracts';
 import { attachMediaSession } from '../../../../lib/server-media-access';
 
 const SEARCH_TASKS = new Set<SearchRequest['task']>(['textual_kis', 'video_kis', 'avs', 'vqa', 'trake', 'kisc']);
@@ -54,10 +60,39 @@ function normalizeRetrieval(value: unknown): SearchRetrievalConfig | undefined {
   if ((input.fusion_k as number) < (input.display_k as number)) {
     throw new Error('retrieval fusion_k must include display_k');
   }
+
+  let rrfK: number | undefined;
+  if (input.rrf_k !== undefined) {
+    if (!Number.isSafeInteger(input.rrf_k) || (input.rrf_k as number) < 1 || (input.rrf_k as number) > 1000) {
+      throw new Error('retrieval rrf_k is invalid');
+    }
+    rrfK = input.rrf_k as number;
+  }
+
+  let channelWeights: SearchRetrievalConfig['channel_weights'];
+  if (input.channel_weights !== undefined) {
+    if (!input.channel_weights || typeof input.channel_weights !== 'object' || Array.isArray(input.channel_weights)) {
+      throw new Error('retrieval channel_weights is invalid');
+    }
+    channelWeights = {};
+    for (const [key, rawWeight] of Object.entries(input.channel_weights)) {
+      if (!SEARCH_RRF_BRANCHES.includes(key as SearchRrfBranch)
+        || typeof rawWeight !== 'number'
+        || !Number.isFinite(rawWeight)
+        || rawWeight < 0
+        || rawWeight > 5) {
+        throw new Error('retrieval channel_weights is invalid');
+      }
+      channelWeights[key as SearchRrfBranch] = rawWeight;
+    }
+  }
+
   return {
     display_k: input.display_k as number,
     branch_k: input.branch_k as number,
     fusion_k: input.fusion_k as number,
+    ...(rrfK === undefined ? {} : { rrf_k: rrfK }),
+    ...(channelWeights === undefined ? {} : { channel_weights: channelWeights }),
   };
 }
 

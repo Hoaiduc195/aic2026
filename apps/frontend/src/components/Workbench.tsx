@@ -45,6 +45,14 @@ import {
   validateRetrievalSettings,
   type RetrievalSettings,
 } from '../lib/retrieval-settings';
+import {
+  buildSearchRrfConfig,
+  DEFAULT_RRF_SETTINGS,
+  loadRrfSettings,
+  saveRrfSettings,
+  validateRrfSettings,
+  type RrfSettings,
+} from '../lib/rrf-settings';
 import { toFrameCandidates, validateTrakeSequence } from '../lib/workbench-model';
 import { useWorkbenchStore } from '../lib/workbench-store';
 import { AnswerDrawer } from './workbench/AnswerDrawer';
@@ -93,6 +101,8 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
   const [embeddingError, setEmbeddingError] = useState<string | null>(null);
   const [retrievalSettings, setRetrievalSettings] = useState<RetrievalSettings>(DEFAULT_RETRIEVAL_SETTINGS);
   const [retrievalError, setRetrievalError] = useState<string | null>(null);
+  const [rrfSettings, setRrfSettings] = useState<RrfSettings>(DEFAULT_RRF_SETTINGS);
+  const [rrfError, setRrfError] = useState<string | null>(null);
 
   const searchMutation = useMutation({
     mutationFn: (request: SearchRequest) => search(request),
@@ -111,6 +121,7 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
     setLlmSettings(loadLlmSettings());
     setEmbeddingSettings(loadEmbeddingSettings());
     setRetrievalSettings(loadRetrievalSettings());
+    setRrfSettings(loadRrfSettings());
   }, []);
 
   function changeTask(nextTask: QualificationTask) {
@@ -159,9 +170,17 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
       setSettingsOpen(true);
       return;
     }
+    const rrfValidationError = validateRrfSettings(rrfSettings);
+    if (rrfValidationError) {
+      setRrfError(rrfValidationError);
+      return;
+    }
     try {
       const embedding = buildSearchEmbeddingConfig(embeddingSettings);
-      const retrieval = buildSearchRetrievalConfig(retrievalSettings);
+      const retrieval = {
+        ...buildSearchRetrievalConfig(retrievalSettings),
+        ...buildSearchRrfConfig(rrfSettings),
+      };
       const next = await searchMutation.mutateAsync({
         query,
         task: backendTask,
@@ -311,6 +330,27 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
     setRetrievalError(null);
   }
 
+  function saveRrfSettingsForSession() {
+    const validationError = validateRrfSettings(rrfSettings);
+    if (validationError) {
+      setRrfError(validationError);
+      return;
+    }
+    saveRrfSettings(rrfSettings);
+    setRrfError(null);
+    setNotice('Đã lưu cấu hình RRF cho frontend.');
+  }
+
+  function resetRrfSettings() {
+    const defaults = {
+      ...DEFAULT_RRF_SETTINGS,
+      weights: { ...DEFAULT_RRF_SETTINGS.weights },
+    };
+    setRrfSettings(defaults);
+    saveRrfSettings(defaults);
+    setRrfError(null);
+  }
+
   function addEvent() {
     setEvents((current) => {
       const nextOrdinal = current.length + 1;
@@ -348,6 +388,7 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
               setSettingsError(null);
               setEmbeddingError(null);
               setRetrievalError(null);
+              setRrfError(null);
               setSettingsOpen((open) => !open);
             }}
           >
@@ -367,11 +408,6 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
             onEmbeddingChange={setEmbeddingSettings}
             onEmbeddingSave={saveEmbeddingSettingsForSession}
             onEmbeddingReset={resetEmbeddingSettings}
-            retrievalSettings={retrievalSettings}
-            retrievalError={retrievalError}
-            onRetrievalChange={setRetrievalSettings}
-            onRetrievalSave={saveRetrievalSettingsForSession}
-            onRetrievalReset={resetRetrievalSettings}
             onClose={() => setSettingsOpen(false)}
           />
         )}
@@ -381,6 +417,10 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
         <SearchSidebar
           task={task}
           displayK={retrievalSettings.display_k}
+          rrfSettings={rrfSettings}
+          rrfError={rrfError}
+          retrievalSettings={retrievalSettings}
+          retrievalError={retrievalError}
           description={description}
           question={question}
           events={events}
@@ -394,6 +434,12 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
           onAddEvent={addEvent}
           onRemoveEvent={removeEvent}
           onSubmit={submit}
+          onRrfChange={setRrfSettings}
+          onRrfSave={saveRrfSettingsForSession}
+          onRrfReset={resetRrfSettings}
+          onRetrievalChange={setRetrievalSettings}
+          onRetrievalSave={saveRetrievalSettingsForSession}
+          onRetrievalReset={resetRetrievalSettings}
         />
 
         <div className={`main-workspace${selectedAnchor ? ' has-inspector' : ''}`}>

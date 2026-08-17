@@ -42,7 +42,7 @@ describe('frontend RRF settings', () => {
     })).toContain('trọng số');
     expect(validateRrfSettings({
       ...DEFAULT_RRF_SETTINGS,
-      weights: Object.fromEntries(Object.keys(DEFAULT_RRF_SETTINGS.weights).map((key) => [key, 0])),
+      weights: Object.fromEntries(Object.keys(DEFAULT_RRF_SETTINGS.weights).map((key) => [key, 0])) as typeof DEFAULT_RRF_SETTINGS.weights,
     })).toContain('ít nhất một');
   });
 });

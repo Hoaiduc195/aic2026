@@ -9,7 +9,7 @@ const registered = [
   { name: 'asr_semantic' as const, available: false }, { name: 'object' as const },
   { name: 'temporal' as const, available: false },
 ];
-const limits = { branchK: 200, fusionK: 100, displayK: 20, latencyBudgetMs: 1500 };
+const limits = { branchK: 200, fusionK: 100, displayK: 20, latencyBudgetMs: 1500, rrfK: 60 };
 
 function plan(query: string) {
   return buildDeterministicPlan({ query, task: 'textual_kis' }, 'query-fixed', 'index-v1', registered, limits);

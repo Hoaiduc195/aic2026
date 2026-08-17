@@ -4,7 +4,6 @@ import { useEffect, useRef } from 'react';
 
 import type { EmbeddingSettings } from '../../lib/embedding-settings';
 import type { LlmSettings } from '../../lib/llm-settings';
-import type { RetrievalSettings } from '../../lib/retrieval-settings';
 
 function parseNumberInput(value: string): number {
   return value === '' ? Number.NaN : Number(value);
@@ -25,11 +24,6 @@ interface Props {
   onEmbeddingChange: (settings: EmbeddingSettings) => void;
   onEmbeddingSave: () => void;
   onEmbeddingReset: () => void;
-  retrievalSettings: RetrievalSettings;
-  retrievalError: string | null;
-  onRetrievalChange: (settings: RetrievalSettings) => void;
-  onRetrievalSave: () => void;
-  onRetrievalReset: () => void;
   onClose: () => void;
 }
 
@@ -44,11 +38,6 @@ export function LlmSettingsPopover({
   onEmbeddingChange,
   onEmbeddingSave,
   onEmbeddingReset,
-  retrievalSettings,
-  retrievalError,
-  onRetrievalChange,
-  onRetrievalSave,
-  onRetrievalReset,
   onClose,
 }: Props) {
   const panelRef = useRef<HTMLElement>(null);
@@ -76,10 +65,6 @@ export function LlmSettingsPopover({
 
   function updateEmbedding<K extends keyof EmbeddingSettings>(key: K, value: EmbeddingSettings[K]) {
     onEmbeddingChange({ ...embeddingSettings, [key]: value });
-  }
-
-  function updateRetrieval<K extends keyof RetrievalSettings>(key: K, value: RetrievalSettings[K]) {
-    onRetrievalChange({ ...retrievalSettings, [key]: value });
   }
 
   return (
@@ -188,56 +173,6 @@ export function LlmSettingsPopover({
       <div className="settings-actions">
         <button type="button" className="quiet-button" onClick={onReset}>Khôi phục mặc định</button>
         <button type="button" className="primary-button" onClick={onSave}>Lưu cài đặt LLM</button>
-      </div>
-
-      <div className="settings-divider" />
-      <div aria-labelledby="retrieval-settings-title">
-        <p className="section-kicker">Điều chỉnh số lượng candidate và frame</p>
-        <h3 id="retrieval-settings-title">Cài đặt truy hồi</h3>
-        <label htmlFor="retrieval-display-k">
-          <span>Số frame hiển thị</span>
-          <input
-            id="retrieval-display-k"
-            type="number"
-            min={1}
-            max={100}
-            step={1}
-            value={displayNumberInput(retrievalSettings.display_k)}
-            onChange={(event) => updateRetrieval('display_k', parseNumberInput(event.target.value))}
-          />
-        </label>
-        <div className="settings-grid">
-          <label htmlFor="retrieval-branch-k">
-            <span>Candidate mỗi modality</span>
-            <input
-              id="retrieval-branch-k"
-              type="number"
-              min={1}
-              max={10_000}
-              step={1}
-              value={displayNumberInput(retrievalSettings.branch_k)}
-              onChange={(event) => updateRetrieval('branch_k', parseNumberInput(event.target.value))}
-            />
-          </label>
-          <label htmlFor="retrieval-fusion-k">
-            <span>Fusion candidate pool</span>
-            <input
-              id="retrieval-fusion-k"
-              type="number"
-              min={1}
-              max={10_000}
-              step={1}
-              value={displayNumberInput(retrievalSettings.fusion_k)}
-              onChange={(event) => updateRetrieval('fusion_k', parseNumberInput(event.target.value))}
-            />
-          </label>
-        </div>
-        {retrievalError && <p className="settings-error" role="alert">{retrievalError}</p>}
-        <p className="settings-help">Frame hiển thị là số kết quả cuối cùng. Candidate và fusion pool lớn hơn giúp RRF có thêm dữ liệu để xếp hạng, nhưng có thể tăng thời gian truy vấn.</p>
-        <div className="settings-actions">
-          <button type="button" className="quiet-button" onClick={onRetrievalReset}>Khôi phục truy hồi mặc định</button>
-          <button type="button" className="primary-button" onClick={onRetrievalSave}>Lưu cài đặt truy hồi</button>
-        </div>
       </div>
 
       <div className="settings-divider" />

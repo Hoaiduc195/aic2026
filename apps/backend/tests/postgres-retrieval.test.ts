@@ -25,6 +25,7 @@ const plan: RetrievalExecutionPlan = {
   top_k_per_branch: 20,
   fusion_k: 20,
   display_k: 10,
+  rrf_k: 60,
   latency_budget_ms: 5000,
   fallback_policy: 'none',
   planner_version: 'test',

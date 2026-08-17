@@ -28,6 +28,7 @@ import type { EmbeddingService } from '../embedding_services/embedding.service';
 const DEFAULT_BRANCH_K = 100;
 const DEFAULT_FUSION_K = 500;
 const DEFAULT_DISPLAY_K = 100;
+const DEFAULT_RRF_K = 60;
 
 function isDatabaseTimeout(error: unknown): boolean {
   return Boolean(error && typeof error === 'object' && 'code' in error && error.code === '57014');
@@ -78,7 +79,14 @@ export class RetrievalService {
       randomUUID(),
       this.config.indexVersion,
       branches,
-      { branchK, fusionK, displayK, latencyBudgetMs: request.retrieval?.latency_budget_ms ?? 5000 },
+      {
+        branchK,
+        fusionK,
+        displayK,
+        latencyBudgetMs: request.retrieval?.latency_budget_ms ?? 5000,
+        rrfK: request.retrieval?.rrf_k ?? DEFAULT_RRF_K,
+        channelWeights: request.retrieval?.channel_weights,
+      },
     );
     this.logger.debug(JSON.stringify({ event: 'query_plan_created', plan }));
     return plan;

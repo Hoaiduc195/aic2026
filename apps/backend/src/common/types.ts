@@ -40,6 +40,8 @@ export interface RetrievalOverrides {
   readonly fusion_k?: number;
   readonly display_k?: number;
   readonly latency_budget_ms?: number;
+  readonly rrf_k?: number;
+  readonly channel_weights?: ChannelWeights;
 }
 
 export interface EmbeddingRequestConfig {
@@ -78,6 +80,7 @@ export interface RetrievalExecutionPlan {
   readonly top_k_per_branch: number;
   readonly fusion_k: number;
   readonly display_k: number;
+  readonly rrf_k: number;
   readonly latency_budget_ms: number;
   readonly fallback_policy: 'none' | 'expand_then_clarify' | 'expand_then_abstain' | 'clarify_then_abstain';
   readonly planner_version: string;

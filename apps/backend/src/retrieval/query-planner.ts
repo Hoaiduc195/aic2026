@@ -145,6 +145,8 @@ export interface PlannerLimits {
   readonly fusionK: number;
   readonly displayK: number;
   readonly latencyBudgetMs: number;
+  readonly rrfK: number;
+  readonly channelWeights?: ChannelWeights;
 }
 
 export function buildDeterministicPlan(
@@ -181,10 +183,11 @@ export function buildDeterministicPlan(
       : branch.startsWith('ocr_') ? textConstraints.join(' ') || normalized
         : branch.startsWith('asr_') || branch === 'audio' ? audioConcepts.join(' ') || normalized
           : normalized;
-    channelWeights[branch] = branch === 'object' ? 1.2
+    const defaultWeight = branch === 'object' ? 1.2
       : branch.startsWith('ocr_') && hasOcr ? 1.25
         : branch.startsWith('asr_') && hasAsr ? 1.25
           : branch === 'caption' ? 1.0 : 1.0;
+    channelWeights[branch] = limits.channelWeights?.[branch] ?? defaultWeight;
   }
 
   const targetGranularities = ['frame'] as const;
@@ -213,6 +216,7 @@ export function buildDeterministicPlan(
     top_k_per_branch: Math.min(limits.branchK, 10000),
     fusion_k: Math.min(limits.fusionK, 10000),
     display_k: Math.min(limits.displayK, 1000),
+    rrf_k: Math.min(limits.rrfK, 1000),
     latency_budget_ms: limits.latencyBudgetMs,
     fallback_policy: request.task === 'vqa' ? 'expand_then_abstain' : 'expand_then_clarify',
     planner_version: PLANNER_VERSION,

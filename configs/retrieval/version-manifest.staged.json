@@ -13,7 +13,7 @@
     "object": "yolo26n-coco"
   },
   "checksums": {
-    "query_plan_schema": "sha256:405746968c76fd77a089bd7a224174e3f8980fb85581b731e9d08e41cfc0b670",
+    "query_plan_schema": "sha256:36afc229844940674a2a07147f6d0de21946cfc7a61ff2a6e720fbd274fc36f4",
     "object_result_schema": "sha256:f9271b7ab0aab93e66e1ea821112bb5689a29d1063dfa7c1e43f66e851dab49a"
   },
   "created_at": "2026-08-15T00:00:00Z",

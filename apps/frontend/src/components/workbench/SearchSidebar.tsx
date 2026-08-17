@@ -3,10 +3,16 @@
 import type { FormEvent } from 'react';
 
 import type { QualificationEventInput, QualificationTask } from '../../lib/contracts';
+import type { RrfSettings, RrfWeightKey } from '../../lib/rrf-settings';
+import type { RetrievalSettings } from '../../lib/retrieval-settings';
 
 interface Props {
   task: QualificationTask;
   displayK: number;
+  rrfSettings: RrfSettings;
+  rrfError: string | null;
+  retrievalSettings: RetrievalSettings;
+  retrievalError: string | null;
   description: string;
   question: string;
   events: readonly QualificationEventInput[];
@@ -18,6 +24,12 @@ interface Props {
   onAddEvent: () => void;
   onRemoveEvent: (eventId: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onRrfChange: (settings: RrfSettings) => void;
+  onRrfSave: () => void;
+  onRrfReset: () => void;
+  onRetrievalChange: (settings: RetrievalSettings) => void;
+  onRetrievalSave: () => void;
+  onRetrievalReset: () => void;
 }
 
 const TASKS: ReadonlyArray<{ value: QualificationTask; label: string }> = [
@@ -26,9 +38,31 @@ const TASKS: ReadonlyArray<{ value: QualificationTask; label: string }> = [
   { value: 'trake', label: 'TRAKE' },
 ];
 
+const RRF_WEIGHT_FIELDS: ReadonlyArray<{ key: RrfWeightKey; label: string }> = [
+  { key: 'visual', label: 'Trọng số visual' },
+  { key: 'ocr', label: 'Trọng số OCR' },
+  { key: 'asr', label: 'Trọng số ASR' },
+  { key: 'caption', label: 'Trọng số caption' },
+  { key: 'object', label: 'Trọng số object' },
+  { key: 'temporal', label: 'Trọng số temporal' },
+  { key: 'audio', label: 'Trọng số audio' },
+];
+
+function parseNumberInput(value: string): number {
+  return value === '' ? Number.NaN : Number(value);
+}
+
+function displayNumberInput(value: number): number | '' {
+  return Number.isNaN(value) ? '' : value;
+}
+
 export function SearchSidebar({
   task,
   displayK,
+  rrfSettings,
+  rrfError,
+  retrievalSettings,
+  retrievalError,
   description,
   question,
   events,
@@ -40,6 +74,12 @@ export function SearchSidebar({
   onAddEvent,
   onRemoveEvent,
   onSubmit,
+  onRrfChange,
+  onRrfSave,
+  onRrfReset,
+  onRetrievalChange,
+  onRetrievalSave,
+  onRetrievalReset,
 }: Props) {
   const hasQuery = task === 'trake'
     ? events.length > 0 && events.every((item) => item.description.trim())
@@ -135,6 +175,132 @@ export function SearchSidebar({
           {pending ? 'Đang tìm…' : 'Tìm frame'}
         </button>
       </form>
+
+      <section className="sidebar-panel rrf-panel" aria-labelledby="rrf-settings-title">
+        <div className="sidebar-panel-heading">
+          <div>
+            <p className="section-kicker">Xếp hạng kết quả</p>
+            <h2 id="rrf-settings-title">RRF fusion</h2>
+          </div>
+          <span className="sidebar-panel-badge">K={displayNumberInput(rrfSettings.rrf_k) || '—'}</span>
+        </div>
+
+        <label htmlFor="rrf-k">
+          <span>RRF K</span>
+          <input
+            id="rrf-k"
+            aria-label="RRF K"
+            type="number"
+            min="1"
+            max="1000"
+            step="1"
+            value={displayNumberInput(rrfSettings.rrf_k)}
+            onChange={(event) => onRrfChange({ ...rrfSettings, rrf_k: parseNumberInput(event.target.value) })}
+          />
+        </label>
+
+        <div className="rrf-weight-grid">
+          {RRF_WEIGHT_FIELDS.map((field) => (
+            <label key={field.key} htmlFor={`rrf-weight-${field.key}`}>
+              <span>{field.label}</span>
+              <input
+                id={`rrf-weight-${field.key}`}
+                aria-label={field.label}
+                type="number"
+                min="0"
+                max="5"
+                step="0.05"
+                inputMode="decimal"
+                value={displayNumberInput(rrfSettings.weights[field.key])}
+                onChange={(event) => onRrfChange({
+                  ...rrfSettings,
+                  weights: { ...rrfSettings.weights, [field.key]: parseNumberInput(event.target.value) },
+                })}
+              />
+            </label>
+          ))}
+        </div>
+
+        {rrfError && <p className="settings-error" role="alert">{rrfError}</p>}
+        <p className="sidebar-help">
+          K càng lớn càng giảm ảnh hưởng của thứ hạng; trọng số cao sẽ ưu tiên modality tương ứng.
+        </p>
+        <div className="sidebar-panel-actions">
+          <button type="button" className="secondary-button" onClick={onRrfReset}>Khôi phục RRF</button>
+          <button type="button" className="primary-button" onClick={onRrfSave}>Lưu cấu hình RRF</button>
+        </div>
+      </section>
+
+      <section className="sidebar-panel retrieval-panel" aria-labelledby="retrieval-settings-title">
+        <div className="sidebar-panel-heading">
+          <div>
+            <p className="section-kicker">Phạm vi truy hồi</p>
+            <h2 id="retrieval-settings-title">Số lượng kết quả</h2>
+          </div>
+          <span className="sidebar-panel-badge">Top {displayNumberInput(retrievalSettings.display_k) || '—'}</span>
+        </div>
+
+        <label htmlFor="retrieval-display-k-sidebar">
+          <span>Số frame hiển thị</span>
+          <input
+            id="retrieval-display-k-sidebar"
+            aria-label="Số frame hiển thị"
+            type="number"
+            min="1"
+            max="100"
+            step="1"
+            value={displayNumberInput(retrievalSettings.display_k)}
+            onChange={(event) => onRetrievalChange({
+              ...retrievalSettings,
+              display_k: parseNumberInput(event.target.value),
+            })}
+          />
+        </label>
+
+        <div className="retrieval-settings-grid">
+          <label htmlFor="retrieval-branch-k-sidebar">
+            <span>Candidate mỗi modality</span>
+            <input
+              id="retrieval-branch-k-sidebar"
+              aria-label="Candidate mỗi modality"
+              type="number"
+              min="1"
+              max="10000"
+              step="1"
+              value={displayNumberInput(retrievalSettings.branch_k)}
+              onChange={(event) => onRetrievalChange({
+                ...retrievalSettings,
+                branch_k: parseNumberInput(event.target.value),
+              })}
+            />
+          </label>
+          <label htmlFor="retrieval-fusion-k-sidebar">
+            <span>Fusion candidate pool</span>
+            <input
+              id="retrieval-fusion-k-sidebar"
+              aria-label="Fusion candidate pool"
+              type="number"
+              min="1"
+              max="10000"
+              step="1"
+              value={displayNumberInput(retrievalSettings.fusion_k)}
+              onChange={(event) => onRetrievalChange({
+                ...retrievalSettings,
+                fusion_k: parseNumberInput(event.target.value),
+              })}
+            />
+          </label>
+        </div>
+
+        {retrievalError && <p className="settings-error" role="alert">{retrievalError}</p>}
+        <p className="sidebar-help">
+          Số frame là kết quả cuối cùng; candidate và fusion pool lớn hơn giúp RRF có thêm dữ liệu nhưng có thể chậm hơn.
+        </p>
+        <div className="sidebar-panel-actions">
+          <button type="button" className="secondary-button" onClick={onRetrievalReset}>Khôi phục truy hồi mặc định</button>
+          <button type="button" className="primary-button" onClick={onRetrievalSave}>Lưu cài đặt truy hồi</button>
+        </div>
+      </section>
     </aside>
   );
 }

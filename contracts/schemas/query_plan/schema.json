@@ -5,7 +5,7 @@
   "description": "Deterministic, inspectable plan produced before branch retrieval.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["query_id", "task", "language", "original_query", "query_variants", "concepts", "query_atoms", "negative_concepts", "text_constraints", "audio_concepts", "object_terms", "object_constraints", "query_views", "channel_weights", "temporal_relations", "target_granularities", "branches", "top_k_per_branch", "fusion_k", "display_k", "latency_budget_ms", "fallback_policy", "planner_version", "fusion", "index_version", "hard_filters", "transformations"],
+  "required": ["query_id", "task", "language", "original_query", "query_variants", "concepts", "query_atoms", "negative_concepts", "text_constraints", "audio_concepts", "object_terms", "object_constraints", "query_views", "channel_weights", "temporal_relations", "target_granularities", "branches", "top_k_per_branch", "fusion_k", "display_k", "rrf_k", "latency_budget_ms", "fallback_policy", "planner_version", "fusion", "index_version", "hard_filters", "transformations"],
   "properties": {
     "query_id": { "type": "string", "minLength": 1 },
     "task": { "type": "string", "enum": ["textual_kis", "vqa", "trake"] },
@@ -69,6 +69,7 @@
     "top_k_per_branch": { "type": "integer", "minimum": 1, "maximum": 10000 },
     "fusion_k": { "type": "integer", "minimum": 1, "maximum": 10000 },
     "display_k": { "type": "integer", "minimum": 1, "maximum": 1000 },
+    "rrf_k": { "type": "integer", "minimum": 1, "maximum": 1000 },
     "latency_budget_ms": { "type": "integer", "minimum": 1 },
     "fallback_policy": { "type": "string", "enum": ["none", "expand_then_clarify", "expand_then_abstain", "clarify_then_abstain"] },
     "planner_version": { "type": "string", "minLength": 1 },
