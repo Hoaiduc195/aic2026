@@ -34,13 +34,13 @@ describe('VideoTimelineOverlay', () => {
 
     expect(screen.getByLabelText('Timeline video')).toBeInTheDocument();
     expect(screen.getByLabelText('ASR: Xin chào')).toBeInTheDocument();
-    expect(screen.getByLabelText('Frame 50 tại 2.00s')).toBeInTheDocument();
+    expect(screen.getByLabelText('Keyframe 2 · source frame 50 tại 2.00s')).toBeInTheDocument();
     expect(document.querySelector('svg')).toBeInTheDocument();
 
     await user.click(screen.getByLabelText('ASR: Xin chào'));
     expect(onSeek).toHaveBeenCalledWith(1_000);
 
-    await user.click(screen.getByLabelText('Frame 50 tại 2.00s'));
+    await user.click(screen.getByLabelText('Keyframe 2 · source frame 50 tại 2.00s'));
     expect(onSeek).toHaveBeenCalledWith(2_000);
     expect(onFrameSelect).toHaveBeenCalledWith(frames[1]);
   });

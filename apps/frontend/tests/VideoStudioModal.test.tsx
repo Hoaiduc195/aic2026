@@ -36,6 +36,9 @@ describe('VideoStudioModal', () => {
     );
 
     expect(screen.getByRole('dialog', { name: 'Video studio video-1' })).toBeInTheDocument();
+    expect(screen.getByText('1 keyframe')).toBeInTheDocument();
+    expect(screen.getByText('Keyframe 1')).toBeInTheDocument();
+    expect(screen.getByText('Source frame 50')).toBeInTheDocument();
     expect(screen.getByText('Một cảnh trong studio.')).toBeInTheDocument();
     expect(screen.getAllByText('person').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('Xin chào').length).toBeGreaterThan(0);
@@ -45,7 +48,7 @@ describe('VideoStudioModal', () => {
     expect(objectBox.querySelector('text')).toHaveAttribute('font-size', '0.045');
     expect(objectBox.querySelector('text')).toHaveAttribute('font-weight', '400');
 
-    await user.click(screen.getByRole('button', { name: 'Dùng frame 50' }));
+    await user.click(screen.getByRole('button', { name: 'Dùng keyframe 1' }));
     expect(onSelectFrame).toHaveBeenCalledWith(studio.frames[0]);
     expect(onClose).toHaveBeenCalledOnce();
   });
@@ -61,6 +64,6 @@ describe('VideoStudioModal', () => {
     );
 
     expect(screen.getByTestId('studio-selected-frame-image')).toHaveAttribute('loading', 'eager');
-    expect(screen.getByRole('button', { name: 'Chọn frame 50' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Chọn keyframe 1 · source frame 50' })).toBeInTheDocument();
   });
 });
