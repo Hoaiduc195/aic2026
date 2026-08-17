@@ -3,7 +3,7 @@
 import { type KeyboardEvent, useRef } from 'react';
 
 import type { FrameCandidate } from '../../lib/contracts';
-import { formatMs } from '../../lib/workbench-model';
+import { displayMatchedModalities, formatMs } from '../../lib/workbench-model';
 
 interface Props {
   frames: readonly FrameCandidate[];
@@ -62,6 +62,7 @@ export function FrameGrid({ frames, selectedKey, loading, searched, skipped, onS
       <div className="frame-grid" tabIndex={frames.length ? 0 : undefined} onKeyDown={handleKeys}>
         {frames.map((frame, index) => {
           const selected = frame.result_key === selectedKey;
+          const modalityLabel = displayMatchedModalities(frame.matched_modalities);
           return (
             <button
               type="button"
@@ -81,7 +82,7 @@ export function FrameGrid({ frames, selectedKey, loading, searched, skipped, onS
               <div className="frame-card-body">
                 <strong>{frame.video_id}</strong>
                 <span>Frame {frame.original_frame_id} · {formatMs(frame.timestamp_ms)}</span>
-                <small>{frame.matched_modalities.join(' · ') || 'visual'}</small>
+                <small>{modalityLabel || '—'}</small>
               </div>
             </button>
           );

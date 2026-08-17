@@ -12,7 +12,7 @@ import type {
   VideoFramesResponse,
   VideoPlayback,
 } from '../../lib/contracts';
-import { formatMs, groupEvidence } from '../../lib/workbench-model';
+import { displayMatchedModalities, formatMs, groupEvidence } from '../../lib/workbench-model';
 
 interface Props {
   task: QualificationTask;
@@ -64,6 +64,7 @@ export function FrameInspector({
   const [showVideo, setShowVideo] = useState(false);
   const [showFrames, setShowFrames] = useState(false);
   const evidence = useMemo(() => groupEvidence(active.evidence), [active.evidence]);
+  const modalityLabel = displayMatchedModalities(active.matched_modalities);
 
   const playbackQuery = useQuery({
     queryKey: ['video-playback', anchor.video_id, anchor.original_frame_id],
@@ -129,7 +130,7 @@ export function FrameInspector({
       <div className="inspector-meta">
         <span>{formatMs(active.timestamp_ms)}</span>
         <span>Điểm {active.score.toFixed(3)}</span>
-        <span>{active.matched_modalities.join(' · ') || 'visual'}</span>
+        <span>{modalityLabel || '—'}</span>
       </div>
 
       <div className="media-actions">

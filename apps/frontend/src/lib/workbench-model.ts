@@ -24,6 +24,15 @@ export interface EvidenceGroups {
   other: SearchEvidence[];
 }
 
+const HIDDEN_USER_MODALITIES = new Set(['embedding']);
+
+/** Embedding is a retrieval signal, not a user-facing evidence label. */
+export function displayMatchedModalities(modalities: readonly string[]): string {
+  return modalities
+    .filter((modality) => !HIDDEN_USER_MODALITIES.has(modality))
+    .join(' · ');
+}
+
 export function parseFrame(value: string): number | null {
   if (!/^\d+$/.test(value.trim())) {
     return null;
