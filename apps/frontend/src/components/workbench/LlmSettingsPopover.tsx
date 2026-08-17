@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 import type { EmbeddingSettings } from '../../lib/embedding-settings';
 import type { LlmSettings } from '../../lib/llm-settings';
@@ -67,8 +68,8 @@ export function LlmSettingsPopover({
     onEmbeddingChange({ ...embeddingSettings, [key]: value });
   }
 
-  return (
-    <>
+  const modal = (
+    <div className="settings-modal-layer">
       <div className="settings-modal-backdrop" aria-hidden="true" onMouseDown={onClose} />
       <section
         id="llm-settings"
@@ -231,6 +232,8 @@ export function LlmSettingsPopover({
         </div>
       </div>
       </section>
-    </>
+    </div>
   );
+
+  return typeof document === 'undefined' ? modal : createPortal(modal, document.body);
 }

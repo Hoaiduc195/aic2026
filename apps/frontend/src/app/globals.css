@@ -145,23 +145,30 @@ textarea:focus-visible,
   color: #b54708;
 }
 
-.settings-modal-backdrop {
+.settings-modal-layer {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  isolation: isolate;
+}
+
+.settings-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   background: rgba(9, 18, 27, 0.58);
   backdrop-filter: blur(4px);
   animation: settings-backdrop-in 150ms ease-out;
 }
 
 .settings-popover {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  z-index: 100;
+  position: relative;
+  z-index: 1;
   width: min(760px, calc(100vw - 32px));
   max-height: min(820px, calc(100vh - 48px));
-  transform: translate(-50%, -50%);
   overflow-y: auto;
   display: grid;
   gap: 16px;
@@ -193,8 +200,8 @@ textarea:focus-visible,
 }
 
 @keyframes settings-popover-in {
-  from { opacity: 0; transform: translate(-50%, calc(-50% + 8px)) scale(0.985); }
-  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .settings-popover label,
@@ -1047,6 +1054,10 @@ textarea:focus-visible,
 @media (max-width: 700px) {
   .app-topbar {
     padding: 0 12px;
+  }
+
+  .settings-modal-layer {
+    padding: 12px;
   }
 
   .quiet-button:not(.settings-trigger),
