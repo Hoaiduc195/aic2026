@@ -1,7 +1,14 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import type {
   FrameCandidate,
@@ -14,16 +21,23 @@ import type {
 } from '../../lib/contracts';
 import { displayMatchedModalities, formatMs, groupEvidence } from '../../lib/workbench-model';
 
+export const DEFAULT_INSPECTOR_WIDTH = 410;
+export const MIN_INSPECTOR_WIDTH = 300;
+export const MAX_INSPECTOR_WIDTH = 640;
+const INSPECTOR_RESIZE_STEP = 20;
+
 interface Props {
   task: QualificationTask;
   anchor: FrameCandidate;
   active: FrameCandidate;
+  inspectorWidth: number;
   events: readonly QualificationEventInput[];
   assignedFrames: readonly (FrameCandidate | null)[];
   qaAnswer: string;
   loadPlayback: (videoId: string, frameId: number) => Promise<VideoPlayback>;
   loadFrames: (videoId: string, centerFrameId: number, limit: number) => Promise<VideoFramesResponse>;
   onClose: () => void;
+  onInspectorWidthChange: (width: number) => void;
   onFrameSelect: (frame: VideoFrame) => void;
   onQaAnswerChange: (value: string) => void;
   onSuggestVqaAnswer?: () => void;
@@ -47,12 +61,14 @@ export function FrameInspector({
   task,
   anchor,
   active,
+  inspectorWidth,
   events,
   assignedFrames,
   qaAnswer,
   loadPlayback,
   loadFrames,
   onClose,
+  onInspectorWidthChange,
   onFrameSelect,
   onQaAnswerChange,
   onSuggestVqaAnswer,
@@ -63,6 +79,8 @@ export function FrameInspector({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [showVideo, setShowVideo] = useState(false);
   const [showFrames, setShowFrames] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStartRef = useRef<{ clientX: number; width: number } | null>(null);
   const evidence = useMemo(() => groupEvidence(active.evidence), [active.evidence]);
   const modalityLabel = displayMatchedModalities(active.matched_modalities);
 
@@ -99,8 +117,63 @@ export function FrameInspector({
     void framesQuery.refetch();
   }
 
+  function beginResize(event: ReactPointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    resizeStartRef.current = { clientX: event.clientX, width: inspectorWidth };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setIsResizing(true);
+  }
+
+  function updateResize(event: ReactPointerEvent<HTMLDivElement>) {
+    const start = resizeStartRef.current;
+    if (!start) return;
+    onInspectorWidthChange(start.width + start.clientX - event.clientX);
+  }
+
+  function endResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    resizeStartRef.current = null;
+    setIsResizing(false);
+  }
+
+  function resizeWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const nextWidth = event.key === 'ArrowLeft'
+      ? inspectorWidth + INSPECTOR_RESIZE_STEP
+      : event.key === 'ArrowRight'
+        ? inspectorWidth - INSPECTOR_RESIZE_STEP
+        : event.key === 'Home'
+          ? MIN_INSPECTOR_WIDTH
+          : event.key === 'End'
+            ? MAX_INSPECTOR_WIDTH
+            : null;
+    if (nextWidth === null) return;
+    event.preventDefault();
+    onInspectorWidthChange(nextWidth);
+  }
+
   return (
-    <aside className="frame-inspector" aria-label="Chi tiết frame">
+    <aside className={`frame-inspector${isResizing ? ' is-resizing' : ''}`} aria-label="Chi tiết frame">
+      <div
+        className="inspector-resize-handle"
+        role="separator"
+        aria-label="Điều chỉnh chiều rộng panel video"
+        aria-orientation="vertical"
+        aria-valuemin={MIN_INSPECTOR_WIDTH}
+        aria-valuemax={MAX_INSPECTOR_WIDTH}
+        aria-valuenow={inspectorWidth}
+        tabIndex={0}
+        onKeyDown={resizeWithKeyboard}
+        onPointerDown={beginResize}
+        onPointerMove={updateResize}
+        onPointerUp={endResize}
+        onPointerCancel={endResize}
+        onLostPointerCapture={() => {
+          resizeStartRef.current = null;
+          setIsResizing(false);
+        }}
+      />
       <header className="inspector-heading">
         <div>
           <p>{active.video_id}</p>

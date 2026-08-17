@@ -178,7 +178,29 @@ textarea:focus-visible,
   background: var(--surface);
   box-shadow: 0 28px 90px rgba(9, 18, 27, 0.34), 0 4px 16px rgba(9, 18, 27, 0.12);
   overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(125, 139, 153, 0.55) transparent;
   animation: settings-popover-in 180ms ease-out;
+}
+
+.settings-popover::-webkit-scrollbar {
+  width: 7px;
+}
+
+.settings-popover::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.settings-popover::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(125, 139, 153, 0.55);
+  background-clip: padding-box;
+}
+
+.settings-popover::-webkit-scrollbar-thumb:hover {
+  background: rgba(88, 104, 120, 0.75);
+  background-clip: padding-box;
 }
 
 .settings-heading {
@@ -523,7 +545,7 @@ textarea:focus-visible,
 }
 
 .main-workspace.has-inspector {
-  grid-template-columns: minmax(0, 1fr) 410px;
+  grid-template-columns: minmax(0, 1fr) var(--inspector-width, 410px);
 }
 
 .results-workspace {
@@ -681,6 +703,44 @@ textarea:focus-visible,
   overflow-y: auto;
   border-left: 1px solid var(--line);
   background: var(--surface);
+}
+
+.inspector-resize-handle {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.inspector-resize-handle::after {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 3px;
+  height: 44px;
+  border-radius: 999px;
+  background: var(--accent);
+  content: '';
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 140ms ease;
+}
+
+.inspector-resize-handle:hover::after,
+.inspector-resize-handle:focus-visible::after,
+.frame-inspector.is-resizing .inspector-resize-handle::after {
+  opacity: 0.72;
+}
+
+.frame-inspector.is-resizing {
+  user-select: none;
 }
 
 .inspector-heading {
@@ -1023,7 +1083,7 @@ textarea:focus-visible,
 
 @media (max-width: 1180px) {
   .main-workspace.has-inspector {
-    grid-template-columns: minmax(0, 1fr) 360px;
+    grid-template-columns: minmax(0, 1fr) min(var(--inspector-width, 360px), 42vw);
   }
 
   .frame-grid {
@@ -1048,6 +1108,10 @@ textarea:focus-visible,
     top: 60px;
     width: min(410px, calc(100vw - 32px));
     box-shadow: -12px 0 30px rgba(9, 18, 27, 0.16);
+  }
+
+  .inspector-resize-handle {
+    display: none;
   }
 }
 

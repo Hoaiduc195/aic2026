@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { type FormEvent, useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, type FormEvent, useEffect, useMemo, useState } from 'react';
 
 import type {
   FrameCandidate,
@@ -57,7 +57,12 @@ import { toFrameCandidates, validateTrakeSequence } from '../lib/workbench-model
 import { useWorkbenchStore } from '../lib/workbench-store';
 import { AnswerDrawer } from './workbench/AnswerDrawer';
 import { FrameGrid } from './workbench/FrameGrid';
-import { FrameInspector } from './workbench/FrameInspector';
+import {
+  DEFAULT_INSPECTOR_WIDTH,
+  FrameInspector,
+  MAX_INSPECTOR_WIDTH,
+  MIN_INSPECTOR_WIDTH,
+} from './workbench/FrameInspector';
 import { LlmSettingsPopover } from './workbench/LlmSettingsPopover';
 import { SearchSidebar } from './workbench/SearchSidebar';
 
@@ -89,6 +94,7 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [selectedAnchor, setSelectedAnchor] = useState<FrameCandidate | null>(null);
   const [activeFrame, setActiveFrame] = useState<FrameCandidate | null>(null);
+  const [inspectorWidth, setInspectorWidth] = useState(DEFAULT_INSPECTOR_WIDTH);
   const [assignedFrames, setAssignedFrames] = useState<Array<FrameCandidate | null>>([null]);
   const [qaAnswer, setQaAnswer] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -210,6 +216,11 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
       thumbnail_uri: frame.thumbnail_uri,
       evidence: frame.evidence ? [...frame.evidence] : [...selectedAnchor.evidence],
     });
+  }
+
+  function resizeInspector(width: number) {
+    const boundedWidth = Math.min(MAX_INSPECTOR_WIDTH, Math.max(MIN_INSPECTOR_WIDTH, Math.round(width)));
+    setInspectorWidth(boundedWidth);
   }
 
   function addCurrentAnswer() {
@@ -442,7 +453,10 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
           onRetrievalReset={resetRetrievalSettings}
         />
 
-        <div className={`main-workspace${selectedAnchor ? ' has-inspector' : ''}`}>
+        <div
+          className={`main-workspace${selectedAnchor ? ' has-inspector' : ''}`}
+          style={{ '--inspector-width': `${inspectorWidth}px` } as CSSProperties}
+        >
           <FrameGrid
             frames={normalized.frames}
             selectedKey={selectedAnchor?.result_key ?? null}
@@ -456,6 +470,7 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
               task={task}
               anchor={selectedAnchor}
               active={activeFrame}
+              inspectorWidth={inspectorWidth}
               events={events}
               assignedFrames={assignedFrames}
               qaAnswer={qaAnswer}
@@ -465,6 +480,7 @@ export function Workbench({ search, loadPlayback, loadFrames, saveSelection, cre
                 setSelectedAnchor(null);
                 setActiveFrame(null);
               }}
+              onInspectorWidthChange={resizeInspector}
               onFrameSelect={selectNeighborFrame}
               onQaAnswerChange={setQaAnswer}
               onSuggestVqaAnswer={task === 'qa' ? suggestAnswer : undefined}
