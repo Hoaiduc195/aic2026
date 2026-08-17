@@ -435,6 +435,7 @@ describe('qualification frame-first workbench', () => {
     expect(items()).toHaveLength(2);
     expect(items()[0]).toHaveTextContent('video_01');
     expect(items()[1]).toHaveTextContent('video_02');
+    expect(items()[1].querySelector('.rank-label')).toHaveTextContent('#3');
   });
 
   it('saves the answer queue and creates a backend preview', async () => {
