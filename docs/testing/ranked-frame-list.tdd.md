@@ -16,6 +16,12 @@ As a qualification operator, I want ranked frame results rendered as a vertical 
 | Existing drop reorder, keyboard navigation, selection and JSON export remain intact | `pnpm test` | PASS: 18 files, 79 tests |
 | Production bundle, types and lint are valid | `pnpm build`, `pnpm typecheck`, `pnpm lint` | PASS |
 
+## Motion and sizing follow-up
+
+The follow-up test first failed because the list had no animation/sizing hooks. The fix adds a FLIP-style layout transition for items displaced by the insertion placeholder, plus a larger thumbnail and row layout. The same targeted test and full suite now pass.
+
+`pnpm test:coverage` currently reports 87.88% statements, 87.88% lines, 82.11% functions and 76.43% branches. The branch percentage is below 80% because the new browser-only animation branches are not fully executable in the jsdom suite and existing frontend branches remain uncovered.
+
 ## Coverage
 
 `pnpm test:coverage` passed with 79 tests. Coverage was 88.38% statements, 88.38% lines, 82.04% functions and 77.24% branches. The branch percentage remains below 80% because of existing untested branches across the frontend; the new `FrameGrid` component is covered at 92.71% statements and 78.68% branches.
