@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildAnswer,
   buildSubmission,
+  displayMatchedModalities,
   formatMs,
   groupEvidence,
   parseFrame,
@@ -39,6 +40,11 @@ const result: SearchResult = {
 };
 
 describe('workbench answer model', () => {
+  it('hides the visual embedding modality from user-facing labels', () => {
+    expect(displayMatchedModalities(['embedding', 'object', 'ocr'])).toBe('object · ocr');
+    expect(displayMatchedModalities(['embedding'])).toBe('');
+  });
+
   it('parses safe non-negative frame IDs and rejects malformed values', () => {
     expect(parseFrame(' 1500 ')).toBe(1500);
     expect(parseFrame('-1')).toBeNull();

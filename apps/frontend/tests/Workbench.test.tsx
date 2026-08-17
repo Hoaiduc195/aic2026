@@ -47,7 +47,7 @@ const response: SearchResponse = {
         { evidence_id: 'ev_ocr', type: 'ocr', snippet: 'Cửa hàng tạp hóa', producer: 'ocr:v1' },
         { evidence_id: 'ev_asr', type: 'asr', snippet: 'rẽ phải rồi đi thẳng', producer: 'asr:v1' },
       ],
-      matched_modalities: ['visual', 'ocr', 'asr'],
+      matched_modalities: ['embedding', 'ocr', 'asr'],
     },
   ],
 };
@@ -159,6 +159,7 @@ describe('qualification frame-first workbench', () => {
     await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
     await user.click(await screen.findByRole('button', { name: 'Chọn frame video_01 · 385' }));
 
+    expect(screen.queryByText(/embedding/)).not.toBeInTheDocument();
     expect(screen.getByText('Cửa hàng tạp hóa')).toBeInTheDocument();
     expect(screen.getByText('rẽ phải rồi đi thẳng')).toBeInTheDocument();
     expect(loadPlayback).not.toHaveBeenCalled();
