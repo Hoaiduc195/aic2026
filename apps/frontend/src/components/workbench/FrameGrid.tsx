@@ -10,7 +10,12 @@ import {
 } from 'react';
 
 import type { FrameCandidate } from '../../lib/contracts';
-import { displayMatchedModalities, formatMs } from '../../lib/workbench-model';
+import {
+  displayMatchedModalities,
+  frameCandidateDisplayLabel,
+  frameCandidateLabel,
+  formatMs,
+} from '../../lib/workbench-model';
 
 interface Props {
   frames: readonly FrameCandidate[];
@@ -336,6 +341,8 @@ export function FrameGrid({
             .length + 1;
           const selected = frame.result_key === selectedKey;
           const modalityLabel = displayMatchedModalities(frame.matched_modalities);
+          const resultLabel = frameCandidateLabel(frame);
+          const displayLabel = frameCandidateDisplayLabel(frame);
           return (
             <li
               className={`frame-card frame-list-item frame-list-item--spacious${entry.dragging ? ' frame-list-item--dragging' : ''}${selected ? ' selected' : ''}`}
@@ -351,7 +358,7 @@ export function FrameGrid({
                 <button
                   type="button"
                   className="frame-card-select"
-                  aria-label={`Chọn frame ${frame.video_id} · ${frame.original_frame_id}`}
+                  aria-label={`Chọn ${resultLabel}`}
                   aria-pressed={selected}
                   data-result-key={frame.result_key}
                   ref={(element) => { cardRefs.current[frame.result_key] = element; }}
@@ -373,7 +380,7 @@ export function FrameGrid({
                   </div>
                   <div className="frame-card-body">
                     <strong>{frame.video_id}</strong>
-                    <span>Frame {frame.original_frame_id} · {formatMs(frame.timestamp_ms)}</span>
+                    <span>{displayLabel} · {formatMs(frame.timestamp_ms)}</span>
                     <small>{modalityLabel || '—'}</small>
                   </div>
                 </button>
@@ -382,7 +389,7 @@ export function FrameGrid({
                 <span className="drag-hint">Kéo để xếp hạng</span>
                 <button
                   type="button"
-                  aria-label={`Đưa frame ${frame.video_id} · ${frame.original_frame_id} lên`}
+                  aria-label={`Đưa ${resultLabel} lên`}
                   disabled={index === 0}
                   onClick={() => moveWithKeyboard(index, -1)}
                 >
@@ -390,7 +397,7 @@ export function FrameGrid({
                 </button>
                 <button
                   type="button"
-                  aria-label={`Đưa frame ${frame.video_id} · ${frame.original_frame_id} xuống`}
+                  aria-label={`Đưa ${resultLabel} xuống`}
                   disabled={index === frames.length - 1}
                   onClick={() => moveWithKeyboard(index, 1)}
                 >
@@ -425,11 +432,13 @@ function DragPreview({
   size: { width: number; height: number } | null;
 }) {
   const modalityLabel = displayMatchedModalities(frame.matched_modalities);
+  const resultLabel = frameCandidateLabel(frame);
+  const displayLabel = frameCandidateDisplayLabel(frame);
   return (
     <div
       className="frame-card frame-list-item frame-list-item--spacious frame-drag-preview"
       role="img"
-      aria-label={`Đang kéo frame ${frame.video_id} · ${frame.original_frame_id}`}
+      aria-label={`Đang kéo ${resultLabel}`}
       style={{
         width: size ? `${size.width}px` : undefined,
         height: size ? `${size.height}px` : undefined,
@@ -447,7 +456,7 @@ function DragPreview({
           </div>
           <div className="frame-card-body">
             <strong>{frame.video_id}</strong>
-            <span>Frame {frame.original_frame_id} · {formatMs(frame.timestamp_ms)}</span>
+            <span>{displayLabel} · {formatMs(frame.timestamp_ms)}</span>
             <small>{modalityLabel || '—'}</small>
           </div>
         </div>

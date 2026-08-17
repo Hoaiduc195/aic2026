@@ -95,6 +95,7 @@ export interface BranchCandidate {
   readonly video_object_key?: string | null;
   readonly rank: number;
   readonly raw_score: number;
+  readonly keyframe_no?: number | null;
   readonly original_frame_id?: number | null;
   readonly start_ms?: number;
   readonly end_ms?: number;
@@ -138,6 +139,7 @@ export interface FusionTraceEntry {
 export interface FusedCandidate {
   readonly video_id: string;
   readonly video_object_key?: string | null;
+  readonly keyframe_no?: number | null;
   readonly original_frame_id?: number | null;
   readonly start_ms: number;
   readonly end_ms: number;
@@ -155,7 +157,12 @@ export interface SearchResult {
   readonly end_ms: number;
   readonly preview_uri: string;
   readonly score: number;
-  readonly representative_frame: { original_frame_id: number; timestamp_ms: number; preview_uri: string | null } | null;
+  readonly representative_frame: {
+    keyframe_no?: number;
+    original_frame_id: number;
+    timestamp_ms: number;
+    preview_uri: string | null;
+  } | null;
   readonly evidence_ids: string[];
   readonly evidence: Array<{ evidence_id: string; type: string; start_ms?: number; end_ms?: number; snippet: string | null; producer: string }>;
   readonly matched_modalities: string[];

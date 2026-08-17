@@ -9,6 +9,7 @@ interface CandidateRow extends QueryResultRow {
   readonly evidence_id: string;
   readonly video_id: string;
   readonly video_object_key: string | null;
+  readonly keyframe_no: number | null;
   readonly original_frame_id: number | null;
   readonly start_ms: number;
   readonly end_ms: number;
@@ -27,6 +28,7 @@ function candidatesFromRows(rows: readonly CandidateRow[]): BranchCandidate[] {
     ...(row.video_object_key ? { video_object_key: row.video_object_key } : {}),
     rank: index + 1,
     raw_score: Number(row.rank_score),
+    keyframe_no: row.keyframe_no,
     original_frame_id: row.original_frame_id,
     start_ms: Number(row.start_ms),
     end_ms: Number(row.end_ms),
@@ -89,7 +91,7 @@ export class PostgresTextBranch extends PostgresBranch {
     const normalizedQuery = normalizeRetrievalText(query).toLowerCase();
     const result = await this.database.query<CandidateRow>(`
       WITH query AS (SELECT websearch_to_tsquery('simple', $1) AS value)
-      SELECT e.evidence_id, e.video_id, v.object_key AS video_object_key, e.original_frame_id,
+      SELECT e.evidence_id, e.video_id, v.object_key AS video_object_key, f.keyframe_no, e.original_frame_id,
              e.start_ms, e.end_ms, f.thumbnail_object_key AS preview_object_key,
              GREATEST(
                ts_rank_cd(t.search_document, query.value),
@@ -203,7 +205,7 @@ function objectQuerySql(mode: 'exact' | 'fuzzy'): string {
         AND ir.index_version = $3
       ),
       scored AS (
-      SELECT e.evidence_id, e.video_id, v.object_key AS video_object_key, e.original_frame_id,
+      SELECT e.evidence_id, e.video_id, v.object_key AS video_object_key, f.keyframe_no, e.original_frame_id,
              e.start_ms, e.end_ms, f.thumbnail_object_key AS preview_object_key,
              ${score} AS rank_score,
              o.label AS matched_label
@@ -213,7 +215,7 @@ function objectQuerySql(mode: 'exact' | 'fuzzy'): string {
       JOIN videos v ON v.video_id = e.video_id
       LEFT JOIN frames f ON f.video_id = e.video_id AND f.original_frame_id = e.original_frame_id
       GROUP BY e.evidence_id, e.video_id, v.object_key, e.original_frame_id,
-               e.start_ms, e.end_ms, f.thumbnail_object_key, o.label
+               e.start_ms, e.end_ms, f.keyframe_no, f.thumbnail_object_key, o.label
       )
       SELECT * FROM scored
       ORDER BY rank_score DESC, video_id, start_ms, evidence_id

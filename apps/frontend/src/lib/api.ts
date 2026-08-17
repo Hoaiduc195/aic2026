@@ -371,6 +371,9 @@ function parseRepresentativeFrame(value: unknown, resultIndex: number): SearchRe
     throw new Error(`results[${resultIndex}].representative_frame phải là object`);
   }
   return {
+    keyframe_no: value.keyframe_no === undefined
+      ? undefined
+      : positiveInteger(value.keyframe_no, 'representative_frame.keyframe_no'),
     original_frame_id: integer(value.original_frame_id, 'representative_frame.original_frame_id'),
     timestamp_ms: integer(value.timestamp_ms, 'representative_frame.timestamp_ms'),
     preview_uri: value.preview_uri === null ? null : optionalText(value.preview_uri),

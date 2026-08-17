@@ -95,6 +95,7 @@ export interface SearchResult {
   preview_uri: string;
   score: number;
   representative_frame?: {
+    keyframe_no?: number;
     original_frame_id: number;
     timestamp_ms: number;
     preview_uri?: string | null;
@@ -169,6 +170,7 @@ export interface VqaAnswerSuggestion {
 export interface FrameCandidate {
   result_key: string;
   video_id: string;
+  keyframe_no?: number;
   original_frame_id: number;
   timestamp_ms: number;
   thumbnail_uri: string;

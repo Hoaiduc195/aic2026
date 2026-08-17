@@ -9,6 +9,7 @@ interface ClipRow extends QueryResultRow {
   readonly evidence_id: string;
   readonly video_id: string;
   readonly video_object_key: string | null;
+  readonly keyframe_no: number | null;
   readonly original_frame_id: number | null;
   readonly start_ms: number;
   readonly end_ms: number;
@@ -29,7 +30,7 @@ export class PostgresClipBranch implements RetrievalBranch {
     }
     const vector = `[${embedding.join(',')}]`;
     const result = await this.database.query<ClipRow>(`
-      SELECT e.evidence_id, e.video_id, v.object_key AS video_object_key, e.original_frame_id,
+      SELECT e.evidence_id, e.video_id, v.object_key AS video_object_key, f.keyframe_no, e.original_frame_id,
              e.start_ms, e.end_ms, f.thumbnail_object_key AS preview_object_key,
              1 - (c.embedding <=> $1::vector) AS rank_score
       FROM clip_embeddings c
@@ -59,6 +60,7 @@ export class PostgresClipBranch implements RetrievalBranch {
         video_id: row.video_id,
         ...(row.video_object_key ? { video_object_key: row.video_object_key } : {}),
         rank: index + 1, raw_score: Number(row.rank_score),
+        keyframe_no: row.keyframe_no,
         original_frame_id: row.original_frame_id, start_ms: Number(row.start_ms), end_ms: Number(row.end_ms),
         preview_uri: row.preview_object_key ? `r2://media/${row.preview_object_key}` : undefined,
         evidence_ids: [row.evidence_id],

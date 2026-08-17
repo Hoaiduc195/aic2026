@@ -44,7 +44,14 @@ export function toSearchResults(
       score: candidate.score,
       representative_frame: candidate.original_frame_id === undefined || candidate.original_frame_id === null
         ? null
-        : { original_frame_id: candidate.original_frame_id, timestamp_ms: startMs, preview_uri: null },
+        : {
+            ...(candidate.keyframe_no === undefined || candidate.keyframe_no === null
+              ? {}
+              : { keyframe_no: candidate.keyframe_no }),
+            original_frame_id: candidate.original_frame_id,
+            timestamp_ms: startMs,
+            preview_uri: null,
+          },
       evidence_ids: candidate.evidence_ids,
       evidence: candidate.evidence_ids
         .map((evidenceId) => evidenceById.get(evidenceId))

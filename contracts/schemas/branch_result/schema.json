@@ -23,6 +23,7 @@
           "video_object_key": { "type": "string", "minLength": 1 },
           "rank": { "type": "integer", "minimum": 1 },
           "raw_score": { "type": "number" },
+          "keyframe_no": { "type": ["integer", "null"], "minimum": 1 },
           "original_frame_id": { "type": ["integer", "null"], "minimum": 0 },
           "start_ms": { "type": "integer", "minimum": 0 },
           "end_ms": { "type": "integer", "minimum": 1 },

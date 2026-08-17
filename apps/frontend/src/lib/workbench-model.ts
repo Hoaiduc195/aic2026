@@ -115,6 +115,22 @@ export function resultKey(result: SearchResult): string {
   return `${result.video_id}\u0000${result.original_frame_id ?? `${result.start_ms}:${result.end_ms}`}`;
 }
 
+export function frameCandidateLabel(
+  frame: Pick<FrameCandidate, 'video_id' | 'keyframe_no' | 'original_frame_id'>,
+): string {
+  return isKeyframeOrdinal(frame.keyframe_no)
+    ? `keyframe ${frame.video_id} · ${frame.keyframe_no} · source frame ${frame.original_frame_id}`
+    : `frame ${frame.video_id} · ${frame.original_frame_id}`;
+}
+
+export function frameCandidateDisplayLabel(
+  frame: Pick<FrameCandidate, 'keyframe_no' | 'original_frame_id'>,
+): string {
+  return isKeyframeOrdinal(frame.keyframe_no)
+    ? `Keyframe ${frame.keyframe_no} · Source frame ${frame.original_frame_id}`
+    : `Frame ${frame.original_frame_id}`;
+}
+
 export function formatMs(value: number): string {
   return `${(value / 1000).toFixed(2)}s`;
 }
@@ -132,6 +148,7 @@ export function toFrameCandidates(response: SearchResponse): NormalizedFrames {
     return [{
       result_key: resultKey(result),
       video_id: result.video_id,
+      ...(frame.keyframe_no === undefined ? {} : { keyframe_no: frame.keyframe_no }),
       original_frame_id: frame.original_frame_id,
       timestamp_ms: frame.timestamp_ms,
       thumbnail_uri: thumbnailUri,
@@ -184,4 +201,8 @@ export function validateTrakeSequence(frames: readonly FrameCandidate[]): boolea
 
 function isBrowserUri(value: string): boolean {
   return value.startsWith('/') || /^https?:\/\//i.test(value);
+}
+
+function isKeyframeOrdinal(value: number | undefined): value is number {
+  return value !== undefined && Number.isSafeInteger(value) && value > 0;
 }

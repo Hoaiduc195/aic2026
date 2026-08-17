@@ -50,6 +50,7 @@
             "additionalProperties": false,
             "required": ["original_frame_id", "timestamp_ms"],
             "properties": {
+              "keyframe_no": { "type": "integer", "minimum": 1 },
               "original_frame_id": { "type": "integer", "minimum": 0 },
               "timestamp_ms": { "type": "integer", "minimum": 0 },
               "preview_uri": { "type": ["string", "null"], "pattern": "^(file|s3|r2|gs|azure|https?)://[^\\s?#]+$" }

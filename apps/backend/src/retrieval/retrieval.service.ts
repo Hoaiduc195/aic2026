@@ -214,6 +214,7 @@ export class RetrievalService {
               ...current,
               rank: Math.min(current.rank, candidate.rank),
               raw_score: Math.max(current.raw_score, candidate.raw_score),
+              keyframe_no: current.keyframe_no ?? candidate.keyframe_no,
               evidence_ids: [...new Set([...current.evidence_ids, ...candidate.evidence_ids])],
               matched_terms: [...new Set([...(current.matched_terms ?? []), ...(candidate.matched_terms ?? [])])],
             }

@@ -76,6 +76,7 @@ export function fuseBranchResults(
   const fused = new Map<string, {
     video_id: string;
     video_object_key?: string | null;
+    keyframe_no?: number | null;
     original_frame_id?: number | null;
     start_ms: number;
     end_ms: number;
@@ -97,6 +98,7 @@ export function fuseBranchResults(
       const current = fused.get(key) ?? {
         video_id: candidate.video_id,
         video_object_key: candidate.video_object_key,
+        keyframe_no: candidate.keyframe_no,
         original_frame_id: candidate.original_frame_id,
         start_ms: candidate.start_ms ?? 0,
         end_ms: Math.max(candidate.end_ms ?? 1, (candidate.start_ms ?? 0) + 1),
@@ -107,6 +109,7 @@ export function fuseBranchResults(
         fusion_trace: [],
       };
       current.video_object_key ??= candidate.video_object_key;
+      current.keyframe_no ??= candidate.keyframe_no;
       current.original_frame_id ??= candidate.original_frame_id;
       current.score += contribution;
       current.start_ms = Math.min(current.start_ms, candidate.start_ms ?? current.start_ms);
