@@ -180,3 +180,30 @@ OpenAI-compatible VQA LLM request receives the selected keyframe image.
 If the backend cannot download the signed object, the system keeps the existing
 degraded text-only fallback. In the normal R2-configured path, the LLM receives
 the image bytes inline and no longer needs outbound access to R2.
+
+## Image-first VQA prompting (2026-08-18)
+
+### RED
+
+- Added assertions requiring both text LLM and VLM system prompts to identify
+  the image as the primary source.
+- Added assertions requiring text evidence to be described as supporting
+  context/reference and prohibited from overriding clear visual observations.
+- The targeted prompt tests failed before the production prompt changes.
+
+### GREEN
+
+- Text LLM and VLM prompts now prioritize direct visual inspection of the
+  selected keyframe.
+- Caption, OCR, object, and ASR evidence is treated as potentially incomplete,
+  noisy, stale, or incorrect supporting context.
+- The models may use evidence to add context or disambiguate, but must not let
+  it override a clear observation from the image.
+
+### Verification
+
+- RED: `pnpm --dir apps/backend test -- tests/vqa-answer.test.ts tests/vlm-vision.test.ts` — 2 intended failures.
+- GREEN: the same targeted command — 16/16 tests passed.
+- Full backend suite: 92/92 tests passed across 26 files.
+- Backend coverage: 87.55% statements/lines, 95.85% functions, 77.18% branches.
+- Backend typecheck and production build passed.
