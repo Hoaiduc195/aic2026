@@ -55,3 +55,24 @@ LLM_TEMPERATURE=0
 `LLM_BASE_URL` and `LLM_MODEL` must be configured together. If they are absent, the endpoint remains available but returns a configuration error rather than inventing an answer.
 
 The frontend settings are stored under `aic.llm.settings` in `localStorage`, except for `LLM_API_KEY`. The key is retained only in React memory for the current browser tab and is sent only when the reviewer enables the custom configuration. The BFF and backend validate endpoint and generation limits before forwarding the request.
+
+## Streaming gateway regression fix (2026-08-18)
+
+### RED
+
+- Added a regression assertion that OpenAI-compatible requests must disable streaming and request a JSON object.
+- Added a VQA prompt contract assertion requiring every response field.
+- `pnpm --dir apps/backend test -- tests/model-ports.test.ts tests/vqa-answer.test.ts` failed with 2 expected failures before the production change.
+
+### GREEN
+
+- The adapter now sends `stream: false` and `response_format: { type: 'json_object' }`.
+- The VQA system prompt explicitly requires `answer_status`, `answer`, `normalized_answer`, and `confidence`.
+
+### Verification
+
+- Targeted regression tests: 12/12 passed.
+- Full backend suite: 79/79 tests passed across 24 files.
+- Backend typecheck and production build passed.
+- Backend coverage: 88.53% statements, 88.53% lines, 95.93% functions, 77.18% branches.
+- Local browser flow with frontend LLM settings returned HTTP 201 and `answer_status: "answered"` with a generated answer in the selected-frame answer field.
