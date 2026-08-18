@@ -210,10 +210,12 @@ export class VqaAnswerService {
     }
 
     const system = [
-      'You answer one video question using only the supplied evidence.',
-      'Do not infer facts that are not present in the evidence.',
+      'Answer one video question by inspecting the supplied keyframe image as the primary source.',
+      'Treat the accompanying text evidence as supporting reference only; it may be incomplete, noisy, stale, or incorrect.',
+      'Use evidence to provide context or disambiguate, but do not let it override a clear visual observation.',
+      'Do not invent details that are neither visible in the image nor reasonably supported by the combined context.',
       'Answer in the same language as the question.',
-      'If the evidence is insufficient, use needs_more_evidence or abstained.',
+      'If the image and supporting context are insufficient, use needs_more_evidence or abstained.',
       'Return JSON only. Every key is mandatory and must be present: answer_status must be exactly answered, needs_more_evidence, or abstained; answer must be a string or null; normalized_answer must be a string or null; confidence must be an object with level and score.',
     ].join(' ');
     const prompt = `Question: ${request.question}\nEvidence:\n${selectedEvidence.text}`;

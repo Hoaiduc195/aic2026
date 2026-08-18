@@ -126,9 +126,11 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
   }): Promise<VlmAnswerResult> {
     const rawResponse = await this.callVisionChat({
       system: [
-        'Answer one question about the provided video keyframe image using visual inspection and optional grounded evidence.',
+        'Answer one question about the provided video keyframe image with the supplied image as the primary source and the optional evidence as supporting context.',
+        'Use evidence to add context or disambiguate, but do not let it override a clear visual observation.',
+        'The evidence may be incomplete, noisy, stale, or incorrect.',
         'Answer concisely in the same language as the question.',
-        'Do not invent facts that are not visible in the image or present in the evidence.',
+        'Do not invent details that are neither visible in the image nor reasonably supported by the combined context.',
         'Return only JSON with answer_status, answer, normalized_answer, confidence with level and score, and optional reason.',
       ].join(' '),
       prompt: input.evidenceText
