@@ -110,6 +110,43 @@ describe('VQA answer grounding', () => {
     expect(new Headers(init?.headers).get('authorization')).toBe('Bearer request-secret');
   });
 
+  it('passes the signed selected-frame thumbnail to the configured LLM', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({
+        answer_status: 'answered', answer: 'a bottle', normalized_answer: 'a bottle',
+        confidence: { level: 'high', score: 0.8 },
+      }) } }],
+    }), { status: 200 })));
+    const storage = {
+      isConfigured: true,
+      signReadUrl: vi.fn(async (key: string) => `https://signed.test/${key}`),
+      health: vi.fn(async () => true),
+    };
+    const service = new VqaAnswerService(
+      { find: vi.fn(async () => context()) },
+      new UnavailableLanguageModel(),
+      undefined,
+      storage,
+    );
+
+    await expect(service.answer({
+      ...input,
+      llm: {
+        base_url: 'https://custom-llm.test/v1', model: 'custom-v1',
+        timeout_ms: 2_000, max_tokens: 64, temperature: 0.2,
+      },
+    })).resolves.toMatchObject({ answer_status: 'answered', model_version: 'custom-v1' });
+
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)) as {
+      messages: Array<{ content: unknown }>;
+    };
+    expect(storage.signReadUrl).toHaveBeenCalledWith('keyframes/video-1/42.jpg');
+    expect(body.messages[1].content).toEqual(expect.arrayContaining([
+      { type: 'text', text: expect.stringContaining('Question: Người phụ nữ đang cầm vật gì?') },
+      { type: 'image_url', image_url: { url: 'https://signed.test/keyframes/video-1/42.jpg' } },
+    ]));
+  });
+
   it('uses the signed keyframe thumbnail for multimodal VQA before text fallback', async () => {
     const vlm: VisionLanguageModel = {
       isConfigured: true,

@@ -67,4 +67,25 @@ describe('query embedding providers', () => {
     await expect(new UnavailableLanguageModel().complete({ system: 's', prompt: 'p' }))
       .rejects.toThrow('not configured');
   });
+
+  it('sends a signed keyframe as an image content block when provided', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: '{"answer_status":"answered"}' } }],
+    }), { status: 200 })));
+    const provider = new OpenAICompatibleLanguageModel({ baseUrl: 'https://llm.test/v1', model: 'aic-qa' });
+
+    await provider.complete({
+      system: 'system prompt',
+      prompt: 'Question: What is visible?',
+      imageUrl: 'https://signed.test/keyframes/video-1/42.jpg',
+    });
+
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)) as {
+      messages: Array<{ content: unknown }>;
+    };
+    expect(body.messages[1].content).toEqual([
+      { type: 'text', text: 'Question: What is visible?' },
+      { type: 'image_url', image_url: { url: 'https://signed.test/keyframes/video-1/42.jpg' } },
+    ]);
+  });
 });
