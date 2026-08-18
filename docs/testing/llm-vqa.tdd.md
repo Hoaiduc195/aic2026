@@ -31,9 +31,9 @@ Implemented:
 - Frontend “Cài đặt” panel for enable/disable, endpoint, model, timeout, max tokens, temperature, and API key.
 - Per-request LLM configuration when enabled; otherwise the backend `.env` configuration is used.
 - Per-request LLM configuration is always accepted after request validation.
-- The selected keyframe is signed once through object storage and is sent to the
-  OpenAI-compatible LLM as an `image_url` content block whenever the LLM path is
-  used and storage signing is available.
+- The selected keyframe is signed once through object storage, downloaded by the
+  backend, and sent to the OpenAI-compatible LLM as a `data:` image URL whenever
+  the LLM path is used and storage is available.
 
 ## Verification
 
@@ -148,3 +148,35 @@ If object storage is not configured or signing fails, no image URL can be
 created; the existing text-only compatibility fallback remains available for
 that degraded setup. With R2/object storage configured, every actual
 OpenAI-compatible VQA LLM request receives the selected keyframe image.
+
+## Backend-inline image payload (2026-08-18)
+
+### RED
+
+- Added tests requiring the backend to download the signed keyframe, enforce
+  image response limits/types, and produce a `data:image/...;base64,...` URL.
+- Updated LLM and VLM VQA tests to reject forwarding the R2 URL directly.
+- The targeted run failed because the loader was missing and the model paths
+  still forwarded the signed URL.
+
+### GREEN
+
+- Added `fetchImageAsDataUrl` with HTTP(S)-only validation, redirect blocking,
+  a 5 MB response limit, supported image MIME/magic-byte checks, timeout, and
+  base64 conversion.
+- `VqaAnswerService` now downloads the signed thumbnail once and reuses the
+  resulting data URL for both VLM and text LLM requests.
+- The LLM contract now names the internal payload `imageDataUrl`, making it
+  explicit that the provider does not need to fetch R2.
+
+### Verification
+
+- RED: `pnpm --dir apps/backend test -- tests/image-data-url.test.ts tests/model-ports.test.ts tests/vqa-answer.test.ts` — intended failures.
+- GREEN: the same targeted command — 19/19 tests passed.
+- Full backend suite: 92/92 tests passed across 26 files.
+- Backend coverage: 87.53% statements/lines, 95.85% functions, 77.18% branches.
+- Backend typecheck and production build passed.
+
+If the backend cannot download the signed object, the system keeps the existing
+degraded text-only fallback. In the normal R2-configured path, the LLM receives
+the image bytes inline and no longer needs outbound access to R2.
