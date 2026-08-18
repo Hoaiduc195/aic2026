@@ -68,6 +68,9 @@ describe('OpenAI-compatible vision model', () => {
     expect(new Headers(init?.headers).get('authorization')).toBe('Bearer request-secret');
     const body = JSON.parse(String(init?.body)) as { messages: Array<{ role: string; content: unknown }> };
     expect(body.messages[1]).toMatchObject({ role: 'user' });
+    expect(body.messages[0].content).toContain('primary source');
+    expect(body.messages[0].content).toContain('supporting context');
+    expect(body.messages[0].content).toContain('do not let it override');
     expect(body.messages[1].content).toEqual([
       expect.objectContaining({ type: 'text' }),
       { type: 'image_url', image_url: { url: 'https://signed.test/frame.jpg' } },
