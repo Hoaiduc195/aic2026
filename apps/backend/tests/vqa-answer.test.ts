@@ -110,13 +110,16 @@ describe('VQA answer grounding', () => {
     expect(new Headers(init?.headers).get('authorization')).toBe('Bearer request-secret');
   });
 
-  it('passes the signed selected-frame thumbnail to the configured LLM', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
-      choices: [{ message: { content: JSON.stringify({
-        answer_status: 'answered', answer: 'a bottle', normalized_answer: 'a bottle',
-        confidence: { level: 'high', score: 0.8 },
-      }) } }],
-    }), { status: 200 })));
+  it('downloads the selected-frame thumbnail before passing it to the configured LLM', async () => {
+    const imageBytes = Uint8Array.from([0xff, 0xd8, 0xff, 0xd9]);
+    vi.stubGlobal('fetch', vi.fn(async (input: unknown) => String(input) === 'https://signed.test/keyframes/video-1/42.jpg'
+      ? new Response(imageBytes, { status: 200, headers: { 'content-type': 'image/jpeg' } })
+      : new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({
+          answer_status: 'answered', answer: 'a bottle', normalized_answer: 'a bottle',
+          confidence: { level: 'high', score: 0.8 },
+        }) } }],
+      }), { status: 200 })));
     const storage = {
       isConfigured: true,
       signReadUrl: vi.fn(async (key: string) => `https://signed.test/${key}`),
@@ -137,17 +140,22 @@ describe('VQA answer grounding', () => {
       },
     })).resolves.toMatchObject({ answer_status: 'answered', model_version: 'custom-v1' });
 
-    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)) as {
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body)) as {
       messages: Array<{ content: unknown }>;
     };
     expect(storage.signReadUrl).toHaveBeenCalledWith('keyframes/video-1/42.jpg');
+    expect(vi.mocked(fetch).mock.calls[0][0]).toBe('https://signed.test/keyframes/video-1/42.jpg');
     expect(body.messages[1].content).toEqual(expect.arrayContaining([
       { type: 'text', text: expect.stringContaining('Question: Người phụ nữ đang cầm vật gì?') },
-      { type: 'image_url', image_url: { url: 'https://signed.test/keyframes/video-1/42.jpg' } },
+      { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,/9j/2Q==' } },
     ]));
   });
 
   it('uses the signed keyframe thumbnail for multimodal VQA before text fallback', async () => {
+    const imageBytes = Uint8Array.from([0xff, 0xd8, 0xff, 0xd9]);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(imageBytes, {
+      status: 200, headers: { 'content-type': 'image/jpeg' },
+    })));
     const vlm: VisionLanguageModel = {
       isConfigured: true,
       modelName: 'vision-v1',
@@ -169,17 +177,20 @@ describe('VQA answer grounding', () => {
     });
     expect(storage.signReadUrl).toHaveBeenCalledWith('keyframes/video-1/42.jpg');
     expect(vlm.answerVisualQuestion).toHaveBeenCalledWith(expect.objectContaining({
-      imageUrl: 'https://signed.test/keyframes/video-1/42.jpg',
+      imageUrl: 'data:image/jpeg;base64,/9j/2Q==',
     }));
   });
 
   it('uses the request VLM config when the injected VLM is unavailable', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
-      choices: [{ message: { content: JSON.stringify({
-        answer_status: 'answered', answer: 'a bottle', normalized_answer: 'a bottle',
-        confidence: { level: 'high', score: 0.8 },
-      }) } }],
-    }), { status: 200 })));
+    const imageBytes = Uint8Array.from([0xff, 0xd8, 0xff, 0xd9]);
+    vi.stubGlobal('fetch', vi.fn(async (input: unknown) => String(input) === 'https://signed.test/frame.jpg'
+      ? new Response(imageBytes, { status: 200, headers: { 'content-type': 'image/jpeg' } })
+      : new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({
+          answer_status: 'answered', answer: 'a bottle', normalized_answer: 'a bottle',
+          confidence: { level: 'high', score: 0.8 },
+        }) } }],
+      }), { status: 200 })));
     const service = new VqaAnswerService(
       { find: vi.fn(async () => context()) }, new UnavailableLanguageModel(), undefined,
       { isConfigured: true, signReadUrl: vi.fn(async () => 'https://signed.test/frame.jpg'), health: vi.fn(async () => true) },
@@ -192,9 +203,12 @@ describe('VQA answer grounding', () => {
         timeout_ms: 2_000, max_tokens: 256, temperature: 0,
       },
     })).resolves.toMatchObject({ answer_status: 'answered', producer: 'vlm-vision-openai-compatible' });
-    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)) as { messages: Array<{ content: unknown }> };
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body)) as { messages: Array<{ content: unknown }> };
     expect(body.messages[1].content).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'image_url' }),
+    ]));
+    expect(body.messages[1].content).toEqual(expect.arrayContaining([
+      { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,/9j/2Q==' } },
     ]));
   });
 

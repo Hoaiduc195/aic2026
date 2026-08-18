@@ -68,7 +68,7 @@ describe('query embedding providers', () => {
       .rejects.toThrow('not configured');
   });
 
-  it('sends a signed keyframe as an image content block when provided', async () => {
+  it('sends a downloaded keyframe data URL as an image content block', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
       choices: [{ message: { content: '{"answer_status":"answered"}' } }],
     }), { status: 200 })));
@@ -77,7 +77,7 @@ describe('query embedding providers', () => {
     await provider.complete({
       system: 'system prompt',
       prompt: 'Question: What is visible?',
-      imageUrl: 'https://signed.test/keyframes/video-1/42.jpg',
+      imageDataUrl: 'data:image/jpeg;base64,/9j/2Q==',
     });
 
     const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)) as {
@@ -85,7 +85,7 @@ describe('query embedding providers', () => {
     };
     expect(body.messages[1].content).toEqual([
       { type: 'text', text: 'Question: What is visible?' },
-      { type: 'image_url', image_url: { url: 'https://signed.test/keyframes/video-1/42.jpg' } },
+      { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,/9j/2Q==' } },
     ]);
   });
 });
