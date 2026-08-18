@@ -56,6 +56,13 @@ export interface SearchRetrievalConfig {
   fusion_k: number;
   rrf_k?: number;
   channel_weights?: Partial<Record<SearchRrfBranch, number>>;
+  vlm_rerank?: VlmRerankConfig;
+}
+
+export interface VlmRerankConfig {
+  enabled: boolean;
+  top_k: number;
+  weight: number;
 }
 
 export interface RetrievalCandidate {
@@ -137,9 +144,19 @@ export interface VqaAnswerRequest {
   video_id: string;
   original_frame_id: number;
   llm?: VqaLlmConfig;
+  vlm?: VqaVlmConfig;
 }
 
 export interface VqaLlmConfig {
+  base_url: string;
+  api_key?: string;
+  model: string;
+  timeout_ms: number;
+  max_tokens: number;
+  temperature: number;
+}
+
+export interface VqaVlmConfig {
   base_url: string;
   api_key?: string;
   model: string;

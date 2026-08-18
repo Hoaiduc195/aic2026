@@ -531,6 +531,16 @@ describe('qualification frame-first workbench', () => {
     await user.clear(screen.getByLabelText('Temperature'));
     await user.type(screen.getByLabelText('Temperature'), '0.2');
     await user.click(screen.getByRole('button', { name: 'Lưu cài đặt LLM' }));
+    await user.click(screen.getByRole('button', { name: 'Cài đặt' }));
+    await user.click(screen.getByLabelText('Bật VLM cho VQA đa phương thức'));
+    await user.type(screen.getByLabelText('Endpoint VLM'), 'https://vision.test/v1');
+    await user.type(screen.getByLabelText('API key VLM'), 'vision-secret');
+    await user.type(screen.getByLabelText('Model VLM'), 'vision-v1');
+    await user.clear(screen.getByLabelText('Timeout VLM (ms)'));
+    await user.type(screen.getByLabelText('Timeout VLM (ms)'), '3000');
+    await user.clear(screen.getByLabelText('Max tokens VLM'));
+    await user.type(screen.getByLabelText('Max tokens VLM'), '256');
+    await user.click(screen.getByRole('button', { name: 'Lưu cài đặt VLM' }));
     await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
     await user.type(screen.getByLabelText('Câu hỏi'), 'Người phụ nữ đang cầm gì?');
     await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
@@ -542,6 +552,10 @@ describe('qualification frame-first workbench', () => {
       llm: {
         base_url: 'https://llm.test/v1', api_key: 'request-secret', model: 'custom-v1',
         timeout_ms: 2500, max_tokens: 64, temperature: 0.2,
+      },
+      vlm: {
+        base_url: 'https://vision.test/v1', api_key: 'vision-secret', model: 'vision-v1',
+        timeout_ms: 3000, max_tokens: 256, temperature: 0,
       },
     });
     expect(screen.getByRole('textbox', { name: 'Câu trả lời' })).toHaveValue('Rẽ phải');

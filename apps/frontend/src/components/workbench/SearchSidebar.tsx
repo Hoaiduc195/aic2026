@@ -81,6 +81,7 @@ export function SearchSidebar({
   onRetrievalSave,
   onRetrievalReset,
 }: Props) {
+  const vlmRerank = retrievalSettings.vlm_rerank ?? { enabled: false, top_k: 15, weight: 0.6 };
   const hasQuery = task === 'trake'
     ? events.length > 0 && events.every((item) => item.description.trim())
     : description.trim() && (task !== 'qa' || question.trim());
@@ -292,9 +293,56 @@ export function SearchSidebar({
           </label>
         </div>
 
+        <label className="settings-toggle">
+          <input
+            type="checkbox"
+            checked={vlmRerank.enabled}
+            onChange={(event) => onRetrievalChange({
+              ...retrievalSettings,
+              vlm_rerank: { ...vlmRerank, enabled: event.target.checked },
+            })}
+          />
+          <span>Bật VLM rerank top-k</span>
+        </label>
+        <div className="retrieval-settings-grid">
+          <label htmlFor="retrieval-vlm-top-k">
+            <span>VLM top-k</span>
+            <input
+              id="retrieval-vlm-top-k"
+              aria-label="VLM top-k"
+              type="number"
+              min="1"
+              max="100"
+              step="1"
+              value={displayNumberInput(vlmRerank.top_k)}
+              onChange={(event) => onRetrievalChange({
+                ...retrievalSettings,
+                vlm_rerank: { ...vlmRerank, top_k: parseNumberInput(event.target.value) },
+              })}
+            />
+          </label>
+          <label htmlFor="retrieval-vlm-weight">
+            <span>VLM weight</span>
+            <input
+              id="retrieval-vlm-weight"
+              aria-label="VLM weight"
+              type="number"
+              min="0"
+              max="1"
+              step="0.05"
+              inputMode="decimal"
+              value={displayNumberInput(vlmRerank.weight)}
+              onChange={(event) => onRetrievalChange({
+                ...retrievalSettings,
+                vlm_rerank: { ...vlmRerank, weight: parseNumberInput(event.target.value) },
+              })}
+            />
+          </label>
+        </div>
+
         {retrievalError && <p className="settings-error" role="alert">{retrievalError}</p>}
         <p className="sidebar-help">
-          Số frame là kết quả cuối cùng; candidate và fusion pool lớn hơn giúp RRF có thêm dữ liệu nhưng có thể chậm hơn.
+          Số frame là kết quả cuối cùng; VLM rerank gửi ảnh của top-k lên model nên chỉ bật khi backend đã cấu hình VLM.
         </p>
         <div className="sidebar-panel-actions">
           <button type="button" className="secondary-button" onClick={onRetrievalReset}>Khôi phục truy hồi mặc định</button>

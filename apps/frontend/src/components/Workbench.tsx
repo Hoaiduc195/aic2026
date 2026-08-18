@@ -31,6 +31,14 @@ import {
   type LlmSettings,
 } from '../lib/llm-settings';
 import {
+  DEFAULT_VLM_SETTINGS,
+  buildVqaVlmConfig,
+  loadVlmSettings,
+  saveVlmSettings,
+  validateVlmSettings,
+  type VlmSettings,
+} from '../lib/vlm-settings';
+import {
   buildSearchEmbeddingConfig,
   DEFAULT_EMBEDDING_SETTINGS,
   loadEmbeddingSettings,
@@ -114,6 +122,8 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [llmSettings, setLlmSettings] = useState<LlmSettings>(DEFAULT_LLM_SETTINGS);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [vlmSettings, setVlmSettings] = useState<VlmSettings>(DEFAULT_VLM_SETTINGS);
+  const [vlmError, setVlmError] = useState<string | null>(null);
   const [embeddingSettings, setEmbeddingSettings] = useState<EmbeddingSettings>(DEFAULT_EMBEDDING_SETTINGS);
   const [embeddingError, setEmbeddingError] = useState<string | null>(null);
   const [retrievalSettings, setRetrievalSettings] = useState<RetrievalSettings>(DEFAULT_RETRIEVAL_SETTINGS);
@@ -148,6 +158,7 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
 
   useEffect(() => {
     setLlmSettings(loadLlmSettings());
+    setVlmSettings(loadVlmSettings());
     setEmbeddingSettings(loadEmbeddingSettings());
     setRetrievalSettings(loadRetrievalSettings());
     setRrfSettings(loadRrfSettings());
@@ -347,12 +358,14 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
     setNotice(null);
     try {
       const llm = buildVqaLlmConfig(llmSettings);
+      const vlm = buildVqaVlmConfig(vlmSettings);
       const suggestion = await vqaAnswerMutation.mutateAsync({
         query_id: response.query_id,
         question: question.trim(),
         video_id: activeFrame.video_id,
         original_frame_id: activeFrame.original_frame_id,
         ...(llm ? { llm } : {}),
+        ...(vlm ? { vlm } : {}),
       });
       if (suggestion.answer_status === 'answered' && suggestion.answer?.trim()) {
         setQaAnswer(suggestion.answer.trim());
@@ -383,6 +396,24 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
     setLlmSettings({ ...DEFAULT_LLM_SETTINGS });
     saveLlmSettings(DEFAULT_LLM_SETTINGS);
     setSettingsError(null);
+  }
+
+  function saveVlmSettingsForSession() {
+    const validationError = validateVlmSettings(vlmSettings);
+    if (validationError) {
+      setVlmError(validationError);
+      return;
+    }
+    saveVlmSettings(vlmSettings);
+    setVlmError(null);
+    setSettingsOpen(false);
+    setNotice(vlmSettings.enabled ? 'Đã lưu cấu hình VLM cho MoreVQA.' : 'Đã tắt cấu hình VLM cho MoreVQA.');
+  }
+
+  function resetVlmSettings() {
+    setVlmSettings({ ...DEFAULT_VLM_SETTINGS });
+    saveVlmSettings(DEFAULT_VLM_SETTINGS);
+    setVlmError(null);
   }
 
   function saveEmbeddingSettingsForSession() {
@@ -479,6 +510,7 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
             aria-controls="llm-settings"
             onClick={() => {
               setSettingsError(null);
+              setVlmError(null);
               setEmbeddingError(null);
               setRetrievalError(null);
               setRrfError(null);
@@ -496,6 +528,11 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
             onChange={setLlmSettings}
             onSave={saveSettings}
             onReset={resetSettings}
+            vlmSettings={vlmSettings}
+            vlmError={vlmError}
+            onVlmChange={setVlmSettings}
+            onVlmSave={saveVlmSettingsForSession}
+            onVlmReset={resetVlmSettings}
             embeddingSettings={embeddingSettings}
             embeddingError={embeddingError}
             onEmbeddingChange={setEmbeddingSettings}

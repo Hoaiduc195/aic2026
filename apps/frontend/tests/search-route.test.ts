@@ -138,6 +138,7 @@ describe('search proxy route', () => {
           fusion_k: 600,
           rrf_k: 30,
           channel_weights: { clip: 1.4, object: 0.5 },
+          vlm_rerank: { enabled: true, top_k: 10, weight: 0.7 },
         },
       }),
     });
@@ -152,6 +153,7 @@ describe('search proxy route', () => {
         fusion_k: 600,
         rrf_k: 30,
         channel_weights: { clip: 1.4, object: 0.5 },
+        vlm_rerank: { enabled: true, top_k: 10, weight: 0.7 },
       },
     });
   });

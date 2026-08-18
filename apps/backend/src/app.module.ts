@@ -6,15 +6,16 @@ import { loadConfig } from './common/config';
 import {
   APP_CONFIG, DATABASE, EMBEDDING_SERVICE, EVIDENCE_REPOSITORY, LANGUAGE_MODEL, MEDIA_REPOSITORY,
   OBJECT_STORAGE, RETRIEVAL_BRANCHES, QUERY_EMBEDDER, RETRIEVAL_STORE, TASK_EXECUTOR_REGISTRY,
-  VQA_GROUNDING_REPOSITORY,
+  VISION_LANGUAGE_MODEL, VLM_RERANKER, VQA_GROUNDING_REPOSITORY,
 } from './common/tokens';
 import {
   HttpQueryEmbeddingProvider,
   OpenAICompatibleLanguageModel,
-  type QueryEmbeddingProvider,
   UnavailableLanguageModel,
+  type QueryEmbeddingProvider,
   UnavailableQueryEmbeddingProvider,
 } from './compute/model-ports';
+import { OpenAICompatibleVisionClient, UnavailableVisionLanguageModel } from './compute/vlm-vision.client';
 import type { DatabaseClient } from './database/database.client';
 import { PostgresDatabase } from './database/postgres.database';
 import { EmbeddingService } from './embedding_services/embedding.service';
@@ -28,6 +29,7 @@ import { UnavailableRetrievalBranch, type RetrievalBranch } from './retrieval/br
 import { PostgresObjectBranch, PostgresTextBranch } from './retrieval/postgres-branches';
 import { PostgresClipBranch } from './retrieval/postgres-clip.branch';
 import { RetrievalService } from './retrieval/retrieval.service';
+import { VlmRerankerService } from './retrieval/vlm-reranker.service';
 import { PostgresRetrievalStore, UnavailableRetrievalStore } from './retrieval/retrieval.store';
 import { EmptyEvidenceRepository, PostgresEvidenceRepository } from './retrieval/evidence.repository';
 import { SearchController } from './search/search.controller';
@@ -118,6 +120,20 @@ function createTaskRegistry(config: ReturnType<typeof loadConfig>): TaskExecutor
         : new UnavailableLanguageModel(),
       inject: [APP_CONFIG],
     },
+    {
+      provide: VISION_LANGUAGE_MODEL,
+      useFactory: (config: ReturnType<typeof loadConfig>) => config.vlmEnabled && config.vlmBaseUrl && config.vlmModel
+        ? new OpenAICompatibleVisionClient({
+          baseUrl: config.vlmBaseUrl,
+          model: config.vlmModel,
+          apiKey: config.vlmApiKey,
+          timeoutMs: config.vlmTimeoutMs,
+          maxTokens: config.llmMaxTokens,
+          temperature: config.llmTemperature,
+        })
+        : new UnavailableVisionLanguageModel(),
+      inject: [APP_CONFIG],
+    },
     { provide: RETRIEVAL_BRANCHES, useFactory: createBranches, inject: [DATABASE, QUERY_EMBEDDER] },
     {
       provide: OBJECT_STORAGE,
@@ -160,6 +176,13 @@ function createTaskRegistry(config: ReturnType<typeof loadConfig>): TaskExecutor
         ? new PostgresVqaGroundingRepository(database)
         : new UnavailableVqaGroundingRepository(),
       inject: [DATABASE],
+    },
+    {
+      provide: VLM_RERANKER,
+      useFactory: (config: ReturnType<typeof loadConfig>, vlm: OpenAICompatibleVisionClient | UnavailableVisionLanguageModel) => (
+        new VlmRerankerService(config, vlm)
+      ),
+      inject: [APP_CONFIG, VISION_LANGUAGE_MODEL],
     },
     {
       provide: TASK_EXECUTOR_REGISTRY,

@@ -4,10 +4,6 @@ export interface QueryEmbeddingProvider {
   embedText(query: string): Promise<readonly number[]>;
 }
 
-export interface VisionLanguageModel {
-  answer(input: { readonly question: string; readonly imageUrls: readonly string[] }): Promise<{ answer: string; confidence?: number }>;
-}
-
 export interface LanguageModel {
   readonly isConfigured: boolean;
   readonly modelName: string;

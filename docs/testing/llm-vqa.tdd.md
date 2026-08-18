@@ -76,3 +76,36 @@ The frontend settings are stored under `aic.llm.settings` in `localStorage`, exc
 - Backend typecheck and production build passed.
 - Backend coverage: 88.53% statements, 88.53% lines, 95.93% functions, 77.18% branches.
 - Local browser flow with frontend LLM settings returned HTTP 201 and `answer_status: "answered"` with a generated answer in the selected-frame answer field.
+
+## MoreVQA multimodal pipeline (2026-08-18)
+
+### RED
+
+- Added failing tests for the OpenAI-compatible VLM payload containing text plus
+  `image_url`.
+- Added tests requiring the VQA grounding query to return
+  `thumbnail_object_key`, and requiring the service to sign that key before
+  calling the VLM.
+- Added tests for VLM-first answering, fallback to text LLM, bounded top-k VLM
+  reranking, `vlm_rerank` trace fields, and frontend VLM settings that never
+  persist the API key.
+
+### GREEN
+
+- Added `OpenAICompatibleVisionClient` and an unavailable no-op implementation.
+- Restored MoreVQA in `VqaAnswerService`: signed R2 thumbnail → multimodal VLM
+  answer → safe text-LLM fallback.
+- Added optional `VlmRerankerService`, controlled by `VLM_*` environment values
+  or the frontend retrieval sidebar, with per-candidate failure isolation.
+- Added VLM configuration to the frontend settings modal and forwards it through
+  the BFF; the VLM API key is memory-only like the text LLM key.
+- Extended the search response schema for `vlm_rerank` traces and the existing
+  `frames.thumbnail_object_key` schema was reused, so no database migration is
+  required.
+
+### Verification
+
+- Backend: 87 tests passed across 25 files; coverage 87.63% statements/lines,
+  95.76% functions, 77.79% branches.
+- Frontend: 83 tests passed across 19 files.
+- Backend/frontend typecheck and production builds passed; frontend lint passed.

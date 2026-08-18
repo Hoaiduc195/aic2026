@@ -6,6 +6,7 @@ export interface VqaAnswerRequest {
   readonly video_id: string;
   readonly original_frame_id: number;
   readonly llm?: VqaClientLlmConfig;
+  readonly vlm?: VqaClientVlmConfig;
 }
 
 export interface VqaClientLlmConfig {
@@ -16,6 +17,8 @@ export interface VqaClientLlmConfig {
   readonly max_tokens: number;
   readonly temperature: number;
 }
+
+export type VqaClientVlmConfig = VqaClientLlmConfig;
 
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/;
 
@@ -49,9 +52,9 @@ function boundedInteger(value: unknown, field: string, minimum: number, maximum:
   return value as number;
 }
 
-function llmUrl(value: unknown): string {
+function modelUrl(value: unknown, prefix: string): string {
   if (typeof value !== 'string' || value.trim().length < 1 || value.trim().length > 2000) {
-    throw new BadRequestException('llm.base_url must be a valid HTTP(S) URL');
+    throw new BadRequestException(`${prefix}.base_url must be a valid HTTP(S) URL`);
   }
   const normalized = value.trim();
   try {
@@ -60,32 +63,32 @@ function llmUrl(value: unknown): string {
       throw new Error('unsafe URL');
     }
   } catch {
-    throw new BadRequestException('llm.base_url must be a valid HTTP(S) URL');
+    throw new BadRequestException(`${prefix}.base_url must be a valid HTTP(S) URL`);
   }
   return normalized.replace(/\/+$/, '');
 }
 
-function llm(value: unknown): VqaClientLlmConfig {
+function modelConfig(value: unknown, prefix: string): VqaClientLlmConfig {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new BadRequestException('llm must be an object');
+    throw new BadRequestException(`${prefix} must be an object`);
   }
   const body = value as Record<string, unknown>;
-  const baseUrl = llmUrl(body.base_url);
+  const baseUrl = modelUrl(body.base_url, prefix);
   if (typeof body.model !== 'string' || !body.model.trim() || body.model.trim().length > 200) {
-    throw new BadRequestException('llm.model must be 1 to 200 characters');
+    throw new BadRequestException(`${prefix}.model must be 1 to 200 characters`);
   }
   if (body.api_key !== undefined && (typeof body.api_key !== 'string' || body.api_key.trim().length > 1000)) {
-    throw new BadRequestException('llm.api_key must be at most 1000 characters');
+    throw new BadRequestException(`${prefix}.api_key must be at most 1000 characters`);
   }
   if (typeof body.temperature !== 'number' || !Number.isFinite(body.temperature) || body.temperature < 0 || body.temperature > 2) {
-    throw new BadRequestException('llm.temperature must be a number between 0 and 2');
+    throw new BadRequestException(`${prefix}.temperature must be a number between 0 and 2`);
   }
   return {
     base_url: baseUrl,
     ...(typeof body.api_key === 'string' && body.api_key.trim() ? { api_key: body.api_key.trim() } : {}),
     model: body.model.trim(),
-    timeout_ms: boundedInteger(body.timeout_ms, 'llm.timeout_ms', 100, 120_000),
-    max_tokens: boundedInteger(body.max_tokens, 'llm.max_tokens', 1, 4_096),
+    timeout_ms: boundedInteger(body.timeout_ms, `${prefix}.timeout_ms`, 100, 120_000),
+    max_tokens: boundedInteger(body.max_tokens, `${prefix}.max_tokens`, 1, 4_096),
     temperature: body.temperature,
   };
 }
@@ -100,6 +103,7 @@ export function parseVqaAnswerRequest(value: unknown): VqaAnswerRequest {
     question: question(body.question),
     video_id: identifier(body.video_id, 'video_id'),
     original_frame_id: frameId(body.original_frame_id),
-    ...(body.llm === undefined ? {} : { llm: llm(body.llm) }),
+    ...(body.llm === undefined ? {} : { llm: modelConfig(body.llm, 'llm') }),
+    ...(body.vlm === undefined ? {} : { vlm: modelConfig(body.vlm, 'vlm') }),
   };
 }

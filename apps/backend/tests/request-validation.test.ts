@@ -57,6 +57,19 @@ describe('parseSearchRequest', () => {
     });
   });
 
+  it('accepts bounded VLM rerank overrides and rejects unsafe values', () => {
+    expect(parseSearchRequest({
+      query: 'a person with a bottle',
+      task: 'textual_kis',
+      retrieval: { vlm_rerank: { enabled: true, top_k: 10, weight: 0.7 } },
+    })).toMatchObject({
+      retrieval: { vlm_rerank: { enabled: true, top_k: 10, weight: 0.7 } },
+    });
+    expect(() => parseSearchRequest({
+      query: 'query', task: 'textual_kis', retrieval: { vlm_rerank: { enabled: true, top_k: 0 } },
+    })).toThrow('retrieval.vlm_rerank.top_k');
+  });
+
   it('rejects unsafe or unbounded embedding overrides', () => {
     expect(() => parseSearchRequest({
       query: 'query',

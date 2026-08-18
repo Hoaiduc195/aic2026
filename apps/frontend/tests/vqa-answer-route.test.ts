@@ -30,6 +30,10 @@ describe('VQA answer proxy route', () => {
           base_url: 'https://llm.test/v1', api_key: 'request-secret', model: 'custom-v1',
           timeout_ms: 2500, max_tokens: 64, temperature: 0.2,
         },
+        vlm: {
+          base_url: 'https://vision.test/v1', api_key: 'vision-secret', model: 'vision-v1',
+          timeout_ms: 3000, max_tokens: 256, temperature: 0,
+        },
       }),
     }));
 
@@ -37,6 +41,7 @@ describe('VQA answer proxy route', () => {
     expect(fetchMock).toHaveBeenCalledWith('http://backend.internal/v1/vqa/answer', expect.objectContaining({ method: 'POST' }));
     const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body)) as Record<string, unknown>;
     expect(body.llm).toMatchObject({ base_url: 'https://llm.test/v1', model: 'custom-v1', max_tokens: 64 });
+    expect(body.vlm).toMatchObject({ base_url: 'https://vision.test/v1', model: 'vision-v1', max_tokens: 256 });
   });
 
   it('rejects malformed requests before contacting the backend', async () => {

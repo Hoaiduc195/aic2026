@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { DatabaseClient } from '../src/database/database.client';
 import { UnavailableLanguageModel, type LanguageModel } from '../src/compute/model-ports';
-import type { VisionLanguageModel } from '../src/compute/vlm-vision.client';
+import type { VisionLanguageModel, VlmAnswerResult } from '../src/compute/vlm-vision.client';
 import {
   parseVqaAnswerRequest,
   type VqaAnswerRequest,
@@ -115,7 +115,7 @@ describe('VQA answer grounding', () => {
       isConfigured: true,
       modelName: 'vision-v1',
       verifyImageRelevance: vi.fn(),
-      answerVisualQuestion: vi.fn(async () => ({
+      answerVisualQuestion: vi.fn(async (): Promise<VlmAnswerResult> => ({
         answer_status: 'answered', answer: 'a bottle', normalized_answer: 'a bottle',
         confidence: { level: 'high', score: 0.95 }, reason: 'visible in frame',
       })),
