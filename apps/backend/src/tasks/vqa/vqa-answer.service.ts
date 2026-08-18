@@ -144,7 +144,7 @@ export class VqaAnswerService {
       'Do not infer facts that are not present in the evidence.',
       'Answer in the same language as the question.',
       'If the evidence is insufficient, use needs_more_evidence or abstained.',
-      'Return JSON only: {"answer_status":"answered|needs_more_evidence|abstained","answer":string|null,"normalized_answer":string|null,"confidence":{"level":"low|medium|high","score":number}}.',
+      'Return JSON only. Every key is mandatory and must be present: answer_status must be exactly answered, needs_more_evidence, or abstained; answer must be a string or null; normalized_answer must be a string or null; confidence must be an object with level and score.',
     ].join(' ');
     const prompt = `Question: ${request.question}\nEvidence:\n${selectedEvidence.text}`;
 
