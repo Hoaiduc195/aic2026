@@ -46,6 +46,7 @@ describe('query embedding providers', () => {
       model: 'aic-qa',
       temperature: 0,
       max_tokens: 128,
+      stream: false,
       messages: [
         { role: 'system', content: 'system prompt' },
         { role: 'user', content: 'user prompt' },
