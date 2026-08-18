@@ -7,7 +7,11 @@ export interface QueryEmbeddingProvider {
 export interface LanguageModel {
   readonly isConfigured: boolean;
   readonly modelName: string;
-  complete(input: { readonly system: string; readonly prompt: string }): Promise<string>;
+  complete(input: {
+    readonly system: string;
+    readonly prompt: string;
+    readonly imageUrl?: string;
+  }): Promise<string>;
 }
 
 export interface TemporalAligner {
@@ -95,7 +99,12 @@ export class OpenAICompatibleLanguageModel implements LanguageModel {
     this.temperature = options.temperature ?? 0;
   }
 
-  async complete(input: { readonly system: string; readonly prompt: string }): Promise<string> {
+  async complete(input: {
+    readonly system: string;
+    readonly prompt: string;
+    readonly imageUrl?: string;
+  }): Promise<string> {
+    const imageUrl = input.imageUrl?.trim();
     const response = await fetch(this.endpoint, {
       method: 'POST',
       headers: {
@@ -106,7 +115,15 @@ export class OpenAICompatibleLanguageModel implements LanguageModel {
         model: this.modelName,
         messages: [
           { role: 'system', content: input.system },
-          { role: 'user', content: input.prompt },
+          {
+            role: 'user',
+            content: imageUrl
+              ? [
+                { type: 'text', text: input.prompt },
+                { type: 'image_url', image_url: { url: imageUrl } },
+              ]
+              : input.prompt,
+          },
         ],
         temperature: this.temperature,
         max_tokens: this.maxTokens,
@@ -127,7 +144,11 @@ export class UnavailableLanguageModel implements LanguageModel {
   readonly isConfigured = false;
   readonly modelName = 'unconfigured';
 
-  async complete(_input: { readonly system: string; readonly prompt: string }): Promise<string> {
+  async complete(_input: {
+    readonly system: string;
+    readonly prompt: string;
+    readonly imageUrl?: string;
+  }): Promise<string> {
     throw new Error('LLM answer service is not configured');
   }
 }

@@ -138,10 +138,17 @@ export class VqaAnswerService {
         temperature: request.vlm.temperature,
       })
       : this.vlm;
-    let visualResult: VlmAnswerResult | undefined;
-    if (visionModel?.isConfigured && context.thumbnail_object_key && this.storage?.isConfigured) {
+    let imageUrl: string | undefined;
+    if (context.thumbnail_object_key && this.storage?.isConfigured) {
       try {
-        const imageUrl = await this.storage.signReadUrl(context.thumbnail_object_key);
+        imageUrl = await this.storage.signReadUrl(context.thumbnail_object_key);
+      } catch {
+        imageUrl = undefined;
+      }
+    }
+    let visualResult: VlmAnswerResult | undefined;
+    if (visionModel?.isConfigured && imageUrl) {
+      try {
         visualResult = await visionModel.answerVisualQuestion({
           question: request.question,
           imageUrl,
@@ -211,7 +218,11 @@ export class VqaAnswerService {
 
     let output: string;
     try {
-      output = await languageModel.complete({ system, prompt });
+      output = await languageModel.complete({
+        system,
+        prompt,
+        ...(imageUrl ? { imageUrl } : {}),
+      });
     } catch {
       throw new BadGatewayException('LLM answer service failed');
     }
