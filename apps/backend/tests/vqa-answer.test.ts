@@ -64,6 +64,7 @@ describe('VQA answer grounding', () => {
       evidence_ids: ['caption-1', 'object-1'], model_version: 'aic-qa-v1',
     });
     expect(vi.mocked(languageModel.complete).mock.calls[0][0].system.toLowerCase()).toContain('only the supplied evidence');
+    expect(vi.mocked(languageModel.complete).mock.calls[0][0].system).toContain('Every key is mandatory');
     expect(vi.mocked(languageModel.complete).mock.calls[0][0].prompt).toContain('A woman is holding a bottle.');
     expect(vi.mocked(languageModel.complete).mock.calls[0][0].prompt).toContain('bottle');
   });

@@ -46,6 +46,7 @@ describe('query embedding providers', () => {
       model: 'aic-qa',
       temperature: 0,
       max_tokens: 128,
+      response_format: { type: 'json_object' },
       stream: false,
       messages: [
         { role: 'system', content: 'system prompt' },
