@@ -31,6 +31,9 @@ Implemented:
 - Frontend “Cài đặt” panel for enable/disable, endpoint, model, timeout, max tokens, temperature, and API key.
 - Per-request LLM configuration when enabled; otherwise the backend `.env` configuration is used.
 - Per-request LLM configuration is always accepted after request validation.
+- The selected keyframe is signed once through object storage and is sent to the
+  OpenAI-compatible LLM as an `image_url` content block whenever the LLM path is
+  used and storage signing is available.
 
 ## Verification
 
@@ -109,3 +112,39 @@ The frontend settings are stored under `aic.llm.settings` in `localStorage`, exc
   95.76% functions, 77.79% branches.
 - Frontend: 83 tests passed across 19 files.
 - Backend/frontend typecheck and production builds passed; frontend lint passed.
+
+## Keyframe image propagation to the text LLM (2026-08-18)
+
+### RED
+
+- Added a model-adapter test requiring `imageUrl` to become an OpenAI
+  `image_url` content block.
+- Added a VQA service test requiring the selected frame's
+  `thumbnail_object_key` to be signed and forwarded to a configured text LLM.
+- The targeted backend run failed with exactly these two missing-image
+  assertions before production code was changed.
+
+### GREEN
+
+- Extended the `LanguageModel.complete` contract with an optional internal
+  `imageUrl`.
+- `VqaAnswerService` signs the selected thumbnail once and reuses the signed
+  URL for the VLM and text-LLM paths.
+- `OpenAICompatibleLanguageModel` now sends the prompt and image together as
+  the user's multimodal content when a signed URL is present.
+- The signed URL is derived only from the database grounding key and the
+  server-side object-storage signer; it is never accepted as a client field or
+  written to logs.
+
+### Verification
+
+- RED checkpoint: `pnpm --dir apps/backend test -- tests/model-ports.test.ts tests/vqa-answer.test.ts` — 2 intended failures.
+- GREEN checkpoint: the same targeted command — 16/16 tests passed.
+- Full backend suite: 89/89 tests passed across 25 files.
+- Backend coverage: 87.66% statements/lines, 95.76% functions, 77.95% branches.
+- Backend typecheck and production build passed.
+
+If object storage is not configured or signing fails, no image URL can be
+created; the existing text-only compatibility fallback remains available for
+that degraded setup. With R2/object storage configured, every actual
+OpenAI-compatible VQA LLM request receives the selected keyframe image.
