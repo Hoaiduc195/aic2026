@@ -10,7 +10,7 @@ export interface LanguageModel {
   complete(input: {
     readonly system: string;
     readonly prompt: string;
-    readonly imageUrl?: string;
+    readonly imageDataUrl?: string;
   }): Promise<string>;
 }
 
@@ -102,9 +102,9 @@ export class OpenAICompatibleLanguageModel implements LanguageModel {
   async complete(input: {
     readonly system: string;
     readonly prompt: string;
-    readonly imageUrl?: string;
+    readonly imageDataUrl?: string;
   }): Promise<string> {
-    const imageUrl = input.imageUrl?.trim();
+    const imageDataUrl = input.imageDataUrl?.trim();
     const response = await fetch(this.endpoint, {
       method: 'POST',
       headers: {
@@ -117,10 +117,10 @@ export class OpenAICompatibleLanguageModel implements LanguageModel {
           { role: 'system', content: input.system },
           {
             role: 'user',
-            content: imageUrl
+            content: imageDataUrl
               ? [
                 { type: 'text', text: input.prompt },
-                { type: 'image_url', image_url: { url: imageUrl } },
+                { type: 'image_url', image_url: { url: imageDataUrl } },
               ]
               : input.prompt,
           },
@@ -147,7 +147,7 @@ export class UnavailableLanguageModel implements LanguageModel {
   async complete(_input: {
     readonly system: string;
     readonly prompt: string;
-    readonly imageUrl?: string;
+    readonly imageDataUrl?: string;
   }): Promise<string> {
     throw new Error('LLM answer service is not configured');
   }

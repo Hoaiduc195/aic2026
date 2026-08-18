@@ -9,6 +9,7 @@ import {
 import { randomUUID } from 'node:crypto';
 
 import { LANGUAGE_MODEL, OBJECT_STORAGE, VISION_LANGUAGE_MODEL, VQA_GROUNDING_REPOSITORY } from '../../common/tokens';
+import { fetchImageAsDataUrl } from '../../compute/image-data-url';
 import { OpenAICompatibleLanguageModel, type LanguageModel } from '../../compute/model-ports';
 import { OpenAICompatibleVisionClient, type VisionLanguageModel, type VlmAnswerResult } from '../../compute/vlm-vision.client';
 import type { ObjectStorage } from '../../storage/object-storage';
@@ -138,20 +139,21 @@ export class VqaAnswerService {
         temperature: request.vlm.temperature,
       })
       : this.vlm;
-    let imageUrl: string | undefined;
+    let imageDataUrl: string | undefined;
     if (context.thumbnail_object_key && this.storage?.isConfigured) {
       try {
-        imageUrl = await this.storage.signReadUrl(context.thumbnail_object_key);
+        const signedUrl = await this.storage.signReadUrl(context.thumbnail_object_key);
+        imageDataUrl = await fetchImageAsDataUrl(signedUrl);
       } catch {
-        imageUrl = undefined;
+        imageDataUrl = undefined;
       }
     }
     let visualResult: VlmAnswerResult | undefined;
-    if (visionModel?.isConfigured && imageUrl) {
+    if (visionModel?.isConfigured && imageDataUrl) {
       try {
         visualResult = await visionModel.answerVisualQuestion({
           question: request.question,
-          imageUrl,
+          imageUrl: imageDataUrl,
           evidenceText: selectedEvidence.text || undefined,
         });
         if (visualResult.answer_status === 'answered' && visualResult.answer) {
@@ -221,7 +223,7 @@ export class VqaAnswerService {
       output = await languageModel.complete({
         system,
         prompt,
-        ...(imageUrl ? { imageUrl } : {}),
+        ...(imageDataUrl ? { imageDataUrl } : {}),
       });
     } catch {
       throw new BadGatewayException('LLM answer service failed');
