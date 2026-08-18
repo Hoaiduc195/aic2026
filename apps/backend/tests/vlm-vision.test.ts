@@ -120,6 +120,9 @@ describe('OpenAICompatibleVisionClient', () => {
       { type: 'text', text: expect.stringContaining('người phụ nữ mặc áo dài đỏ') },
       { type: 'image_url', image_url: { url: 'https://r2.test/frame.jpg' } },
     ]);
+    // Verify Gemini 3.x compatible token parameter is used
+    expect(body).toHaveProperty('max_completion_tokens');
+    expect(body).not.toHaveProperty('max_tokens');
   });
 
   it('handles markdown json wrapping and recovers gracefully from invalid JSON', async () => {
@@ -144,7 +147,7 @@ describe('OpenAICompatibleVisionClient', () => {
 
     const client = new OpenAICompatibleVisionClient({
       baseUrl: 'https://vlm.test/v1',
-      model: 'gemini-1.5-flash',
+      model: 'gemini-3.7-flash',
     });
 
     const result = await client.verifyImageRelevance({
@@ -154,6 +157,41 @@ describe('OpenAICompatibleVisionClient', () => {
 
     expect(result.score).toBe(80);
     expect(result.match).toBe(true);
+  });
+
+  it('retries on 429 rate-limit response and succeeds on second attempt', async () => {
+    vi.useFakeTimers();
+    let callCount = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        callCount++;
+        if (callCount === 1) {
+          return new Response('Too Many Requests', { status: 429 });
+        }
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify({ score: 70, match: true, reason: 'Match after retry' }) } }],
+          }),
+          { status: 200 },
+        );
+      }),
+    );
+
+    const client = new OpenAICompatibleVisionClient({
+      baseUrl: 'https://vlm.test/v1',
+      model: 'gemini-3.7-flash',
+      timeoutMs: 60_000,
+      retries: 1,
+    });
+
+    const resultPromise = client.verifyImageRelevance({ query: 'test', imageUrl: 'https://r2.test/img.jpg' });
+    // Fast-forward the 8s retry delay
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+    expect(result.score).toBe(70);
+    expect(callCount).toBe(2);
+    vi.useRealTimers();
   });
 
   it('answers visual questions with confidence', async () => {

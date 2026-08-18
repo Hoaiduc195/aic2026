@@ -54,6 +54,8 @@ export interface VlmRerankConfig {
   enabled?: boolean;
   top_k?: number;
   weight?: number;
+  /** Plan A: discard frames with VLM score below this threshold (0 = keep all) */
+  vlm_min_score?: number;
 }
 
 export interface SearchRetrievalConfig {

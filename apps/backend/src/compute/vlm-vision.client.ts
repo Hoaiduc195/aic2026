@@ -26,6 +26,7 @@ export interface OpenAICompatibleVisionClientOptions {
   readonly timeoutMs?: number;
   readonly maxTokens?: number;
   readonly temperature?: number;
+  readonly retries?: number;
 }
 
 interface OpenAIChatResponse {
@@ -63,26 +64,30 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
   private readonly timeoutMs: number;
   private readonly maxTokens: number;
   private readonly temperature: number;
+  private readonly retries: number;
 
   constructor(options: OpenAICompatibleVisionClientOptions) {
     const baseUrl = options.baseUrl.trim().replace(/\/+$/, '');
     this.endpoint = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
     this.modelName = options.model.trim();
     this.apiKey = options.apiKey?.trim() || undefined;
-    this.timeoutMs = options.timeoutMs ?? 4_000;
-    this.maxTokens = options.maxTokens ?? 256;
+    this.timeoutMs = options.timeoutMs ?? 10_000;
+    // 512 tokens gives headroom for verbose JSON reason fields from Gemini
+    this.maxTokens = options.maxTokens ?? 512;
     this.temperature = options.temperature ?? 0;
+    // 1 retry to handle free-tier 429 rate-limit bursts gracefully
+    this.retries = options.retries ?? 1;
   }
 
   async verifyImageRelevance(input: { readonly query: string; readonly imageUrl: string }): Promise<VlmRelevanceResult> {
-    const system = [
-      'You are an expert video keyframe verifier.',
-      'Assess how well the provided video keyframe image matches the search query description.',
-      'Score the relevance on a scale from 0 to 100 (where 0 means completely irrelevant, and 100 means perfect match with all entities and actions).',
-      'Return ONLY a valid JSON object with the following schema: {"score": number, "match": boolean, "reason": string}.',
-    ].join(' ');
+    // Concise system prompt: Gemini-3.x performs better with direct, unambiguous instructions
+    const system =
+      'You are a visual relevance scorer for video keyframes. ' +
+      'Given a search query and a keyframe image, rate how well the image matches the query. ' +
+      'Respond ONLY with a JSON object — no markdown, no prose: ' +
+      '{"score": <integer 0-100>, "match": <boolean>, "reason": <one-sentence string>}';
 
-    const prompt = `Search Query: "${input.query}"\nAnalyze the keyframe image and determine if it matches this query.`;
+    const prompt = `Query: "${input.query}"\nScore this keyframe image.`;
 
     const rawResponse = await this.callVisionChat({
       system,
@@ -108,11 +113,14 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
     readonly imageUrl: string;
     readonly evidenceText?: string;
   }): Promise<VlmAnswerResult> {
-    const system = [
-      'You answer one question about the provided video keyframe image using visual inspection and any optional evidence.',
-      'Answer concisely in the same language as the question.',
-      'Return ONLY a valid JSON object: {"answer_status":"answered|needs_more_evidence|abstained","answer":string|null,"normalized_answer":string|null,"confidence":{"level":"high|medium|low","score":number},"reason":string}.',
-    ].join(' ');
+    // Direct, schema-anchored prompt yields cleaner JSON from Gemini-3.x
+    const system =
+      'You answer a single question about a video keyframe image. ' +
+      'Use visual evidence from the image and any supplied text evidence. ' +
+      'Answer in the same language as the question. ' +
+      'Respond ONLY with a JSON object — no markdown: ' +
+      '{"answer_status":"answered|needs_more_evidence|abstained","answer":string|null,' +
+      '"normalized_answer":string|null,"confidence":{"level":"high|medium|low","score":number},"reason":string}';
 
     const promptText = input.evidenceText
       ? `Question: ${input.question}\nSupporting Text Evidence:\n${input.evidenceText}`
@@ -182,6 +190,13 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
     readonly prompt: string;
     readonly imageUrl: string;
   }): Promise<string> {
+    return this.fetchWithRetry(input, this.retries);
+  }
+
+  private async fetchWithRetry(
+    input: { readonly system: string; readonly prompt: string; readonly imageUrl: string },
+    attemptsLeft: number,
+  ): Promise<string> {
     const response = await fetch(this.endpoint, {
       method: 'POST',
       headers: {
@@ -201,10 +216,18 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
           },
         ],
         temperature: this.temperature,
-        max_tokens: this.maxTokens,
+        // max_completion_tokens is the preferred param for Gemini 3.x via OpenAI-compat endpoint
+        max_completion_tokens: this.maxTokens,
       }),
       signal: AbortSignal.timeout(this.timeoutMs),
     });
+
+    // Retry on 429 (rate limit) or 5xx (transient server errors)
+    if ((response.status === 429 || response.status >= 500) && attemptsLeft > 0) {
+      const retryAfterMs = response.status === 429 ? 8_000 : 2_000;
+      await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
+      return this.fetchWithRetry(input, attemptsLeft - 1);
+    }
 
     if (!response.ok) {
       throw new Error(`VLM Vision endpoint returned HTTP ${response.status}`);

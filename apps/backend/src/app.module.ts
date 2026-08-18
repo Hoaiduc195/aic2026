@@ -6,7 +6,7 @@ import { loadConfig } from './common/config';
 import {
   APP_CONFIG, DATABASE, EMBEDDING_SERVICE, EVIDENCE_REPOSITORY, LANGUAGE_MODEL, MEDIA_REPOSITORY,
   OBJECT_STORAGE, RETRIEVAL_BRANCHES, QUERY_EMBEDDER, RETRIEVAL_STORE, TASK_EXECUTOR_REGISTRY,
-  VISION_LANGUAGE_MODEL, VLM_RERANKER, VQA_GROUNDING_REPOSITORY,
+  VISION_LANGUAGE_MODEL, VLM_RERANKER, VLM_QUERY_EXPANDER, VQA_GROUNDING_REPOSITORY,
 } from './common/tokens';
 import {
   HttpQueryEmbeddingProvider,
@@ -33,6 +33,7 @@ import { PostgresObjectBranch, PostgresTextBranch } from './retrieval/postgres-b
 import { PostgresClipBranch } from './retrieval/postgres-clip.branch';
 import { RetrievalService } from './retrieval/retrieval.service';
 import { VlmRerankerService } from './retrieval/vlm-reranker.service';
+import { VlmQueryExpanderService } from './retrieval/vlm-query-expander.service';
 import { PostgresRetrievalStore, UnavailableRetrievalStore } from './retrieval/retrieval.store';
 import { EmptyEvidenceRepository, PostgresEvidenceRepository } from './retrieval/evidence.repository';
 import { SearchController } from './search/search.controller';
@@ -187,7 +188,12 @@ function createTaskRegistry(config: ReturnType<typeof loadConfig>): TaskExecutor
       provide: VLM_RERANKER,
       useClass: VlmRerankerService,
     },
+    {
+      provide: VLM_QUERY_EXPANDER,
+      useClass: VlmQueryExpanderService,
+    },
     VlmRerankerService,
+    VlmQueryExpanderService,
     RetrievalService,
     MediaService,
     VqaAnswerService,

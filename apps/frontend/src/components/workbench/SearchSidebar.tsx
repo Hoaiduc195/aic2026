@@ -320,7 +320,7 @@ export function SearchSidebar({
                   type="number"
                   min="1"
                   max="50"
-                  value={displayNumberInput(retrievalSettings.vlm_rerank.top_k ?? 15)}
+                  value={displayNumberInput(retrievalSettings.vlm_rerank.top_k ?? 20)}
                   onChange={(event) => onRetrievalChange({
                     ...retrievalSettings,
                     vlm_rerank: {
@@ -338,12 +338,30 @@ export function SearchSidebar({
                   min="0"
                   max="1"
                   step="0.05"
-                  value={displayNumberInput(retrievalSettings.vlm_rerank.weight ?? 0.6)}
+                  value={displayNumberInput(retrievalSettings.vlm_rerank.weight ?? 0.7)}
                   onChange={(event) => onRetrievalChange({
                     ...retrievalSettings,
                     vlm_rerank: {
                       ...retrievalSettings.vlm_rerank,
                       weight: parseNumberInput(event.target.value),
+                    },
+                  })}
+                />
+              </label>
+              <label htmlFor="vlm-rerank-min-score" style={{ gridColumn: '1 / -1' }}>
+                <span>Lọc frame score VLM &lt; (0 = tắt)</span>
+                <input
+                  id="vlm-rerank-min-score"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value={displayNumberInput(retrievalSettings.vlm_rerank.vlm_min_score ?? 0)}
+                  onChange={(event) => onRetrievalChange({
+                    ...retrievalSettings,
+                    vlm_rerank: {
+                      ...retrievalSettings.vlm_rerank,
+                      vlm_min_score: parseNumberInput(event.target.value),
                     },
                   })}
                 />

@@ -39,6 +39,8 @@ export interface VlmRerankOverrides {
   readonly enabled?: boolean;
   readonly top_k?: number;
   readonly weight?: number;
+  /** Plan A: discard candidates whose VLM score is below this threshold (0 = keep all) */
+  readonly vlm_min_score?: number;
 }
 
 export interface RetrievalOverrides {

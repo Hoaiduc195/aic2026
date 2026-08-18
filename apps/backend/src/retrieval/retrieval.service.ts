@@ -4,7 +4,7 @@ import { performance } from 'node:perf_hooks';
 
 import {
   APP_CONFIG, EMBEDDING_SERVICE, EVIDENCE_REPOSITORY, OBJECT_STORAGE,
-  RETRIEVAL_BRANCHES, RETRIEVAL_STORE, TASK_EXECUTOR_REGISTRY, VLM_RERANKER,
+  RETRIEVAL_BRANCHES, RETRIEVAL_STORE, TASK_EXECUTOR_REGISTRY, VLM_RERANKER, VLM_QUERY_EXPANDER,
 } from '../common/tokens';
 import type {
   BranchName,
@@ -26,6 +26,7 @@ import { signPreviewUris, withPreviewReferences } from '../storage/preview-url';
 import type { EmbeddingService } from '../embedding_services/embedding.service';
 
 import type { VlmRerankerService } from './vlm-reranker.service';
+import type { VlmQueryExpanderService } from './vlm-query-expander.service';
 
 const DEFAULT_BRANCH_K = 100;
 const DEFAULT_FUSION_K = 500;
@@ -64,6 +65,7 @@ export class RetrievalService {
     @Optional() @Inject(OBJECT_STORAGE) private readonly storage?: ObjectStorage,
     @Optional() @Inject(EMBEDDING_SERVICE) private readonly embeddingService?: EmbeddingService,
     @Optional() @Inject(VLM_RERANKER) private readonly vlmReranker?: VlmRerankerService,
+    @Optional() @Inject(VLM_QUERY_EXPANDER) private readonly vlmQueryExpander?: VlmQueryExpanderService,
   ) {}
 
   createPlan(request: SearchRequest): RetrievalExecutionPlan {
@@ -97,7 +99,15 @@ export class RetrievalService {
 
   async search(request: SearchRequest): Promise<SearchResponse> {
     const branches = this.resolveBranches(request);
-    const plan = this.createPlanForBranches(request, branches);
+    let plan = this.createPlanForBranches(request, branches);
+
+    // Plan B: VLM query expansion — patch plan with additional English variants before branching
+    const vlmVariants = await this.getVlmQueryVariants(request.query, plan.query_variants);
+    if (vlmVariants.length > plan.query_variants.length) {
+      plan = { ...plan, query_variants: vlmVariants };
+      this.logger.debug(JSON.stringify({ event: 'vlm_query_expansion_applied', original: request.query, variants: vlmVariants }));
+    }
+
     const startedAt = performance.now();
     const branchResults = await Promise.all(
       branches
@@ -162,6 +172,25 @@ export class RetrievalService {
 
   private resolveBranches(request: SearchRequest): readonly RetrievalBranch[] {
     return this.embeddingService?.resolveBranches(this.branches, request) ?? this.branches;
+  }
+
+  /**
+   * Plan B: VLM Query Expansion
+   * Calls VLM text-only API to generate additional English search variants.
+   * Merges with the original plan variants (deduped) so all phrasings are searched via RRF.
+   */
+  private async getVlmQueryVariants(query: string, originalVariants: string[]): Promise<string[]> {
+    if (!this.vlmQueryExpander?.isConfigured) return originalVariants;
+    try {
+      const vlmVariants = await this.vlmQueryExpander.expand(query);
+      if (vlmVariants.length === 0) return originalVariants;
+      // Deduplicate: keep original variants first, append unique VLM variants
+      const seen = new Set(originalVariants.map((v) => v.toLowerCase()));
+      const newVariants = vlmVariants.filter((v) => !seen.has(v.toLowerCase()));
+      return [...originalVariants, ...newVariants];
+    } catch {
+      return originalVariants;
+    }
   }
 
   private async runBranch(

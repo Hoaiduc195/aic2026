@@ -8,8 +8,9 @@ export const DEFAULT_RETRIEVAL_SETTINGS: RetrievalSettings = {
   fusion_k: 500,
   vlm_rerank: {
     enabled: false,
-    top_k: 15,
-    weight: 0.6,
+    top_k: 20,
+    weight: 0.7,
+    vlm_min_score: 0,
   },
 };
 
@@ -35,8 +36,9 @@ export function loadRetrievalSettings(): RetrievalSettings {
       fusion_k: numberValue(value.fusion_k, DEFAULT_RETRIEVAL_SETTINGS.fusion_k),
       vlm_rerank: {
         enabled: typeof vlmRaw?.enabled === 'boolean' ? vlmRaw.enabled : DEFAULT_RETRIEVAL_SETTINGS.vlm_rerank?.enabled ?? false,
-        top_k: numberValue(vlmRaw?.top_k, DEFAULT_RETRIEVAL_SETTINGS.vlm_rerank?.top_k ?? 15),
-        weight: numberValue(vlmRaw?.weight, DEFAULT_RETRIEVAL_SETTINGS.vlm_rerank?.weight ?? 0.6),
+        top_k: numberValue(vlmRaw?.top_k, DEFAULT_RETRIEVAL_SETTINGS.vlm_rerank?.top_k ?? 20),
+        weight: numberValue(vlmRaw?.weight, DEFAULT_RETRIEVAL_SETTINGS.vlm_rerank?.weight ?? 0.7),
+        vlm_min_score: numberValue(vlmRaw?.vlm_min_score, DEFAULT_RETRIEVAL_SETTINGS.vlm_rerank?.vlm_min_score ?? 0),
       },
     };
   } catch {

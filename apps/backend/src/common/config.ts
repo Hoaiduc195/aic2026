@@ -29,6 +29,13 @@ export interface BackendConfig {
   readonly vlmTopK: number;
   readonly vlmWeight: number;
   readonly vlmConcurrency: number;
+  // Plan A: hard-filter candidates below this VLM score (0 = disabled)
+  readonly vlmMinScore: number;
+  // Plan B: expand query into additional English variants before search
+  readonly vlmQueryExpansion: boolean;
+  readonly vlmQueryExpansionMaxVariants: number;
+  // Plan C: auto-adjust top_k based on score variance of candidates
+  readonly vlmAdaptiveTopK: boolean;
   readonly datasetVersion: string;
   readonly pipelineVersion: string;
   readonly indexVersion: string;
@@ -132,10 +139,17 @@ export function loadConfig(): BackendConfig {
     vlmBaseUrl: optionalEnv('VLM_BASE_URL') || llmBaseUrl,
     vlmApiKey: optionalEnv('VLM_API_KEY') || optionalEnv('LLM_API_KEY'),
     vlmModel: optionalEnv('VLM_MODEL') || llmModel || 'Qwen/Qwen2.5-VL-7B-Instruct',
-    vlmTimeoutMs: positiveInteger(process.env.VLM_TIMEOUT_MS, 4_000),
-    vlmTopK: positiveInteger(process.env.VLM_TOP_K, 15),
-    vlmWeight: boundedNumber(process.env.VLM_WEIGHT, 0.6, 0, 1),
-    vlmConcurrency: positiveInteger(process.env.VLM_CONCURRENCY, 5),
+    vlmTimeoutMs: positiveInteger(process.env.VLM_TIMEOUT_MS, 10_000),
+    vlmTopK: positiveInteger(process.env.VLM_TOP_K, 20),
+    vlmWeight: boundedNumber(process.env.VLM_WEIGHT, 0.7, 0, 1),
+    vlmConcurrency: positiveInteger(process.env.VLM_CONCURRENCY, 4),
+    // Plan A: filter frames with VLM score below threshold (0 = disabled)
+    vlmMinScore: boundedNumber(process.env.VLM_MIN_SCORE, 0, 0, 100),
+    // Plan B: generate additional English query variants before search
+    vlmQueryExpansion: optionalEnv('VLM_QUERY_EXPANSION') === 'true',
+    vlmQueryExpansionMaxVariants: positiveInteger(process.env.VLM_QUERY_EXPANSION_MAX_VARIANTS, 3),
+    // Plan C: adaptively scale top_k based on RRF score spread
+    vlmAdaptiveTopK: optionalEnv('VLM_ADAPTIVE_TOP_K') === 'true',
     datasetVersion: optionalEnv('DATASET_VERSION') ?? 'local',
     pipelineVersion: optionalEnv('PIPELINE_VERSION') ?? 'preprocessing-artifacts',
     indexVersion,
