@@ -1,10 +1,11 @@
 import type {
   BranchName, ChannelWeights, ObjectQueryConstraints, QueryAtom, QueryViews, RetrievalExecutionPlan, SearchRequest,
 } from '../common/types';
+import { FRAME_IMAGE_QUERY, MAX_NEAR_FRAME_WINDOW_MS } from '../common/retrieval-constants';
 import { extractObjectQuery, normalizeObjectText, objectAliases } from './object-ontology';
 
 export const PLANNER_VERSION = 'deterministic-object-routing-v2';
-export const FRAME_IMAGE_QUERY = '[frame image query]';
+export { FRAME_IMAGE_QUERY } from '../common/retrieval-constants';
 
 const VIETNAMESE_PATTERN = /[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i;
 const OCR_SIGNAL = /(chữ|biển hiệu|bảng hiệu|logo|văn bản|hiển thị|\bwritten\b|\btext\b|\bsign\b|\bsubtitle\b|caption on screen)/i;
@@ -231,7 +232,7 @@ export function buildDeterministicPlan(
     top_k_per_branch: Math.min(limits.branchK, 10000),
     fusion_k: Math.min(limits.fusionK, 10000),
     display_k: Math.min(limits.displayK, 1000),
-    near_frame_window_ms: Math.max(0, Math.min(limits.nearFrameWindowMs ?? 1000, 10000)),
+    near_frame_window_ms: Math.max(0, Math.min(limits.nearFrameWindowMs ?? 1000, MAX_NEAR_FRAME_WINDOW_MS)),
     rrf_k: Math.min(limits.rrfK, 1000),
     latency_budget_ms: limits.latencyBudgetMs,
     fallback_policy: request.task === 'vqa' ? 'expand_then_abstain' : 'expand_then_clarify',

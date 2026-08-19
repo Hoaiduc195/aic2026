@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 
 import { parseEmbeddingOverride } from '../embedding_services/embedding-request';
+import { MAX_NEAR_FRAME_WINDOW_MS } from './retrieval-constants';
 import {
   BRANCH_NAMES,
   TASK_TYPES,
@@ -90,7 +91,12 @@ function optionalOverrides(value: unknown): RetrievalOverrides | undefined {
   if (value.fusion_k !== undefined) overrides.fusion_k = boundedInteger(value.fusion_k, 'retrieval.fusion_k', 1, 10000);
   if (value.display_k !== undefined) overrides.display_k = boundedInteger(value.display_k, 'retrieval.display_k', 1, 1000);
   if (value.near_frame_window_ms !== undefined) {
-    overrides.near_frame_window_ms = boundedInteger(value.near_frame_window_ms, 'retrieval.near_frame_window_ms', 0, 10000);
+    overrides.near_frame_window_ms = boundedInteger(
+      value.near_frame_window_ms,
+      'retrieval.near_frame_window_ms',
+      0,
+      MAX_NEAR_FRAME_WINDOW_MS,
+    );
   }
   if (value.latency_budget_ms !== undefined) {
     overrides.latency_budget_ms = boundedInteger(value.latency_budget_ms, 'retrieval.latency_budget_ms', 10, 30000);
