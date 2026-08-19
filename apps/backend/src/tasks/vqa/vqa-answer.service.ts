@@ -8,11 +8,13 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 
-import { LANGUAGE_MODEL, OBJECT_STORAGE, VISION_LANGUAGE_MODEL, VQA_GROUNDING_REPOSITORY } from '../../common/tokens';
+import { FRAME_DECODER, IMAGE_COMPRESSOR, LANGUAGE_MODEL, OBJECT_STORAGE, VISION_LANGUAGE_MODEL, VQA_GROUNDING_REPOSITORY } from '../../common/tokens';
 import { fetchImageAsDataUrl } from '../../compute/image-data-url';
 import { OpenAICompatibleLanguageModel, type LanguageModel } from '../../compute/model-ports';
 import { OpenAICompatibleVisionClient, type VisionLanguageModel, type VlmAnswerResult } from '../../compute/vlm-vision.client';
 import type { ObjectStorage } from '../../storage/object-storage';
+import type { FrameDecoder } from '../../media/frame-decoder';
+import type { ImageCompressor } from '../../media/image-compressor';
 import type { VqaAnswerRequest } from './vqa-answer.request';
 import type { VqaGroundingEvidence, VqaGroundingRepository } from './vqa-grounding.repository';
 
@@ -47,6 +49,8 @@ const VLM_PRODUCER = 'vlm-vision-openai-compatible';
 const MAX_EVIDENCE = 20;
 const MAX_SNIPPET_LENGTH = 500;
 const MAX_PROMPT_LENGTH = 8_000;
+const MAX_VQA_IMAGE_BYTES = 5 * 1024 * 1024;
+const COMPRESSED_VQA_TARGET_BYTES = 4 * 1024 * 1024;
 
 function baseResponse(
   request: VqaAnswerRequest,
@@ -121,6 +125,8 @@ export class VqaAnswerService {
     @Inject(LANGUAGE_MODEL) private readonly languageModel: LanguageModel,
     @Optional() @Inject(VISION_LANGUAGE_MODEL) private readonly vlm?: VisionLanguageModel,
     @Optional() @Inject(OBJECT_STORAGE) private readonly storage?: ObjectStorage,
+    @Optional() @Inject(FRAME_DECODER) private readonly frameDecoder?: FrameDecoder,
+    @Optional() @Inject(IMAGE_COMPRESSOR) private readonly imageCompressor?: ImageCompressor,
   ) {}
 
   async answer(request: VqaAnswerRequest): Promise<VqaAnswerResponse> {
@@ -144,6 +150,35 @@ export class VqaAnswerService {
       try {
         const signedUrl = await this.storage.signReadUrl(context.thumbnail_object_key);
         imageDataUrl = await fetchImageAsDataUrl(signedUrl);
+      } catch {
+        try {
+          if (this.imageCompressor) {
+            const signedUrl = await this.storage.signReadUrl(context.thumbnail_object_key);
+            const compressed = await this.imageCompressor.compress({
+              image_url: signedUrl,
+              target_bytes: COMPRESSED_VQA_TARGET_BYTES,
+            });
+            if (compressed.bytes.length > 0 && compressed.bytes.length <= MAX_VQA_IMAGE_BYTES) {
+              imageDataUrl = `data:${compressed.mime_type};base64,${compressed.bytes.toString('base64')}`;
+            }
+          }
+        } catch {
+          imageDataUrl = undefined;
+        }
+      }
+    }
+    if (!imageDataUrl && context.video_object_key && context.fps && this.storage?.isConfigured && this.frameDecoder) {
+      try {
+        const videoUrl = await this.storage.signReadUrl(context.video_object_key);
+        const decoded = await this.frameDecoder.decode({
+          video_url: videoUrl,
+          original_frame_id: request.original_frame_id,
+          fps: context.fps,
+          max_bytes: MAX_VQA_IMAGE_BYTES,
+        });
+        if (decoded.bytes.length > 0 && decoded.bytes.length <= MAX_VQA_IMAGE_BYTES) {
+          imageDataUrl = `data:${decoded.mime_type};base64,${decoded.bytes.toString('base64')}`;
+        }
       } catch {
         imageDataUrl = undefined;
       }

@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   activeAsrSpans,
+  exactFrameThumbnailUri,
   frameThumbnailUri,
   keyframeLabel,
   nearestStudioFrame,
+  studioFrameThumbnailUri,
   timelinePercent,
 } from '@/lib/video-studio-model';
 import type { StudioAsrSpan, StudioFrame } from '@/lib/contracts';
@@ -51,5 +53,15 @@ describe('video studio model', () => {
 
   it('labels the ordinal keyframe separately from its source frame number', () => {
     expect(keyframeLabel(frames[1])).toBe('Keyframe 2 · source frame 50');
+  });
+
+  it('builds exact-frame thumbnail URLs and labels source-frame-only selections', () => {
+    const exact: StudioFrame = {
+      video_id: 'video-1', keyframe_no: null, original_frame_id: 77, timestamp_ms: 3_080,
+      captions: [], objects: [], is_exact_frame: true,
+    };
+    expect(exactFrameThumbnailUri('video-1', 77)).toBe('/api/v1/media/videos/video-1/frames/77/thumbnail');
+    expect(studioFrameThumbnailUri(exact)).toBe('/api/v1/media/videos/video-1/frames/77/thumbnail');
+    expect(keyframeLabel(exact)).toBe('Canonical frame 77');
   });
 });

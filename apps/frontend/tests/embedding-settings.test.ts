@@ -13,7 +13,7 @@ afterEach(() => {
 });
 
 describe('embedding settings', () => {
-  it('builds a request override and never persists the browser token', () => {
+  it('persists the browser token and restores the embedding request override', () => {
     const settings = {
       ...DEFAULT_EMBEDDING_SETTINGS,
       enabled: true,
@@ -29,14 +29,14 @@ describe('embedding settings', () => {
       enabled: true,
       base_url: settings.base_url,
       timeout_ms: 2500,
-      api_key: '',
+      api_key: settings.api_key,
     });
     expect(buildSearchEmbeddingConfig(settings)).toEqual({
       base_url: settings.base_url,
       api_key: 'tab-only-secret',
       timeout_ms: 2500,
     });
-    expect(localStorage.getItem('aic.embedding.settings')).not.toContain('tab-only-secret');
+    expect(localStorage.getItem('aic.embedding.settings')).toContain('tab-only-secret');
   });
 
   it('allows local Docker endpoints but rejects credentials and invalid timeouts', () => {

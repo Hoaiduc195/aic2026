@@ -17,7 +17,6 @@ interface Props {
   question: string;
   events: readonly QualificationEventInput[];
   queryImproverEnabled: boolean;
-  improvedQuery: string;
   queryImproverPending: boolean;
   queryImproverError: string | null;
   pending: boolean;
@@ -28,7 +27,6 @@ interface Props {
   onAddEvent: () => void;
   onRemoveEvent: (eventId: string) => void;
   onQueryImproverChange: (enabled: boolean) => void;
-  onImprovedQueryChange: (value: string) => void;
   onImproveQuery: () => void;
   onQueryImproverSave: () => void;
   onQueryImproverReset: () => void;
@@ -76,7 +74,6 @@ export function SearchSidebar({
   question,
   events,
   queryImproverEnabled,
-  improvedQuery,
   queryImproverPending,
   queryImproverError,
   pending,
@@ -87,7 +84,6 @@ export function SearchSidebar({
   onAddEvent,
   onRemoveEvent,
   onQueryImproverChange,
-  onImprovedQueryChange,
   onImproveQuery,
   onQueryImproverSave,
   onQueryImproverReset,
@@ -201,7 +197,7 @@ export function SearchSidebar({
             <p className="section-kicker">Chuẩn hóa truy vấn</p>
             <h2 id="query-improver-title">Query Improver</h2>
           </div>
-          <span className="sidebar-panel-badge">1 query</span>
+          <span className="sidebar-panel-badge">{task === 'qa' ? 'query + question' : task === 'trake' ? `${events.length} event` : '1 query'}</span>
         </div>
 
         <label className="settings-toggle">
@@ -210,33 +206,23 @@ export function SearchSidebar({
             checked={queryImproverEnabled}
             onChange={(event) => onQueryImproverChange(event.target.checked)}
           />
-          <span>Bật cải thiện query tiếng Anh</span>
+          <span>Bật Query Improver</span>
         </label>
 
         {queryImproverEnabled && (
           <>
-            <label className="input-field compact-field" htmlFor="improved-query">
-              <span>Query tiếng Anh</span>
-              <textarea
-                id="improved-query"
-                aria-label="Query tiếng Anh đã cải thiện"
-                value={improvedQuery}
-                rows={4}
-                maxLength={2000}
-                placeholder="Bấm ‘Tạo query tiếng Anh’ để sinh preview…"
-                onChange={(event) => onImprovedQueryChange(event.target.value)}
-              />
-            </label>
             <button
               type="button"
               className="secondary-button full-width"
               disabled={queryImproverPending || !hasQuery}
               onClick={onImproveQuery}
             >
-              {queryImproverPending ? 'Đang cải thiện…' : 'Tạo query tiếng Anh'}
+              {queryImproverPending
+                ? 'Đang cải thiện…'
+                : task === 'qa' ? 'Cải thiện query & câu hỏi' : task === 'trake' ? 'Cải thiện các event' : 'Cải thiện query'}
             </button>
             <p className="sidebar-help">
-              Query tiếng Anh được dùng cho retrieval sau khi bạn kiểm tra hoặc chỉnh sửa preview.
+              Kết quả cải thiện sẽ được ghi trực tiếp vào ô nhập chính trước khi tìm.
             </p>
             {queryImproverError && <p className="settings-error" role="alert">{queryImproverError}</p>}
             <div className="sidebar-panel-actions">
@@ -363,6 +349,23 @@ export function SearchSidebar({
           </label>
         </div>
 
+        <label htmlFor="retrieval-near-window-sidebar">
+          <span>Lọc frame gần nhau (ms)</span>
+          <input
+            id="retrieval-near-window-sidebar"
+            aria-label="Lọc frame gần nhau (ms)"
+            type="number"
+            min="0"
+            max="10000"
+            step="100"
+            value={displayNumberInput(retrievalSettings.near_frame_window_ms ?? 1000)}
+            onChange={(event) => onRetrievalChange({
+              ...retrievalSettings,
+              near_frame_window_ms: parseNumberInput(event.target.value),
+            })}
+          />
+        </label>
+
         <label className="settings-toggle">
           <input
             type="checkbox"
@@ -412,7 +415,7 @@ export function SearchSidebar({
 
         {retrievalError && <p className="settings-error" role="alert">{retrievalError}</p>}
         <p className="sidebar-help">
-          Số frame là kết quả cuối cùng; VLM rerank gửi ảnh của top-k lên model nên chỉ bật khi backend đã cấu hình VLM.
+          Frame cùng video trong cửa sổ này sẽ được gộp và giữ frame điểm cao nhất. Nhập 0 để tắt. VLM rerank gửi ảnh của top-k lên model nên chỉ bật khi backend đã cấu hình VLM.
         </p>
         <div className="sidebar-panel-actions">
           <button type="button" className="secondary-button" onClick={onRetrievalReset}>Khôi phục truy hồi mặc định</button>

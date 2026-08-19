@@ -6,6 +6,7 @@ import {
   TASK_TYPES,
   type BranchName,
   type ChannelWeights,
+  type FrameQuery,
   type RetrievalOverrides,
   type SearchRequest,
   type TaskType,
@@ -28,6 +29,18 @@ function boundedNumber(value: unknown, field: string, minimum: number, maximum: 
     throw new BadRequestException(`${field} must be a number between ${minimum} and ${maximum}`);
   }
   return value;
+}
+
+const SAFE_VIDEO_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/;
+
+function optionalFrameQuery(value: unknown): FrameQuery | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new BadRequestException('frame_query must be an object');
+  if (typeof value.video_id !== 'string' || !SAFE_VIDEO_ID.test(value.video_id.trim())) {
+    throw new BadRequestException('frame_query.video_id is invalid');
+  }
+  const originalFrameId = boundedInteger(value.original_frame_id, 'frame_query.original_frame_id', 0, 2_147_483_647);
+  return { video_id: value.video_id.trim(), original_frame_id: originalFrameId };
 }
 
 function parseChannelWeights(value: unknown): ChannelWeights {
@@ -67,6 +80,7 @@ function optionalOverrides(value: unknown): RetrievalOverrides | undefined {
     branch_k?: number;
     fusion_k?: number;
     display_k?: number;
+    near_frame_window_ms?: number;
     latency_budget_ms?: number;
     rrf_k?: number;
     channel_weights?: ChannelWeights;
@@ -75,6 +89,9 @@ function optionalOverrides(value: unknown): RetrievalOverrides | undefined {
   if (value.branch_k !== undefined) overrides.branch_k = boundedInteger(value.branch_k, 'retrieval.branch_k', 1, 10000);
   if (value.fusion_k !== undefined) overrides.fusion_k = boundedInteger(value.fusion_k, 'retrieval.fusion_k', 1, 10000);
   if (value.display_k !== undefined) overrides.display_k = boundedInteger(value.display_k, 'retrieval.display_k', 1, 1000);
+  if (value.near_frame_window_ms !== undefined) {
+    overrides.near_frame_window_ms = boundedInteger(value.near_frame_window_ms, 'retrieval.near_frame_window_ms', 0, 10000);
+  }
   if (value.latency_budget_ms !== undefined) {
     overrides.latency_budget_ms = boundedInteger(value.latency_budget_ms, 'retrieval.latency_budget_ms', 10, 30000);
   }
@@ -86,8 +103,12 @@ function optionalOverrides(value: unknown): RetrievalOverrides | undefined {
 
 export function parseSearchRequest(value: unknown): SearchRequest {
   if (!isRecord(value)) throw new BadRequestException('request body must be an object');
-  if (typeof value.query !== 'string' || !value.query.trim() || value.query.trim().length > 2000) {
-    throw new BadRequestException('query must contain 1-2000 characters');
+  if (typeof value.query !== 'string' || value.query.trim().length > 2000) {
+    throw new BadRequestException('query must contain 1-2000 characters unless frame_query is supplied');
+  }
+  const frameQuery = optionalFrameQuery(value.frame_query);
+  if (!value.query.trim() && !frameQuery) {
+    throw new BadRequestException('query must contain 1-2000 characters unless frame_query is supplied');
   }
   if (typeof value.task !== 'string' || !TASK_TYPES.includes(value.task as TaskType)) {
     throw new BadRequestException(`task must be one of: ${TASK_TYPES.join(', ')}`);
@@ -106,5 +127,6 @@ export function parseSearchRequest(value: unknown): SearchRequest {
     session_id: sessionId as string | undefined,
     retrieval: optionalOverrides(value.retrieval),
     embedding: parseEmbeddingOverride(value.embedding),
+    ...(frameQuery ? { frame_query: frameQuery } : {}),
   };
 }

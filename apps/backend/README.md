@@ -11,6 +11,8 @@ submit lên hệ thống cuộc thi.
 - pgvector/HNSW cho visual embedding 1024 chiều; query encoder chạy qua HTTP interface riêng.
 - Branch isolation: một index/model lỗi không làm hỏng toàn bộ search.
 - R2 presigned URL cho video playback và keyframe thumbnail.
+- Exact source-frame preview: backend dùng FFmpeg decode on-demand khi frame chưa có thumbnail sparse.
+- Ảnh sparse/ảnh decode vượt giới hạn 12 MiB sẽ được re-encode JPEG với kích thước/chất lượng giảm dần để endpoint và VQA vẫn nhận được ảnh.
 - Snapshot retrieval run/candidate và manual selection có revision trong Neon.
 - Export preview JSON + CSV cho Textual KIS, VQA và TRAKE, tối đa 100 answers.
 - Operator token, CORS, rate limit 120 request/phút và input validation.
@@ -48,9 +50,14 @@ datasets/<dataset-version>/keyframes/<video-id>/<original-frame-id>.webp
 features/<dataset-version>/<modality>/<model-version>/<artifact>
 ```
 
-`EMBEDDING_SERVICE_URL` là tùy chọn. Service nhận `{"text":"..."}` và trả
-`{"embedding":[1024 số hữu hạn]}`. Image encoder và text query encoder phải dùng
-đúng cùng checkpoint/projection/normalization; chỉ cùng số chiều là chưa đủ. Nếu
+`EMBEDDING_SERVICE_URL` là tùy chọn. Service nhận `{"text":"..."}` ở `/embed`
+và raw image bytes ở `/embed/image`, cùng trả `{"embedding":[1024 số hữu hạn]}`.
+Image encoder và text query encoder phải dùng
+đúng cùng checkpoint/projection/normalization; chỉ cùng số chiều là chưa đủ. Khi
+request có `frame_query: {"video_id":"...", "original_frame_id":385}`, backend
+ưu tiên vector CLIP đã index; nếu chưa có, backend lấy exact frame từ R2/FFmpeg
+và gọi image encoder. Browser chỉ gửi định danh frame, không gửi signed URL.
+Nếu
 chưa cấu hình, CLIP branch được đánh dấu
 `unavailable`; caption/ASR/OCR/object vẫn hoạt động.
 
@@ -79,6 +86,8 @@ các trường `base_url`, `api_key`, `model`, `timeout_ms`, `max_tokens` và
 | `POST` | `/v1/search/plan` | Xem static all-feature execution plan |
 | `GET` | `/v1/videos/:id/playback` | Presigned video URL và metadata |
 | `GET` | `/v1/videos/:id/frames` | Keyframe quanh `center_frame_id` |
+| `GET` | `/v1/videos/:id/frames/:frameId` | Metadata exact source frame + annotation gần nhất |
+| `GET` | `/v1/videos/:id/frames/:frameId/thumbnail` | Thumbnail exact source frame; decode bằng FFmpeg nếu cần |
 | `GET` | `/v1/queries/:id/candidates` | Manual top-k, `limit` 1-1000 |
 | `GET` | `/v1/queries/:id/selection` | Revision lựa chọn gần nhất |
 | `PUT` | `/v1/queries/:id/selection` | Lưu revision manual mới |
@@ -91,13 +100,32 @@ Ví dụ search:
   "query": "Người phụ nữ đang cầm vật gì?",
   "task": "vqa",
   "top_k": 20,
-  "retrieval": { "branch_k": 200, "fusion_k": 500, "display_k": 100 }
+  "retrieval": { "branch_k": 200, "fusion_k": 500, "display_k": 100, "near_frame_window_ms": 1000 }
 }
 ```
 
 `branch_k`, `fusion_k` và `display_k` là tham số runtime. Manual mode có thể lấy
 thêm candidate đã lưu bằng `GET .../candidates?limit=500&offset=0` mà không chạy
-lại model.
+lại model. `near_frame_window_ms` lọc các kết quả quá gần nhau trong cùng video
+sau bước fusion; mặc định là `1000`, còn `0` để tắt lọc.
+
+Search bằng frame dùng request tối giản, không cần query chữ:
+
+```json
+{
+  "query": "",
+  "task": "textual_kis",
+  "top_k": 20,
+  "frame_query": { "video_id": "L25_V078", "original_frame_id": 385 }
+}
+```
+
+Exact-frame preview cần `ffmpeg` trong PATH của backend hoặc đặt `FFMPEG_PATH`.
+`frame_count` trong bảng `videos` được dùng để từ chối frame ID vượt quá video;
+nếu chưa có `frame_count`, backend vẫn kiểm tra số nguyên không âm và để FFmpeg
+xác nhận frame có tồn tại hay không. FFmpeg có timeout `FRAME_DECODE_TIMEOUT_MS`
+(mặc định 15 giây); ảnh trả về được giới hạn tối đa 12 MiB và VQA chủ động nén
+xuống khoảng 4 MiB để phù hợp payload multimodal.
 
 ## Ingest feature
 

@@ -111,7 +111,7 @@ export function LlmSettingsPopover({
         />
         <span>Bật cấu hình LLM từ frontend</span>
       </label>
-      <p className="settings-help">Tắt để dùng cấu hình LLM trong `.env` của backend.</p>
+      <p className="settings-help">Tắt để dùng cấu hình LLM trong `.env` của backend. Các API key được lưu cục bộ trong trình duyệt để không cần nhập lại; không dùng trên máy dùng chung.</p>
 
       <label htmlFor="llm-base-url">
         <span>Endpoint LLM</span>

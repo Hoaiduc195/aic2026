@@ -158,6 +158,56 @@ describe('search proxy route', () => {
     });
   });
 
+  it('forwards an empty image query only with a validated exact frame identity', async () => {
+    process.env.BACKEND_API_URL = 'http://backend.internal';
+    let forwardedBody: unknown;
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      forwardedBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ query_id: 'query_01', results: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }));
+
+    const request = new NextRequest('http://localhost/api/v1/search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        query: '',
+        task: 'textual_kis',
+        top_k: 20,
+        frame_query: { video_id: 'video_01', original_frame_id: 385 },
+      }),
+    });
+    const response = await POST(request);
+
+    expect(response.status).toBe(200);
+    expect(forwardedBody).toMatchObject({
+      query: '',
+      frame_query: { video_id: 'video_01', original_frame_id: 385 },
+    });
+  });
+
+  it('rejects frame identities that could escape the media namespace', async () => {
+    process.env.BACKEND_API_URL = 'http://backend.internal';
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const request = new NextRequest('http://localhost/api/v1/search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        query: '',
+        task: 'textual_kis',
+        frame_query: { video_id: '../private', original_frame_id: 1 },
+      }),
+    });
+    const response = await POST(request);
+
+    expect(response.status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('rejects retrieval limits outside the frontend safety boundary', async () => {
     process.env.BACKEND_API_URL = 'http://backend.internal';
     const fetchMock = vi.fn();

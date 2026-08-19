@@ -3,12 +3,13 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { VideoStudioModal } from '@/components/workbench/VideoStudioModal';
-import type { VideoStudioResponse } from '@/lib/contracts';
+import type { CanonicalFrameResponse, VideoStudioResponse } from '@/lib/contracts';
 
 const studio: VideoStudioResponse = {
   video: {
     video_id: 'video-1', playback_uri: 'https://media.example/video.mp4',
     duration_ms: 60_000, fps: 25, mime_type: 'video/mp4',
+    frame_count: 1_500,
   },
   frames: [
     {
@@ -65,5 +66,47 @@ describe('VideoStudioModal', () => {
 
     expect(screen.getByTestId('studio-selected-frame-image')).toHaveAttribute('loading', 'eager');
     expect(screen.getByRole('button', { name: 'Chọn keyframe 1 · source frame 50' })).toBeInTheDocument();
+  });
+
+  it('loads an exact canonical frame and updates its annotations before selection', async () => {
+    const user = userEvent.setup();
+    const exactFrame: CanonicalFrameResponse = {
+      video_id: 'video-1',
+      keyframe_no: null,
+      original_frame_id: 77,
+      timestamp_ms: 3_080,
+      thumbnail_uri: '/api/v1/media/videos/video-1/frames/77/thumbnail',
+      is_exact_frame: true,
+      annotation_source_frame_id: 50,
+      captions: [{ evidence_id: 'caption-exact', text: 'Exact frame caption.', language: 'en', producer: 'caption:v1' }],
+      objects: [{ evidence_id: 'object-exact', label: 'car', confidence: 0.88, normalized_bbox: [0.2, 0.2, 0.5, 0.5], producer: 'object:v1' }],
+    };
+    const loadExactFrame = vi.fn(async () => exactFrame);
+    const onSelectFrame = vi.fn();
+
+    render(
+      <VideoStudioModal
+        studio={studio}
+        initialFrameId={50}
+        onClose={vi.fn()}
+        onSelectFrame={onSelectFrame}
+        loadExactFrame={loadExactFrame}
+      />,
+    );
+
+    const input = screen.getByLabelText('Frame ID trong video');
+    await user.clear(input);
+    await user.type(input, '77');
+    await user.click(screen.getByRole('button', { name: 'Tải exact frame' }));
+
+    expect(loadExactFrame).toHaveBeenCalledWith(77);
+    expect(await screen.findByText('Canonical frame 77')).toBeInTheDocument();
+    expect(screen.getByText('Exact frame caption.')).toBeInTheDocument();
+    expect(screen.getAllByText('car').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/Annotation đang hiển thị lấy từ frame gần nhất.*50/)).toBeInTheDocument();
+    expect(screen.getByTestId('studio-selected-frame-image')).toHaveAttribute('src', exactFrame.thumbnail_uri);
+
+    await user.click(screen.getByRole('button', { name: 'Dùng canonical frame 77' }));
+    expect(onSelectFrame).toHaveBeenCalledWith(exactFrame);
   });
 });

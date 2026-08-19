@@ -4,7 +4,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
 import { loadConfig } from './common/config';
 import {
-  APP_CONFIG, DATABASE, EMBEDDING_SERVICE, EVIDENCE_REPOSITORY, LANGUAGE_MODEL, MEDIA_REPOSITORY,
+  APP_CONFIG, DATABASE, EMBEDDING_SERVICE, EVIDENCE_REPOSITORY, FRAME_DECODER, IMAGE_COMPRESSOR, LANGUAGE_MODEL, MEDIA_REPOSITORY,
   OBJECT_STORAGE, RETRIEVAL_BRANCHES, QUERY_EMBEDDER, RETRIEVAL_STORE, TASK_EXECUTOR_REGISTRY,
   VISION_LANGUAGE_MODEL, VLM_RERANKER, VQA_GROUNDING_REPOSITORY,
 } from './common/tokens';
@@ -16,6 +16,8 @@ import {
   UnavailableQueryEmbeddingProvider,
 } from './compute/model-ports';
 import { OpenAICompatibleVisionClient, UnavailableVisionLanguageModel } from './compute/vlm-vision.client';
+import { FfmpegFrameDecoder } from './media/frame-decoder';
+import { FfmpegImageCompressor } from './media/image-compressor';
 import type { DatabaseClient } from './database/database.client';
 import { PostgresDatabase } from './database/postgres.database';
 import { EmbeddingService } from './embedding_services/embedding.service';
@@ -171,6 +173,16 @@ function createTaskRegistry(config: ReturnType<typeof loadConfig>): TaskExecutor
         ? new PostgresEvidenceRepository(database)
         : new EmptyEvidenceRepository(),
       inject: [DATABASE],
+    },
+    {
+      provide: FRAME_DECODER,
+      useFactory: (config: ReturnType<typeof loadConfig>) => new FfmpegFrameDecoder(config.ffmpegPath, config.frameDecodeTimeoutMs),
+      inject: [APP_CONFIG],
+    },
+    {
+      provide: IMAGE_COMPRESSOR,
+      useFactory: (config: ReturnType<typeof loadConfig>) => new FfmpegImageCompressor(config.ffmpegPath, config.frameDecodeTimeoutMs),
+      inject: [APP_CONFIG],
     },
     {
       provide: VQA_GROUNDING_REPOSITORY,

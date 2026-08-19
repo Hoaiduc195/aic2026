@@ -13,6 +13,7 @@ export interface QueryImproverModelConfig {
 
 export interface QueryImprovementRequest {
   readonly query: string;
+  readonly question?: string;
   readonly task: Extract<TaskType, 'textual_kis' | 'vqa' | 'trake'>;
   readonly llm?: QueryImproverModelConfig;
 }
@@ -78,8 +79,16 @@ export function parseQueryImprovementRequest(value: unknown): QueryImprovementRe
     || !IMPROVABLE_TASKS.has(value.task as QueryImprovementRequest['task'])) {
     throw new BadRequestException('task must be textual_kis, vqa or trake');
   }
+  if (value.question !== undefined && (typeof value.question !== 'string'
+    || !value.question.trim() || value.question.trim().length > 2000)) {
+    throw new BadRequestException('question must contain 1 to 2000 characters');
+  }
+  if (value.task === 'vqa' && value.question === undefined) {
+    throw new BadRequestException('question is required for vqa query improvement');
+  }
   return {
     query: value.query.trim(),
+    ...(typeof value.question === 'string' ? { question: value.question.trim() } : {}),
     task: value.task as QueryImprovementRequest['task'],
     ...(value.llm === undefined ? {} : { llm: modelConfig(value.llm) }),
   };

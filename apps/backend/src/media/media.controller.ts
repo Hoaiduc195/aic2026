@@ -1,4 +1,5 @@
-import { BadRequestException, Controller, Get, Inject, Param, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Inject, Param, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 
 import { MediaService } from './media.service';
 
@@ -43,5 +44,31 @@ export class MediaController {
       integer(centerFrameId, 'center_frame_id', 0, 2_147_483_647),
       integer(limit, 'limit', 1, 100, 25),
     );
+  }
+
+  @Get(':videoId/frames/:frameId')
+  frame(
+    @Param('videoId') videoId: string,
+    @Param('frameId') frameId: string,
+  ) {
+    return this.media.getFrame(
+      identifier(videoId, 'video_id'),
+      integer(frameId, 'frame_id', 0, 2_147_483_647),
+    );
+  }
+
+  @Get(':videoId/frames/:frameId/thumbnail')
+  async frameThumbnail(
+    @Param('videoId') videoId: string,
+    @Param('frameId') frameId: string,
+    @Res() response: Response,
+  ) {
+    const result = await this.media.getFrameThumbnail(
+      identifier(videoId, 'video_id'),
+      integer(frameId, 'frame_id', 0, 2_147_483_647),
+    );
+    response.setHeader('content-type', result.mime_type);
+    response.setHeader('cache-control', 'private, max-age=3600');
+    response.send(result.bytes);
   }
 }

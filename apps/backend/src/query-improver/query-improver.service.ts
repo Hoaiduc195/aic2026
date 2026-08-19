@@ -7,6 +7,8 @@ import type { QueryImprovementRequest } from './query-improver.request';
 export interface QueryImprovementResponse {
   readonly original_query: string;
   readonly improved_query: string;
+  readonly original_question?: string;
+  readonly improved_question?: string;
   readonly changed: boolean;
   readonly producer: string;
   readonly model_version: string;
@@ -15,6 +17,7 @@ export interface QueryImprovementResponse {
 
 interface QueryImprovementModelOutput {
   readonly improved_query?: unknown;
+  readonly improved_question?: unknown;
 }
 
 const MAX_QUERY_LENGTH = 2000;
@@ -66,13 +69,16 @@ function systemPrompt(task: QueryImprovementRequest['task']): string {
   const trakeInstruction = task === 'trake'
     ? 'For TRAKE, preserve the number of event lines and their order. Return one improved English event per numbered line.'
     : 'Return one improved query, not a list of alternatives.';
+  const outputInstruction = task === 'vqa'
+    ? 'For VQA, improve the event query and the question independently. Return JSON only with exactly two fields: {"improved_query":"...","improved_question":"..."}.'
+    : 'Return JSON only with exactly one field: {"improved_query":"..."}.';
   return [
     'You are a video retrieval query improver.',
     'Read the Vietnamese query and rewrite it into precise, natural English for video keyframe retrieval.',
     'Preserve every fact and temporal relation from the original query; never invent details.',
     'Emphasize visually useful characteristics such as people, actions, objects, colors, appearance, locations, visible text, spoken content, and temporal relations.',
     trakeInstruction,
-    'Return JSON only with exactly one field: {"improved_query":"..."}.',
+    outputInstruction,
   ].join(' ');
 }
 
@@ -84,6 +90,10 @@ function fallback(
   return {
     original_query: request.query,
     improved_query: request.query,
+    ...(request.question === undefined ? {} : {
+      original_question: request.question,
+      improved_question: request.question,
+    }),
     changed: false,
     producer: 'query-improver-fallback',
     model_version: modelVersion,
@@ -115,7 +125,11 @@ export class QueryImproverService {
     try {
       rawOutput = await model.complete({
         system: systemPrompt(request.task),
-        prompt: `Task: ${request.task}\nOriginal Vietnamese query:\n${request.query}`,
+        prompt: [
+          `Task: ${request.task}`,
+          `Original Vietnamese query:\n${request.query}`,
+          ...(request.task === 'vqa' ? [`Original Vietnamese question:\n${request.question ?? ''}`] : []),
+        ].join('\n'),
       });
     } catch (error) {
       this.logger.warn(`query improvement failed: ${error instanceof Error ? error.message : 'unknown error'}`);
@@ -132,6 +146,18 @@ export class QueryImproverService {
       return fallback(request, model.modelName, 'query_improver_invalid_output');
     }
 
+    let improvedQuestion: string | undefined;
+    if (request.task === 'vqa') {
+      if (!request.question || typeof parsed.improved_question !== 'string') {
+        return fallback(request, model.modelName, 'query_improver_invalid_output');
+      }
+      const rawImprovedQuestion = parsed.improved_question.trim();
+      improvedQuestion = normalizeQuery(rawImprovedQuestion);
+      if (!improvedQuestion || improvedQuestion.length > MAX_QUERY_LENGTH) {
+        return fallback(request, model.modelName, 'query_improver_invalid_output');
+      }
+    }
+
     const improved = request.task === 'trake'
       ? normalizeTrakeQuery(request.query, rawImproved)
       : normalizeQuery(rawImproved);
@@ -142,7 +168,11 @@ export class QueryImproverService {
     return {
       original_query: request.query,
       improved_query: improved,
-      changed: improved !== request.query,
+      ...(request.question === undefined || improvedQuestion === undefined ? {} : {
+        original_question: request.question,
+        improved_question: improvedQuestion,
+      }),
+      changed: improved !== request.query || (request.question !== undefined && improvedQuestion !== request.question),
       producer: 'query-improver-openai-compatible',
       model_version: model.modelName,
       warning: null,

@@ -78,6 +78,7 @@ export function fuseBranchResults(
     video_object_key?: string | null;
     keyframe_no?: number | null;
     original_frame_id?: number | null;
+    timestamp_ms?: number | null;
     start_ms: number;
     end_ms: number;
     preview_uri?: string;
@@ -100,6 +101,7 @@ export function fuseBranchResults(
         video_object_key: candidate.video_object_key,
         keyframe_no: candidate.keyframe_no,
         original_frame_id: candidate.original_frame_id,
+        timestamp_ms: candidate.timestamp_ms,
         start_ms: candidate.start_ms ?? 0,
         end_ms: Math.max(candidate.end_ms ?? 1, (candidate.start_ms ?? 0) + 1),
         preview_uri: candidate.preview_uri,
@@ -111,6 +113,7 @@ export function fuseBranchResults(
       current.video_object_key ??= candidate.video_object_key;
       current.keyframe_no ??= candidate.keyframe_no;
       current.original_frame_id ??= candidate.original_frame_id;
+      current.timestamp_ms ??= candidate.timestamp_ms;
       current.score += contribution;
       current.start_ms = Math.min(current.start_ms, candidate.start_ms ?? current.start_ms);
       current.end_ms = Math.max(current.end_ms, candidate.end_ms ?? current.end_ms);

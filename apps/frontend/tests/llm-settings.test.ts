@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 describe('frontend LLM settings', () => {
-  it('persists safe settings without storing the API key', () => {
+  it('persists the LLM settings and restores the API key', () => {
     const settings: LlmSettings = {
       ...DEFAULT_LLM_SETTINGS,
       enabled: true,
@@ -29,8 +29,8 @@ describe('frontend LLM settings', () => {
     saveLlmSettings(settings);
 
     const persisted = JSON.parse(localStorage.getItem('aic.llm.settings') ?? '{}') as Record<string, unknown>;
-    expect(persisted).not.toHaveProperty('api_key');
-    expect(loadLlmSettings()).toMatchObject({ ...settings, api_key: '' });
+    expect(persisted).toHaveProperty('api_key', settings.api_key);
+    expect(loadLlmSettings()).toMatchObject(settings);
     expect(buildVqaLlmConfig(settings)).toMatchObject({
       base_url: settings.base_url, api_key: settings.api_key, model: settings.model,
       timeout_ms: 2500, max_tokens: 64, temperature: 0.2,

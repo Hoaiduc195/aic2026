@@ -9,6 +9,7 @@ export interface VideoRecord {
   readonly duration_ms: number;
   readonly fps: number;
   readonly mime_type: 'video/mp4' | 'video/webm' | 'video/ogg';
+  readonly frame_count?: number | null;
 }
 
 export interface FrameRecord {
@@ -60,7 +61,9 @@ export interface VideoStudioRecord {
 
 export interface MediaRepository {
   findVideo(videoId: string): Promise<VideoRecord>;
+  findFrame(videoId: string, originalFrameId: number): Promise<FrameRecord | null>;
   findFramesAround(videoId: string, centerFrameId: number, limit: number): Promise<FrameRecord[]>;
+  findNearestStudioFrame(videoId: string, centerFrameId: number): Promise<StudioFrameRecord | null>;
   findStudio(videoId: string): Promise<VideoStudioRecord>;
 }
 
@@ -97,12 +100,20 @@ export class PostgresMediaRepository implements MediaRepository {
 
   async findVideo(videoId: string): Promise<VideoRecord> {
     const result = await this.database.query<VideoRow>(
-      'SELECT video_id, object_key, duration_ms, fps, mime_type FROM videos WHERE video_id = $1',
+      'SELECT video_id, object_key, duration_ms, fps, mime_type, frame_count FROM videos WHERE video_id = $1',
       [videoId],
     );
     const video = result.rows[0];
     if (!video) throw new NotFoundException(`video ${videoId} was not found`);
     return video;
+  }
+
+  async findFrame(videoId: string, originalFrameId: number): Promise<FrameRecord | null> {
+    const result = await this.database.query<FrameRow>(`
+      SELECT video_id, keyframe_no, original_frame_id, timestamp_ms, thumbnail_object_key
+      FROM frames
+      WHERE video_id = $1 AND original_frame_id = $2`, [videoId, originalFrameId]);
+    return result.rows[0] ?? null;
   }
 
   async findFramesAround(videoId: string, centerFrameId: number, limit: number): Promise<FrameRecord[]> {
@@ -113,6 +124,77 @@ export class PostgresMediaRepository implements MediaRepository {
       ORDER BY ABS(original_frame_id - $2), original_frame_id
       LIMIT $3`, [videoId, centerFrameId, limit]);
     return [...result.rows].sort((left, right) => left.original_frame_id - right.original_frame_id);
+  }
+
+  async findNearestStudioFrame(videoId: string, centerFrameId: number): Promise<StudioFrameRecord | null> {
+    const frameResult = await this.database.query<StudioFrameRow>(`
+      SELECT video_id, keyframe_no, original_frame_id, timestamp_ms
+      FROM frames
+      WHERE video_id = $1
+      ORDER BY ABS(original_frame_id - $2), original_frame_id
+      LIMIT 1`, [videoId, centerFrameId]);
+    const frame = frameResult.rows[0];
+    if (!frame) return null;
+
+    const annotationResult = await this.database.query<StudioAnnotationRow>(`
+      WITH active_feature_sets AS (
+        SELECT DISTINCT fs.feature_set_id, fs.dataset_version, fs.modality
+        FROM feature_sets fs
+        JOIN index_release_features irf
+          ON irf.feature_set_id = fs.feature_set_id
+         AND irf.dataset_version = fs.dataset_version
+         AND irf.modality = fs.modality
+        JOIN index_releases ir
+          ON ir.index_version = irf.index_version
+         AND ir.dataset_version = irf.dataset_version
+        WHERE ir.status = 'active'
+      )
+      SELECT e.evidence_id, e.evidence_type, e.original_frame_id,
+             t.text_content, t.language, fs.producer,
+             o.label, o.confidence, o.normalized_bbox
+      FROM evidence e
+      JOIN feature_sets fs ON fs.feature_set_id = e.feature_set_id
+      JOIN active_feature_sets afs
+        ON afs.feature_set_id = e.feature_set_id
+       AND afs.dataset_version = fs.dataset_version
+       AND afs.modality = fs.modality
+      LEFT JOIN text_evidence t ON t.evidence_id = e.evidence_id
+      LEFT JOIN object_evidence o ON o.evidence_id = e.evidence_id
+      WHERE e.video_id = $1
+        AND e.original_frame_id = $2
+        AND e.evidence_type IN ('caption', 'object')
+        AND (e.evidence_type <> 'caption' OR t.language = 'en')
+      ORDER BY e.evidence_type, e.evidence_id`, [videoId, frame.original_frame_id]);
+
+    let captions: StudioCaptionRecord[] = [];
+    let objects: StudioObjectRecord[] = [];
+    for (const row of annotationResult.rows) {
+      if (row.evidence_type === 'caption' && row.text_content?.trim()) {
+        captions = [...captions, {
+          evidence_id: row.evidence_id,
+          text: row.text_content,
+          language: row.language ?? 'unknown',
+          producer: row.producer,
+        }];
+      }
+      if (row.evidence_type === 'object' && row.label?.trim()) {
+        objects = [...objects, {
+          evidence_id: row.evidence_id,
+          label: row.label,
+          confidence: Number(row.confidence ?? 0),
+          normalized_bbox: normalizedBoundingBox(row.normalized_bbox),
+          producer: row.producer,
+        }];
+      }
+    }
+    return {
+      video_id: frame.video_id,
+      keyframe_no: Number(frame.keyframe_no),
+      original_frame_id: Number(frame.original_frame_id),
+      timestamp_ms: Number(frame.timestamp_ms),
+      captions,
+      objects,
+    };
   }
 
   async findStudio(videoId: string): Promise<VideoStudioRecord> {
@@ -239,7 +321,15 @@ export class UnavailableMediaRepository implements MediaRepository {
     throw new NotFoundException('media catalog is not configured');
   }
 
+  async findFrame(_videoId: string, _originalFrameId: number): Promise<FrameRecord | null> {
+    throw new NotFoundException('media catalog is not configured');
+  }
+
   async findFramesAround(_videoId: string, _centerFrameId: number, _limit: number): Promise<FrameRecord[]> {
+    throw new NotFoundException('media catalog is not configured');
+  }
+
+  async findNearestStudioFrame(_videoId: string, _centerFrameId: number): Promise<StudioFrameRecord | null> {
     throw new NotFoundException('media catalog is not configured');
   }
 

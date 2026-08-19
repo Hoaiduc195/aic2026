@@ -36,7 +36,7 @@ export function loadVlmSettings(): VlmSettings {
     return {
       enabled: value.enabled === true,
       base_url: typeof value.base_url === 'string' ? value.base_url : '',
-      api_key: '',
+      api_key: typeof value.api_key === 'string' ? value.api_key : '',
       model: typeof value.model === 'string' ? value.model : '',
       timeout_ms: numberValue(value.timeout_ms, DEFAULT_VLM_SETTINGS.timeout_ms),
       max_tokens: numberValue(value.max_tokens, DEFAULT_VLM_SETTINGS.max_tokens),
@@ -48,8 +48,7 @@ export function loadVlmSettings(): VlmSettings {
 }
 
 export function saveVlmSettings(settings: VlmSettings): void {
-  const { api_key: _apiKey, ...persisted } = settings;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...settings }));
 }
 
 export function validateVlmSettings(settings: VlmSettings): string | null {

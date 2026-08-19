@@ -23,6 +23,22 @@ describe('parseQueryImprovementRequest', () => {
     });
   });
 
+  it('accepts a separate question for VQA', () => {
+    expect(parseQueryImprovementRequest({
+      query: 'Một cửa hàng trên phố',
+      question: 'Người phụ nữ đang cầm gì?',
+      task: 'vqa',
+    })).toMatchObject({
+      query: 'Một cửa hàng trên phố',
+      question: 'Người phụ nữ đang cầm gì?',
+      task: 'vqa',
+    });
+  });
+
+  it('requires a question for VQA improvement', () => {
+    expect(() => parseQueryImprovementRequest({ query: 'query', task: 'vqa' })).toThrow(BadRequestException);
+  });
+
   it('rejects unsafe model URLs and unsupported tasks', () => {
     expect(() => parseQueryImprovementRequest({
       query: 'query', task: 'textual_kis', llm: {

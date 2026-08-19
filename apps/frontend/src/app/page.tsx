@@ -4,6 +4,7 @@ import { Providers } from './providers';
 import { Workbench } from '../components/Workbench';
 import {
   createSubmissionPreview,
+  getVideoFrame,
   getVideoFrames,
   getVideoStudio,
   improveQuery,
@@ -18,6 +19,7 @@ export default function HomePage() {
       <Workbench
         search={searchMedia}
         loadFrames={getVideoFrames}
+        loadFrame={getVideoFrame}
         loadStudio={getVideoStudio}
         saveSelection={saveSelection}
         createPreview={createSubmissionPreview}

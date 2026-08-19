@@ -31,7 +31,7 @@ export function toSearchResults(
   evidenceById: ReadonlyMap<string, EvidenceView> = new Map(),
 ): SearchResult[] {
   return candidates.slice(0, displayK).map((candidate) => {
-    const startMs = Math.max(candidate.start_ms, 0);
+    const startMs = Math.max(candidate.timestamp_ms ?? candidate.start_ms, 0);
     const endMs = Math.max(candidate.end_ms, startMs + 1);
     const previewUri = candidate.preview_uri
       ?? (candidate.video_object_key ? `r2://media/${candidate.video_object_key}` : `r2://unavailable/${candidate.video_id}`);
@@ -78,6 +78,7 @@ export function buildSearchResponse(
     request_id: input.plan.query_id,
     query_id: input.plan.query_id,
     query: input.request.query,
+    ...(input.plan.query_mode ? { query_mode: input.plan.query_mode } : {}),
     session_id: input.request.session_id ?? null,
     task: input.request.task,
     task_executor: executorName,

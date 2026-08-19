@@ -20,6 +20,19 @@ describe('query embedding providers', () => {
     expect(vi.mocked(fetch).mock.calls[0][1]?.headers).toMatchObject({ authorization: 'Bearer secret' });
   });
 
+  it('sends raw frame bytes to the image encoder endpoint', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ embedding: [0.1, 0.2] }), { status: 200 })));
+    const provider = new HttpQueryEmbeddingProvider('https://encoder.test/embed', 2, 'secret');
+    await expect(provider.embedImage(Uint8Array.from([1, 2, 3]), 'image/jpeg')).resolves.toEqual([0.1, 0.2]);
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe('https://encoder.test/embed/image');
+    expect(init?.method).toBe('POST');
+    expect(new Headers(init?.headers).get('content-type')).toBe('image/jpeg');
+    expect(new Headers(init?.headers).get('authorization')).toBe('Bearer secret');
+    expect(init?.body).toEqual(Uint8Array.from([1, 2, 3]));
+  });
+
   it('rejects failed or malformed encoder responses', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 502 })));
     await expect(new HttpQueryEmbeddingProvider('https://encoder.test', 2).embedText('x')).rejects.toThrow('HTTP 502');

@@ -34,6 +34,7 @@ class ServiceSettings:
     dimensions: int = EMBEDDING_DIMENSIONS
     device: str = "auto"
     max_text_chars: int = 2000
+    max_image_bytes: int = 12 * 1024 * 1024
     model_cache_dir: str = "/models/huggingface"
 
     @classmethod
@@ -50,5 +51,6 @@ class ServiceSettings:
             dimensions=EMBEDDING_DIMENSIONS,
             device=device,
             max_text_chars=min(_positive_int("EMBEDDING_MAX_TEXT_CHARS", 2000), 2000),
+            max_image_bytes=min(_positive_int("EMBEDDING_MAX_IMAGE_BYTES", 12 * 1024 * 1024), 12 * 1024 * 1024),
             model_cache_dir=_optional_env("EMBEDDING_MODEL_CACHE_DIR") or "/models/huggingface",
         )

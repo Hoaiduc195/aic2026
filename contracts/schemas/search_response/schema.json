@@ -9,7 +9,8 @@
   "properties": {
     "request_id": { "type": "string", "minLength": 1 },
     "query_id": { "type": "string", "minLength": 1 },
-    "query": { "type": "string", "minLength": 1 },
+    "query": { "type": "string", "minLength": 0 },
+    "query_mode": { "type": "string", "enum": ["text", "frame_image"] },
     "session_id": { "type": ["string", "null"], "minLength": 1 },
     "task": { "type": "string", "enum": ["textual_kis", "video_kis", "avs", "vqa", "trake", "kisc"] },
     "task_executor": { "type": "string", "minLength": 1 },

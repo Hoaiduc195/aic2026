@@ -8,6 +8,7 @@ import {
   type VqaAnswerRequest,
 } from '../src/tasks/vqa/vqa-answer.request';
 import { VqaAnswerService } from '../src/tasks/vqa/vqa-answer.service';
+import type { ImageCompressor } from '../src/media/image-compressor';
 import {
   PostgresVqaGroundingRepository,
   UnavailableVqaGroundingRepository,
@@ -180,6 +181,90 @@ describe('VQA answer grounding', () => {
       answer_status: 'answered', producer: 'vlm-vision-openai-compatible', model_version: 'vision-v1',
     });
     expect(storage.signReadUrl).toHaveBeenCalledWith('keyframes/video-1/42.jpg');
+    expect(vlm.answerVisualQuestion).toHaveBeenCalledWith(expect.objectContaining({
+      imageUrl: 'data:image/jpeg;base64,/9j/2Q==',
+    }));
+  });
+
+  it('compresses an oversized keyframe before sending it to the VLM', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, {
+      status: 200,
+      headers: {
+        'content-type': 'image/jpeg',
+        'content-length': String(5 * 1024 * 1024 + 1),
+      },
+    })));
+    const vlm: VisionLanguageModel = {
+      isConfigured: true,
+      modelName: 'vision-v1',
+      verifyImageRelevance: vi.fn(),
+      answerVisualQuestion: vi.fn(async (): Promise<VlmAnswerResult> => ({
+        answer_status: 'answered', answer: 'a bottle', normalized_answer: 'a bottle',
+        confidence: { level: 'high', score: 0.95 }, reason: 'visible in frame',
+      })),
+    };
+    const compressor: ImageCompressor = {
+      compress: vi.fn(async () => ({ mime_type: 'image/jpeg' as const, bytes: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) })),
+    };
+    const storage = {
+      isConfigured: true,
+      signReadUrl: vi.fn(async (key: string) => `https://signed.test/${key}`),
+      health: vi.fn(async () => true),
+    };
+    const service = new VqaAnswerService(
+      { find: vi.fn(async () => context()) }, new UnavailableLanguageModel(), vlm, storage, undefined, compressor,
+    );
+
+    await expect(service.answer(input)).resolves.toMatchObject({ answer_status: 'answered' });
+    expect(compressor.compress).toHaveBeenCalledWith(expect.objectContaining({
+      image_url: 'https://signed.test/keyframes/video-1/42.jpg',
+    }));
+    expect(vlm.answerVisualQuestion).toHaveBeenCalledWith(expect.objectContaining({
+      imageUrl: 'data:image/jpeg;base64,/9j/2Q==',
+    }));
+  });
+
+  it('decodes the exact source frame when no sparse keyframe thumbnail exists', async () => {
+    const vlm: VisionLanguageModel = {
+      isConfigured: true,
+      modelName: 'vision-v1',
+      verifyImageRelevance: vi.fn(),
+      answerVisualQuestion: vi.fn(async (): Promise<VlmAnswerResult> => ({
+        answer_status: 'answered', answer: 'a bottle', normalized_answer: 'a bottle',
+        confidence: { level: 'high', score: 0.95 }, reason: 'visible in frame',
+      })),
+    };
+    const storage = {
+      isConfigured: true,
+      signReadUrl: vi.fn(async (key: string) => `https://signed.test/${key}`),
+      health: vi.fn(async () => true),
+    };
+    const frameDecoder = {
+      decode: vi.fn(async () => ({ mime_type: 'image/jpeg' as const, bytes: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) })),
+    };
+    const exactContext: VqaGroundingContext = {
+      ...context(),
+      original_frame_id: 386,
+      thumbnail_object_key: null,
+      video_object_key: 'videos/video-1.mp4',
+      fps: 30,
+    };
+    const service = new VqaAnswerService(
+      { find: vi.fn(async () => exactContext) },
+      new UnavailableLanguageModel(),
+      vlm,
+      storage,
+      frameDecoder,
+    );
+
+    await expect(service.answer({ ...input, original_frame_id: 386 })).resolves.toMatchObject({
+      answer_status: 'answered', producer: 'vlm-vision-openai-compatible',
+    });
+    expect(storage.signReadUrl).toHaveBeenCalledWith('videos/video-1.mp4');
+    expect(frameDecoder.decode).toHaveBeenCalledWith({
+      video_url: 'https://signed.test/videos/video-1.mp4', original_frame_id: 386, fps: 30,
+      max_bytes: 5 * 1024 * 1024,
+    });
     expect(vlm.answerVisualQuestion).toHaveBeenCalledWith(expect.objectContaining({
       imageUrl: 'data:image/jpeg;base64,/9j/2Q==',
     }));

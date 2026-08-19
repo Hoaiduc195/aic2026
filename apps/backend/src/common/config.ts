@@ -29,6 +29,8 @@ export interface BackendConfig {
   readonly vlmTopK: number;
   readonly vlmWeight: number;
   readonly vlmConcurrency: number;
+  readonly ffmpegPath: string;
+  readonly frameDecodeTimeoutMs: number;
   readonly datasetVersion: string;
   readonly pipelineVersion: string;
   readonly indexVersion: string;
@@ -142,6 +144,8 @@ export function loadConfig(): BackendConfig {
     vlmTopK: positiveInteger(process.env.VLM_TOP_K, 15),
     vlmWeight: boundedNumber(process.env.VLM_WEIGHT, 0.6, 0, 1),
     vlmConcurrency: positiveInteger(process.env.VLM_CONCURRENCY, 5),
+    ffmpegPath: optionalEnv('FFMPEG_PATH') ?? 'ffmpeg',
+    frameDecodeTimeoutMs: positiveInteger(process.env.FRAME_DECODE_TIMEOUT_MS, 15000),
     datasetVersion: optionalEnv('DATASET_VERSION') ?? 'local',
     pipelineVersion: optionalEnv('PIPELINE_VERSION') ?? 'preprocessing-artifacts',
     indexVersion,

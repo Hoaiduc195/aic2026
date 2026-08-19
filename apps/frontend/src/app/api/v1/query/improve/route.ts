@@ -33,6 +33,9 @@ export async function POST(request: NextRequest) {
   const body = await parseJsonObject(request);
   if (!body || typeof body.query !== 'string' || !body.query.trim() || body.query.trim().length > 2000
     || typeof body.task !== 'string' || !TASKS.has(body.task)
+    || (body.question !== undefined && (typeof body.question !== 'string'
+      || !body.question.trim() || body.question.trim().length > 2000))
+    || (body.task === 'vqa' && (typeof body.question !== 'string' || !body.question.trim()))
     || (body.llm !== undefined && !normalizeModelConfig(body.llm))) {
     return NextResponse.json({ message: 'query, task hoặc cấu hình LLM không hợp lệ.' }, { status: 400 });
   }
@@ -44,6 +47,7 @@ export async function POST(request: NextRequest) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         query: body.query.trim(),
+        ...(typeof body.question === 'string' ? { question: body.question.trim() } : {}),
         task: body.task,
         ...(body.llm === undefined ? {} : { llm: normalizeModelConfig(body.llm) }),
       }),

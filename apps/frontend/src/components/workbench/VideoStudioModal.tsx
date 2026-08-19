@@ -8,8 +8,8 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 
-import type { StudioFrame, VideoStudioResponse } from '../../lib/contracts';
-import { activeAsrSpans, frameThumbnailUri, keyframeLabel, nearestStudioFrame } from '../../lib/video-studio-model';
+import type { CanonicalFrameResponse, StudioFrame, VideoStudioResponse } from '../../lib/contracts';
+import { activeAsrSpans, keyframeLabel, nearestStudioFrame, studioFrameThumbnailUri } from '../../lib/video-studio-model';
 import { formatMs } from '../../lib/workbench-model';
 import { VideoTimelineOverlay } from './VideoTimelineOverlay';
 
@@ -19,9 +19,17 @@ interface Props {
   initialTimestampMs?: number;
   onClose: () => void;
   onSelectFrame: (frame: StudioFrame) => void;
+  loadExactFrame?: (frameId: number, signal?: AbortSignal) => Promise<CanonicalFrameResponse>;
 }
 
-export function VideoStudioModal({ studio, initialFrameId, initialTimestampMs = 0, onClose, onSelectFrame }: Props) {
+export function VideoStudioModal({
+  studio,
+  initialFrameId,
+  initialTimestampMs = 0,
+  onClose,
+  onSelectFrame,
+  loadExactFrame,
+}: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -33,7 +41,14 @@ export function VideoStudioModal({ studio, initialFrameId, initialTimestampMs = 
   const [selectedFrameId, setSelectedFrameId] = useState<number | null>(initialFrame?.original_frame_id ?? null);
   const [currentTimeMs, setCurrentTimeMs] = useState(initialFrame?.timestamp_ms ?? 0);
   const [showBoxes, setShowBoxes] = useState(true);
-  const selectedFrame = studio.frames.find((frame) => frame.original_frame_id === selectedFrameId) ?? initialFrame ?? null;
+  const [exactFrame, setExactFrame] = useState<CanonicalFrameResponse | null>(null);
+  const [frameIdInput, setFrameIdInput] = useState(String(initialFrameId));
+  const [isLoadingExactFrame, setIsLoadingExactFrame] = useState(false);
+  const [exactFrameError, setExactFrameError] = useState<string | null>(null);
+  const selectedFrame = exactFrame
+    ?? studio.frames.find((frame) => frame.original_frame_id === selectedFrameId)
+    ?? initialFrame
+    ?? null;
   const activeSpans = useMemo(
     () => activeAsrSpans(studio.asr_spans, currentTimeMs),
     [currentTimeMs, studio.asr_spans],
@@ -61,10 +76,43 @@ export function VideoStudioModal({ studio, initialFrameId, initialTimestampMs = 
   useEffect(() => {
     setSelectedFrameId(initialFrame?.original_frame_id ?? null);
     setCurrentTimeMs(initialFrame?.timestamp_ms ?? 0);
-  }, [initialFrame?.original_frame_id, initialFrame?.timestamp_ms]);
+    setFrameIdInput(String(initialFrameId));
+    setExactFrame(null);
+    setExactFrameError(null);
+  }, [initialFrame?.original_frame_id, initialFrame?.timestamp_ms, initialFrameId]);
 
-  function seek(timestampMs: number) {
+  useEffect(() => {
+    if (!loadExactFrame || initialFrameId < 0 || studio.frames.some((frame) => frame.original_frame_id === initialFrameId)) {
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    setIsLoadingExactFrame(true);
+    setExactFrameError(null);
+    void loadExactFrame(initialFrameId, controller.signal)
+      .then((frame) => {
+        if (cancelled) return;
+        setExactFrame(frame);
+        setSelectedFrameId(frame.original_frame_id);
+        setCurrentTimeMs(frame.timestamp_ms);
+      })
+      .catch(() => {
+        if (!cancelled) setExactFrameError('Không tải được canonical frame này.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingExactFrame(false);
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [initialFrameId, loadExactFrame, studio.frames]);
+
+  function seek(timestampMs: number, clearExact = true) {
     const clamped = Math.max(0, Math.min(studio.video.duration_ms, timestampMs));
+    if (clearExact) setExactFrame(null);
     setCurrentTimeMs(clamped);
     const frame = nearestStudioFrame(studio.frames, clamped);
     if (frame) setSelectedFrameId(frame.original_frame_id);
@@ -72,6 +120,8 @@ export function VideoStudioModal({ studio, initialFrameId, initialTimestampMs = 
   }
 
   function selectFrame(frame: StudioFrame) {
+    setExactFrame(null);
+    setExactFrameError(null);
     setSelectedFrameId(frame.original_frame_id);
     seek(frame.timestamp_ms);
   }
@@ -79,8 +129,36 @@ export function VideoStudioModal({ studio, initialFrameId, initialTimestampMs = 
   function handleTimeUpdate() {
     const timestampMs = Math.round((videoRef.current?.currentTime ?? 0) * 1000);
     setCurrentTimeMs(timestampMs);
+    if (!exactFrame || Math.abs(timestampMs - exactFrame.timestamp_ms) > 50) setExactFrame(null);
     const frame = nearestStudioFrame(studio.frames, timestampMs);
     if (frame) setSelectedFrameId(frame.original_frame_id);
+  }
+
+  async function chooseExactFrame() {
+    if (!loadExactFrame) return;
+    const rawFrameId = frameIdInput.trim();
+    const frameId = Number(rawFrameId);
+    const maxFrameId = studio.video.frame_count === undefined || studio.video.frame_count === null
+      ? 2_147_483_647
+      : studio.video.frame_count - 1;
+    if (!rawFrameId || !Number.isInteger(frameId) || frameId < 0 || frameId > maxFrameId) {
+      setExactFrameError(`Frame ID phải là số nguyên từ 0 đến ${maxFrameId}.`);
+      return;
+    }
+
+    setIsLoadingExactFrame(true);
+    setExactFrameError(null);
+    try {
+      const frame = await loadExactFrame(frameId);
+      setExactFrame(frame);
+      setSelectedFrameId(frame.original_frame_id);
+      setCurrentTimeMs(frame.timestamp_ms);
+      if (videoRef.current) videoRef.current.currentTime = frame.timestamp_ms / 1000;
+    } catch {
+      setExactFrameError('Không tải được canonical frame. Hãy kiểm tra frame ID và kết nối backend.');
+    } finally {
+      setIsLoadingExactFrame(false);
+    }
   }
 
   function handleDialogKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
@@ -122,7 +200,7 @@ export function VideoStudioModal({ studio, initialFrameId, initialTimestampMs = 
                 src={studio.video.playback_uri}
                 aria-label={`Video ${studio.video.video_id}`}
                 onTimeUpdate={handleTimeUpdate}
-                onLoadedMetadata={() => seek(currentTimeMs)}
+                onLoadedMetadata={() => seek(currentTimeMs, false)}
               />
             </div>
 
@@ -136,6 +214,36 @@ export function VideoStudioModal({ studio, initialFrameId, initialTimestampMs = 
               onFrameSelect={selectFrame}
             />
 
+            <div className="video-studio-exact-picker" aria-label="Chọn canonical frame chính xác">
+              <div>
+                <p className="eyebrow">Canonical frame</p>
+                <label htmlFor="studio-exact-frame-id">Frame ID trong video</label>
+              </div>
+              <div className="video-studio-exact-picker-controls">
+                <input
+                  id="studio-exact-frame-id"
+                  type="number"
+                  min={0}
+                  max={studio.video.frame_count === undefined || studio.video.frame_count === null ? undefined : Math.max(0, studio.video.frame_count - 1)}
+                  step={1}
+                  inputMode="numeric"
+                  value={frameIdInput}
+                  onChange={(event) => setFrameIdInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') void chooseExactFrame();
+                  }}
+                  aria-describedby="studio-exact-frame-help"
+                />
+                <button type="button" className="secondary-button" onClick={() => void chooseExactFrame()} disabled={!loadExactFrame || isLoadingExactFrame}>
+                  {isLoadingExactFrame ? 'Đang tải…' : 'Tải exact frame'}
+                </button>
+              </div>
+              <small id="studio-exact-frame-help">
+                Nhập số frame nguồn để xem đúng frame, kể cả khi frame đó không nằm trong danh sách keyframe thưa.
+              </small>
+              {exactFrameError && <p className="inline-error" role="alert">{exactFrameError}</p>}
+            </div>
+
             <div className="video-studio-filmstrip" aria-label="Các canonical keyframe trong video">
               {studio.frames.map((frame) => (
                 <button
@@ -148,12 +256,12 @@ export function VideoStudioModal({ studio, initialFrameId, initialTimestampMs = 
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={frameThumbnailUri(frame.video_id, frame.original_frame_id)}
+                    src={studioFrameThumbnailUri(frame)}
                     alt={`${keyframeLabel(frame)} của ${frame.video_id}`}
                     loading={frame.original_frame_id === selectedFrameId ? 'eager' : 'lazy'}
                     decoding="async"
                   />
-                  <span>#{frame.keyframe_no}</span>
+                  <span>{frame.keyframe_no === null || frame.keyframe_no === undefined ? 'Exact frame' : `#${frame.keyframe_no}`}</span>
                   <small>Source frame {frame.original_frame_id} · {formatMs(frame.timestamp_ms)}</small>
                 </button>
               ))}
@@ -166,16 +274,25 @@ export function VideoStudioModal({ studio, initialFrameId, initialTimestampMs = 
                 <div className="studio-selection-heading">
                   <div>
                     <p className="eyebrow">Frame đang chọn</p>
-                    <h3>Keyframe {selectedFrame.keyframe_no}</h3>
+                    <h3>{selectedFrame.is_exact_frame ? `Canonical frame ${selectedFrame.original_frame_id}` : `Keyframe ${selectedFrame.keyframe_no}`}</h3>
                   </div>
                   <span>Source frame {selectedFrame.original_frame_id} · {formatMs(selectedFrame.timestamp_ms)}</span>
                 </div>
+
+                {selectedFrame.is_exact_frame
+                  && selectedFrame.annotation_source_frame_id !== null
+                  && selectedFrame.annotation_source_frame_id !== undefined
+                  && selectedFrame.annotation_source_frame_id !== selectedFrame.original_frame_id && (
+                    <p className="studio-annotation-note">
+                      Annotation đang hiển thị lấy từ frame gần nhất có dữ liệu: {selectedFrame.annotation_source_frame_id}.
+                    </p>
+                  )}
 
                 <div className="studio-frame-canvas">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     data-testid="studio-selected-frame-image"
-                    src={frameThumbnailUri(selectedFrame.video_id, selectedFrame.original_frame_id)}
+                    src={studioFrameThumbnailUri(selectedFrame)}
                     alt={`${keyframeLabel(selectedFrame)} của ${selectedFrame.video_id}`}
                     loading="eager"
                     decoding="async"
@@ -213,7 +330,7 @@ export function VideoStudioModal({ studio, initialFrameId, initialTimestampMs = 
                     {showBoxes ? 'Ẩn bounding box' : 'Hiện bounding box'}
                   </button>
                   <button type="button" className="primary-button" onClick={() => { onSelectFrame(selectedFrame); onClose(); }}>
-                    Dùng keyframe {selectedFrame.keyframe_no}
+                    {selectedFrame.is_exact_frame ? `Dùng canonical frame ${selectedFrame.original_frame_id}` : `Dùng keyframe ${selectedFrame.keyframe_no}`}
                   </button>
                 </div>
 

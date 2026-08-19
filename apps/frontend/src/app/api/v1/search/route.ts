@@ -13,6 +13,21 @@ import {
 import { attachMediaSession } from '../../../../lib/server-media-access';
 
 const SEARCH_TASKS = new Set<SearchRequest['task']>(['textual_kis', 'video_kis', 'avs', 'vqa', 'trake', 'kisc']);
+const SAFE_VIDEO_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/;
+
+function normalizeFrameQuery(value: unknown): SearchRequest['frame_query'] | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('frame_query is invalid');
+  const input = value as Record<string, unknown>;
+  if (typeof input.video_id !== 'string' || !SAFE_VIDEO_ID.test(input.video_id.trim())) {
+    throw new Error('frame_query is invalid');
+  }
+  if (!Number.isSafeInteger(input.original_frame_id)
+    || (input.original_frame_id as number) < 0 || (input.original_frame_id as number) > 2_147_483_647) {
+    throw new Error('frame_query is invalid');
+  }
+  return { video_id: input.video_id.trim(), original_frame_id: input.original_frame_id as number };
+}
 
 function normalizeEmbedding(value: unknown): SearchEmbeddingConfig | undefined {
   if (value === undefined) return undefined;
@@ -62,6 +77,15 @@ function normalizeRetrieval(value: unknown): SearchRetrievalConfig | undefined {
     throw new Error('retrieval fusion_k must include display_k');
   }
 
+  let nearFrameWindowMs: number | undefined;
+  if (input.near_frame_window_ms !== undefined) {
+    if (!Number.isSafeInteger(input.near_frame_window_ms)
+      || (input.near_frame_window_ms as number) < 0 || (input.near_frame_window_ms as number) > 10_000) {
+      throw new Error('retrieval near_frame_window_ms is invalid');
+    }
+    nearFrameWindowMs = input.near_frame_window_ms as number;
+  }
+
   let rrfK: number | undefined;
   if (input.rrf_k !== undefined) {
     if (!Number.isSafeInteger(input.rrf_k) || (input.rrf_k as number) < 1 || (input.rrf_k as number) > 1000) {
@@ -106,6 +130,7 @@ function normalizeRetrieval(value: unknown): SearchRetrievalConfig | undefined {
     display_k: input.display_k as number,
     branch_k: input.branch_k as number,
     fusion_k: input.fusion_k as number,
+    ...(nearFrameWindowMs === undefined ? {} : { near_frame_window_ms: nearFrameWindowMs }),
     ...(rrfK === undefined ? {} : { rrf_k: rrfK }),
     ...(channelWeights === undefined ? {} : { channel_weights: channelWeights }),
     ...(vlmRerank === undefined ? {} : { vlm_rerank: vlmRerank }),
@@ -114,10 +139,16 @@ function normalizeRetrieval(value: unknown): SearchRetrievalConfig | undefined {
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null) as Partial<SearchRequest> | null;
+  let frameQuery: SearchRequest['frame_query'] | undefined;
+  try {
+    frameQuery = normalizeFrameQuery(body?.frame_query);
+  } catch {
+    return NextResponse.json({ message: 'Frame query không hợp lệ.' }, { status: 400 });
+  }
   if (
     !body ||
     typeof body.query !== 'string' ||
-    !body.query.trim() ||
+    (!body.query.trim() && !frameQuery) ||
     typeof body.task !== 'string' ||
     !SEARCH_TASKS.has(body.task as SearchRequest['task'])
   ) {
@@ -146,6 +177,7 @@ export async function POST(request: NextRequest) {
     session_id: typeof body.session_id === 'string' ? body.session_id : undefined,
     ...(embedding ? { embedding } : {}),
     ...(retrieval ? { retrieval } : {}),
+    ...(frameQuery ? { frame_query: frameQuery } : {}),
   };
 
   let upstream: Response | null;

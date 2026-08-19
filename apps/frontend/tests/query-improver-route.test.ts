@@ -43,6 +43,28 @@ describe('query improver proxy route', () => {
     });
   });
 
+  it('forwards the separate Q&A question to the backend improver', async () => {
+    process.env.BACKEND_API_URL = 'http://backend.internal';
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
+      original_query: 'Một cửa hàng trên phố', improved_query: 'A shop on a street.',
+      original_question: 'Người phụ nữ đang cầm gì?', improved_question: 'What is the woman holding?',
+      changed: true, producer: 'test', model_version: 'model', warning: null,
+    }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await POST(new NextRequest('http://localhost/api/v1/query/improve', {
+      method: 'POST',
+      body: JSON.stringify({
+        query: 'Một cửa hàng trên phố', question: 'Người phụ nữ đang cầm gì?', task: 'vqa',
+      }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({
+      query: 'Một cửa hàng trên phố', question: 'Người phụ nữ đang cầm gì?', task: 'vqa',
+    });
+  });
+
   it('rejects an unsafe model endpoint before contacting backend', async () => {
     process.env.BACKEND_API_URL = 'http://backend.internal';
     const fetchMock = vi.fn();

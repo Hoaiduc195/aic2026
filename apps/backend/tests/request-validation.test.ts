@@ -12,9 +12,11 @@ describe('parseSearchRequest', () => {
         branch_k: 200,
         fusion_k: 500,
         display_k: 100,
+        near_frame_window_ms: 1000,
         rrf_k: 30,
         channel_weights: { clip: 1.4, object: 0.5 },
       },
+      embedding: undefined,
     })).toEqual({
       query: 'find a person running',
       task: 'textual_kis',
@@ -24,9 +26,11 @@ describe('parseSearchRequest', () => {
         branch_k: 200,
         fusion_k: 500,
         display_k: 100,
+        near_frame_window_ms: 1000,
         rrf_k: 30,
         channel_weights: { clip: 1.4, object: 0.5 },
       },
+      embedding: undefined,
     });
     expect(() => parseSearchRequest({
       query: 'query',
@@ -68,6 +72,22 @@ describe('parseSearchRequest', () => {
     expect(() => parseSearchRequest({
       query: 'query', task: 'textual_kis', retrieval: { vlm_rerank: { enabled: true, top_k: 0 } },
     })).toThrow('retrieval.vlm_rerank.top_k');
+  });
+
+  it('accepts a bounded temporal near-frame filter override', () => {
+    expect(parseSearchRequest({
+      query: 'a person near a car',
+      task: 'textual_kis',
+      retrieval: { near_frame_window_ms: 1000 },
+    })).toMatchObject({
+      retrieval: { near_frame_window_ms: 1000 },
+    });
+    expect(() => parseSearchRequest({
+      query: 'query', task: 'textual_kis', retrieval: { near_frame_window_ms: -1 },
+    })).toThrow('retrieval.near_frame_window_ms');
+    expect(() => parseSearchRequest({
+      query: 'query', task: 'textual_kis', retrieval: { near_frame_window_ms: 10001 },
+    })).toThrow('retrieval.near_frame_window_ms');
   });
 
   it('rejects unsafe or unbounded embedding overrides', () => {

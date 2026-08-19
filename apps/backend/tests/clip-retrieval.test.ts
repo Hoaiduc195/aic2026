@@ -44,4 +44,33 @@ describe('PostgresClipBranch', () => {
     expect(sql).toContain("ir.status = 'active'");
     expect(parameters).toEqual([expect.any(String), 1024, 'v1', 10]);
   });
+
+  it('uses a supplied frame vector without invoking text encoding', async () => {
+    const database: DatabaseClient = {
+      isConfigured: true,
+      health: vi.fn(async () => true),
+      query: vi.fn(async () => ({ rows: [] as never[], rowCount: 0 })),
+    };
+    const encoder: QueryEmbeddingProvider = {
+      isConfigured: true,
+      dimensions: 2,
+      embedText: vi.fn(async () => [0.1, 0.2]),
+    };
+    const branch = new PostgresClipBranch(database, encoder, [0.3, 0.4]);
+    const plan = {
+      query_id: 'q', task: 'textual_kis', language: 'en', original_query: '[frame image query]',
+      query_variants: ['[frame image query]'], concepts: [], query_atoms: [], negative_concepts: [],
+      text_constraints: [], audio_concepts: [], object_terms: [],
+      object_constraints: { class_filters: [], excluded_classes: [], min_confidence: 0.25, counts: {}, spatial: [] },
+      query_views: { clip: '[frame image query]' }, channel_weights: { clip: 1 }, temporal_relations: [],
+      target_granularities: ['frame'], branches: ['clip'], top_k_per_branch: 10, fusion_k: 10,
+      display_k: 10, rrf_k: 60, latency_budget_ms: 5000, fallback_policy: 'none', planner_version: 'test',
+      fusion: 'rrf', index_version: 'v1', hard_filters: {}, transformations: [],
+    } satisfies RetrievalExecutionPlan;
+
+    await branch.search('[frame image query]', plan);
+
+    expect(encoder.embedText).not.toHaveBeenCalled();
+    expect(vi.mocked(database.query).mock.calls[0][1]).toEqual([expect.any(String), 2, 'v1', 10]);
+  });
 });

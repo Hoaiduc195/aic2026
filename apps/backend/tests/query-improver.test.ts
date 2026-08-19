@@ -45,6 +45,30 @@ describe('QueryImproverService', () => {
     expect(languageModel.complete).toHaveBeenCalledTimes(1);
   });
 
+  it('improves the event query and question separately for VQA', async () => {
+    const languageModel = model(JSON.stringify({
+      improved_query: 'A shop on a street.',
+      improved_question: 'What is the woman holding?',
+    }));
+    const service = new QueryImproverService(languageModel);
+
+    const result = await service.improve({
+      query: 'Một cửa hàng trên phố',
+      question: 'Người phụ nữ đang cầm gì?',
+      task: 'vqa',
+    });
+
+    expect(result).toMatchObject({
+      improved_query: 'A shop on a street.',
+      improved_question: 'What is the woman holding?',
+      original_question: 'Người phụ nữ đang cầm gì?',
+      changed: true,
+    });
+    expect(languageModel.complete).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining('Original Vietnamese question'),
+    }));
+  });
+
   it('falls back to the original query when the model is unavailable', async () => {
     const languageModel: LanguageModel = {
       isConfigured: false,

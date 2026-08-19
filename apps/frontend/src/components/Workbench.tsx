@@ -1,11 +1,11 @@
 'use client';
 
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { type CSSProperties, type FormEvent, useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   FrameCandidate,
-  QaAnswer,
+  CanonicalFrameResponse,
   QualificationAnswer,
   QualificationEventInput,
   QualificationTask,
@@ -69,7 +69,7 @@ import {
   validateRrfSettings,
   type RrfSettings,
 } from '../lib/rrf-settings';
-import { activeAsrSpans, frameThumbnailUri } from '../lib/video-studio-model';
+import { activeAsrSpans, studioFrameThumbnailUri } from '../lib/video-studio-model';
 import {
   buildRankedTextualSubmission,
   reorderFrames,
@@ -77,6 +77,19 @@ import {
   validateTrakeSequence,
 } from '../lib/workbench-model';
 import { useWorkbenchStore } from '../lib/workbench-store';
+import { runVqaBatch } from '../lib/vqa-batch';
+import {
+  addVqaFrame,
+  applyAnswerToPending,
+  completedVqaAnswers,
+  fillVqaQueue,
+  moveVqaQueueItem as moveVqaQueueItemModel,
+  queueKey,
+  removeVqaQueueItem as removeVqaQueueItemModel,
+  toggleVqaQueueDownvote,
+  updateVqaQueueItem,
+  type VqaQueueItem,
+} from '../lib/vqa-queue-model';
 import { AnswerDrawer } from './workbench/AnswerDrawer';
 import { FrameGrid } from './workbench/FrameGrid';
 import {
@@ -92,6 +105,7 @@ import { VideoStudioModal } from './workbench/VideoStudioModal';
 interface Props {
   search: (request: SearchRequest) => Promise<SearchResponse>;
   loadFrames: (videoId: string, centerFrameId: number, limit: number) => Promise<VideoFramesResponse>;
+  loadFrame?: (videoId: string, frameId: number, signal?: AbortSignal) => Promise<CanonicalFrameResponse>;
   loadStudio: (videoId: string, signal?: AbortSignal) => Promise<VideoStudioResponse>;
   saveSelection: (queryId: string, task: QualificationTask, answers: readonly QualificationAnswer[]) => Promise<SelectionRevision>;
   createPreview: (queryId: string, task: QualificationTask, answers: readonly QualificationAnswer[]) => Promise<SubmissionPreview>;
@@ -101,6 +115,25 @@ interface Props {
 
 function initialEvents(): QualificationEventInput[] {
   return [{ event_id: 'event-1', event_ordinal: 1, description: '' }];
+}
+
+function queryImproverWarningMessage(warning: string | null): string {
+  switch (warning) {
+    case 'query_improver_unavailable':
+      return 'Query Improver chưa được cấu hình LLM. Hãy bật cấu hình LLM ở Settings hoặc cấu hình LLM_BASE_URL và LLM_MODEL cho backend.';
+    case 'query_improver_failed':
+      return 'LLM Query Improver không phản hồi. Hãy kiểm tra endpoint, API key và trạng thái model.';
+    case 'query_improver_invalid_output':
+      return 'LLM Query Improver trả về định dạng không hợp lệ. Hãy kiểm tra model có hỗ trợ JSON.';
+    default:
+      return 'Query Improver không tạo được bản cải thiện; các ô nhập vẫn giữ nguyên.';
+  }
+}
+
+function improvedEventLines(value: string): string[] {
+  return value.split('\n')
+    .map((line) => line.replace(/^\s*\d+[.)]\s*/, '').trim())
+    .filter(Boolean);
 }
 
 function buildWorkbenchQuery(
@@ -122,7 +155,9 @@ function buildWorkbenchQuery(
   };
 }
 
-export function Workbench({ search, loadFrames, loadStudio, saveSelection, createPreview, suggestVqaAnswer, improveQuery }: Props) {
+const VQA_BATCH_INTERVAL_MS = 3_300;
+
+export function Workbench({ search, loadFrames, loadFrame, loadStudio, saveSelection, createPreview, suggestVqaAnswer, improveQuery }: Props) {
   const task = useWorkbenchStore((state) => state.task);
   const answers = useWorkbenchStore((state) => state.answers);
   const setTask = useWorkbenchStore((state) => state.setTask);
@@ -135,7 +170,6 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
   const [question, setQuestion] = useState('');
   const [events, setEvents] = useState<QualificationEventInput[]>(initialEvents);
   const [queryImproverSettings, setQueryImproverSettings] = useState<QueryImproverSettings>({ enabled: false });
-  const [improvedQuery, setImprovedQuery] = useState('');
   const [queryImproverError, setQueryImproverError] = useState<string | null>(null);
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [rankedFrames, setRankedFrames] = useState<FrameCandidate[]>([]);
@@ -144,6 +178,12 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
   const [inspectorWidth, setInspectorWidth] = useState(DEFAULT_INSPECTOR_WIDTH);
   const [assignedFrames, setAssignedFrames] = useState<Array<FrameCandidate | null>>([null]);
   const [qaAnswer, setQaAnswer] = useState('');
+  const [vqaQueue, setVqaQueue] = useState<VqaQueueItem[]>([]);
+  const [downvotedKeys, setDownvotedKeys] = useState<Set<string>>(new Set());
+  const [batchTopK, setBatchTopK] = useState('10');
+  const [batchVqaLoading, setBatchVqaLoading] = useState(false);
+  const [batchVqaProgress, setBatchVqaProgress] = useState<{ completed: number; total: number; failed: number } | null>(null);
+  const batchAbortRef = useRef<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -178,16 +218,27 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
     },
     enabled: studioOpen && studioVideoId !== null,
   });
+  const exactFrameLoader = useMemo(
+    () => loadFrame && studioVideoId
+      ? (frameId: number, signal?: AbortSignal) => loadFrame(studioVideoId, frameId, signal)
+      : undefined,
+    [loadFrame, studioVideoId],
+  );
   const normalized = useMemo(
     () => response ? toFrameCandidates(response) : { frames: [], skipped: 0 },
     [response],
   );
+  const vqaAnswers = useMemo(() => completedVqaAnswers(vqaQueue), [vqaQueue]);
+  const vqaQueueKeys = useMemo(() => new Set(vqaQueue.map((item) => item.key)), [vqaQueue]);
 
   useEffect(() => {
     setRankedFrames(normalized.frames);
   }, [normalized.frames]);
 
-  useEffect(() => () => reset(), [reset]);
+  useEffect(() => () => {
+    batchAbortRef.current?.abort();
+    reset();
+  }, [reset]);
 
   useEffect(() => {
     setLlmSettings(loadLlmSettings());
@@ -198,23 +249,27 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
     setQueryImproverSettings(loadQueryImproverSettings());
   }, []);
 
-  function invalidateImprovedQuery() {
-    setImprovedQuery('');
+  function clearQueryImproverError() {
     setQueryImproverError(null);
   }
 
   function changeTask(nextTask: QualificationTask) {
+    batchAbortRef.current?.abort();
+    batchAbortRef.current = null;
     setTask(nextTask);
     setDescription('');
     setQuestion('');
     setEvents(initialEvents());
-    invalidateImprovedQuery();
+    clearQueryImproverError();
     setAssignedFrames([null]);
     setResponse(null);
     setSelectedAnchor(null);
     setActiveFrame(null);
     setStudioOpen(false);
     setStudioVideoId(null);
+    setVqaQueue([]);
+    setDownvotedKeys(new Set());
+    setBatchVqaProgress(null);
     setError(null);
     setNotice(null);
   }
@@ -229,15 +284,17 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
     if (task === 'qa' && !cleanQuestion) return;
 
     const { query, backendTask } = buildWorkbenchQuery(task, description, question, events);
-    const retrievalQuery = queryImproverSettings.enabled && improvedQuery.trim()
-      ? improvedQuery.trim()
-      : query;
 
     setError(null);
     setNotice(null);
     setResponse(null);
     setSelectedAnchor(null);
     setActiveFrame(null);
+    batchAbortRef.current?.abort();
+    batchAbortRef.current = null;
+    setVqaQueue([]);
+    setDownvotedKeys(new Set());
+    setBatchVqaProgress(null);
     const embeddingValidationError = validateEmbeddingSettings(embeddingSettings);
     if (embeddingValidationError) {
       setEmbeddingError(embeddingValidationError);
@@ -262,18 +319,71 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
         ...buildSearchRrfConfig(rrfSettings),
       };
       const next = await searchMutation.mutateAsync({
-        query: retrievalQuery,
+        query,
         task: backendTask,
         top_k: retrieval.display_k,
         retrieval,
         ...(embedding ? { embedding } : {}),
       });
       setResponse(next);
-      if (queryImproverSettings.enabled && !improvedQuery.trim()) {
-        setNotice('Chưa có preview query tiếng Anh; hệ thống tìm bằng query gốc.');
-      }
     } catch (reason) {
       setError(readError(reason, 'Tìm kiếm thất bại.'));
+    }
+  }
+
+  async function queryByFrame(frame: FrameCandidate) {
+    if (searchMutation.isPending) return;
+    setError(null);
+    setNotice(null);
+    setResponse(null);
+    setSelectedAnchor(null);
+    setActiveFrame(null);
+    setStudioOpen(false);
+    batchAbortRef.current?.abort();
+    batchAbortRef.current = null;
+    setVqaQueue([]);
+    setDownvotedKeys(new Set());
+    setBatchVqaProgress(null);
+
+    const embeddingValidationError = validateEmbeddingSettings(embeddingSettings);
+    if (embeddingValidationError) {
+      setEmbeddingError(embeddingValidationError);
+      setSettingsOpen(true);
+      return;
+    }
+    const retrievalValidationError = validateRetrievalSettings(retrievalSettings);
+    if (retrievalValidationError) {
+      setRetrievalError(retrievalValidationError);
+      setSettingsOpen(true);
+      return;
+    }
+    const rrfValidationError = validateRrfSettings(rrfSettings);
+    if (rrfValidationError) {
+      setRrfError(rrfValidationError);
+      return;
+    }
+
+    try {
+      const embedding = buildSearchEmbeddingConfig(embeddingSettings);
+      const retrieval = {
+        ...buildSearchRetrievalConfig(retrievalSettings),
+        ...buildSearchRrfConfig(rrfSettings),
+      };
+      const next = await searchMutation.mutateAsync({
+        query: '',
+        task: task === 'qa' ? 'vqa' : task,
+        top_k: retrieval.display_k,
+        retrieval,
+        frame_query: {
+          video_id: frame.video_id,
+          original_frame_id: frame.original_frame_id,
+        },
+        ...(embedding ? { embedding } : {}),
+      });
+      setResponse(next);
+      setNotice(`Đã tìm kiếm các frame tương tự ${frame.video_id} · frame ${frame.original_frame_id}.`);
+    } catch (reason) {
+      setError(readError(reason, 'Tìm kiếm bằng frame thất bại.'));
     }
   }
 
@@ -285,6 +395,7 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
     if (task === 'qa' && !cleanQuestion) return;
 
     const { query, backendTask } = buildWorkbenchQuery(task, description, question, events);
+    const queryToImprove = task === 'qa' ? cleanDescription : query;
     setQueryImproverError(null);
     setNotice(null);
     try {
@@ -292,14 +403,40 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
         ? buildVqaLlmConfig(llmSettings)
         : undefined;
       const result = await queryImproverMutation.mutateAsync({
-        query,
+        query: queryToImprove,
         task: backendTask,
+        ...(task === 'qa' ? { question: cleanQuestion } : {}),
         ...(frontendLlm ? { llm: frontendLlm } : {}),
       });
-      setImprovedQuery(result.improved_query);
-      setNotice(result.warning
-        ? 'Không dùng được Query Improver; preview đang giữ query gốc.'
-        : 'Đã tạo query tiếng Anh. Bạn có thể chỉnh sửa trước khi tìm.');
+      if (result.warning) {
+        setQueryImproverError(queryImproverWarningMessage(result.warning));
+        setNotice('Không thể cải thiện; các ô nhập vẫn giữ query gốc.');
+        return;
+      }
+
+      if (task === 'qa') {
+        if (!result.improved_question?.trim()) {
+          setQueryImproverError('Query Improver không trả về câu hỏi tiếng Anh hợp lệ.');
+          return;
+        }
+        setDescription(result.improved_query);
+        setQuestion(result.improved_question);
+        setNotice('Đã cải thiện query và câu hỏi tiếng Anh trực tiếp trong ô nhập.');
+      } else if (task === 'trake') {
+        const improvedEvents = improvedEventLines(result.improved_query);
+        if (improvedEvents.length !== events.length) {
+          setQueryImproverError('Query Improver không giữ đúng số lượng event TRAKE.');
+          return;
+        }
+        setEvents((current) => current.map((item, index) => ({
+          ...item,
+          description: improvedEvents[index] ?? item.description,
+        })));
+        setNotice('Đã cải thiện các event TRAKE trực tiếp trong ô nhập.');
+      } else {
+        setDescription(result.improved_query);
+        setNotice('Đã cải thiện query tiếng Anh trực tiếp trong ô nhập.');
+      }
     } catch (reason) {
       setQueryImproverError(readError(reason, 'Không thể cải thiện query.'));
       setNotice(llmSettings.enabled && validateLlmSettings(llmSettings) !== null
@@ -317,14 +454,17 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
     const defaults = { enabled: false };
     setQueryImproverSettings(defaults);
     saveQueryImproverSettings(defaults);
-    invalidateImprovedQuery();
+    clearQueryImproverError();
     setNotice('Đã tắt Query Improver.');
   }
 
   function selectSearchFrame(frame: FrameCandidate) {
     setSelectedAnchor(frame);
     setActiveFrame(frame);
-    setQaAnswer('');
+    const existingAnswer = task === 'qa'
+      ? vqaQueue.find((item) => item.key === queueKey(frame))?.answer ?? ''
+      : '';
+    setQaAnswer(existingAnswer);
     setError(null);
   }
 
@@ -349,6 +489,7 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
     if (!selectedAnchor) return;
     setActiveFrame({
       ...selectedAnchor,
+      keyframe_no: frame.keyframe_no ?? undefined,
       original_frame_id: frame.original_frame_id,
       timestamp_ms: frame.timestamp_ms,
       thumbnail_uri: frame.thumbnail_uri,
@@ -374,9 +515,10 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
     }));
     setActiveFrame({
       ...selectedAnchor,
+      keyframe_no: frame.keyframe_no ?? undefined,
       original_frame_id: frame.original_frame_id,
       timestamp_ms: frame.timestamp_ms,
-      thumbnail_uri: frameThumbnailUri(frame.video_id, frame.original_frame_id),
+      thumbnail_uri: studioFrameThumbnailUri(frame),
       evidence: [
         ...frame.captions.map((caption) => ({
           evidence_id: caption.evidence_id,
@@ -393,7 +535,9 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
         ...asrEvidence,
       ],
     });
-    setNotice(`Đã chọn frame ${frame.original_frame_id} làm bằng chứng hiện tại.`);
+    setNotice(frame.is_exact_frame && frame.annotation_source_frame_id !== null && frame.annotation_source_frame_id !== frame.original_frame_id
+      ? `Đã chọn canonical frame ${frame.original_frame_id}; annotation lấy từ frame gần nhất ${frame.annotation_source_frame_id}.`
+      : `Đã chọn frame ${frame.original_frame_id} làm bằng chứng hiện tại.`);
   }
 
   function resizeInspector(width: number) {
@@ -401,9 +545,128 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
     setInspectorWidth(boundedWidth);
   }
 
+  function addFrameToVqaQueue(frame: FrameCandidate) {
+    const key = queueKey(frame);
+    if (vqaQueue.length >= 100 && !vqaQueueKeys.has(key)) {
+      setError('Hàng đợi đã đạt giới hạn 100 frame.');
+      return;
+    }
+    setVqaQueue((current) => addVqaFrame(current, frame, downvotedKeys.has(key)));
+    setError(null);
+    setNotice(`Đã thêm frame ${frame.original_frame_id} vào hàng đợi.`);
+  }
+
+  function toggleFrameDownvote(frame: FrameCandidate) {
+    const key = queueKey(frame);
+    const nextDownvoted = !downvotedKeys.has(key);
+    setDownvotedKeys((current) => {
+      const next = new Set(current);
+      if (nextDownvoted) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+    setVqaQueue((current) => toggleVqaQueueDownvote(current, key, nextDownvoted));
+    setNotice(nextDownvoted ? `Đã downvote frame ${frame.original_frame_id}.` : `Đã bỏ downvote frame ${frame.original_frame_id}.`);
+  }
+
+  function fillVqaAnswerQueue() {
+    setVqaQueue((current) => fillVqaQueue(current, rankedFrames, downvotedKeys, 100));
+    setNotice(`Đã fill hàng đợi theo thứ tự hiện tại (${Math.min(100, rankedFrames.length)} frame).`);
+  }
+
+  function applyAnswerToAllPending(answer: string) {
+    setVqaQueue((current) => applyAnswerToPending(current, answer));
+    setNotice('Đã áp dụng answer cho toàn bộ frame pending.');
+  }
+
+  function removeVqaQueueItem(key: string) {
+    setVqaQueue((current) => removeVqaQueueItemModel(current, key));
+  }
+
+  function moveVqaQueueItem(from: number, to: number) {
+    setVqaQueue((current) => moveVqaQueueItemModel(current, from, to));
+  }
+
+  function parseBatchTopK(): number | null {
+    const parsed = Number(batchTopK);
+    if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 100) return null;
+    return parsed;
+  }
+
+  async function runBatchVqa() {
+    if (task !== 'qa' || !response?.query_id || !question.trim() || batchVqaLoading) return;
+    const limit = parseBatchTopK();
+    if (limit === null) {
+      setError('Top-K batch VQA phải là số nguyên từ 1 đến 100.');
+      return;
+    }
+
+    const queryId = response.query_id;
+    const questionText = question.trim();
+    const llm = buildVqaLlmConfig(llmSettings);
+    const vlm = buildVqaVlmConfig(vlmSettings);
+    const alreadyAnswered = new Set(vqaQueue.filter((item) => item.status === 'answered').map((item) => item.key));
+    const controller = new AbortController();
+    batchAbortRef.current = controller;
+    setBatchVqaLoading(true);
+    setBatchVqaProgress({ completed: 0, total: Math.min(limit, rankedFrames.length), failed: 0 });
+    setError(null);
+    setNotice(null);
+
+    try {
+      const results = await runVqaBatch({
+        frames: rankedFrames,
+        limit,
+        signal: controller.signal,
+        intervalMs: VQA_BATCH_INTERVAL_MS,
+        shouldSkip: (frame) => alreadyAnswered.has(queueKey(frame)),
+        onProgress: setBatchVqaProgress,
+        answer: (frame) => vqaAnswerMutation.mutateAsync({
+          query_id: queryId,
+          question: questionText,
+          video_id: frame.video_id,
+          original_frame_id: frame.original_frame_id,
+          ...(llm ? { llm } : {}),
+          ...(vlm ? { vlm } : {}),
+        }),
+      });
+
+      results.forEach((result) => {
+        if (result.status === 'skipped') return;
+        const key = queueKey(result.frame);
+        setVqaQueue((current) => {
+          const withFrame = addVqaFrame(current, result.frame, downvotedKeys.has(key));
+          if (result.status === 'answered' && result.answer) {
+            return updateVqaQueueItem(withFrame, key, { status: 'answered', answer: result.answer });
+          }
+          const reason = result.error
+            ?? (result.status === 'needs_more_evidence' ? 'LLM cần thêm bằng chứng.' : 'LLM không đưa ra answer an toàn.');
+          return updateVqaQueueItem(withFrame, key, { status: 'error', error: reason });
+        });
+      });
+
+      const answeredCount = results.filter((item) => item.status === 'answered').length;
+      const failedCount = results.filter((item) => item.status === 'error' || item.status === 'needs_more_evidence' || item.status === 'abstained').length;
+      setNotice(controller.signal.aborted
+        ? `Đã dừng batch VQA sau ${results.length}/${Math.min(limit, rankedFrames.length)} frame.`
+        : `Đã xử lý ${results.length} frame: ${answeredCount} answered${failedCount ? `, ${failedCount} cần kiểm tra` : ''}.`);
+    } catch (reason) {
+      if (!controller.signal.aborted) setError(readError(reason, 'Batch VQA thất bại.'));
+    } finally {
+      if (batchAbortRef.current === controller) batchAbortRef.current = null;
+      setBatchVqaLoading(false);
+    }
+  }
+
+  function stopBatchVqa() {
+    batchAbortRef.current?.abort();
+  }
+
   function addCurrentAnswer() {
     if (!activeFrame) return;
-    if (answers.length >= 100) {
+    const currentQueueCount = task === 'qa' ? vqaQueue.length : answers.length;
+    const activeKey = queueKey(activeFrame);
+    if (currentQueueCount >= 100 && (task !== 'qa' || !vqaQueueKeys.has(activeKey))) {
       setError('Hàng đợi đã đạt giới hạn 100 đáp án.');
       return;
     }
@@ -415,11 +678,10 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
         setError('Hãy nhập câu trả lời trước khi thêm đáp án.');
         return;
       }
-      addAnswer({
-        video_id: activeFrame.video_id,
-        frame_id: activeFrame.original_frame_id,
-        answer: qaAnswer.trim(),
-      } satisfies QaAnswer);
+      setVqaQueue((current) => {
+        const withFrame = addVqaFrame(current, activeFrame, downvotedKeys.has(activeKey));
+        return updateVqaQueueItem(withFrame, activeKey, { status: 'answered', answer: qaAnswer.trim() });
+      });
       setQaAnswer('');
     } else {
       const sequence = assignedFrames.filter((frame): frame is FrameCandidate => frame !== null);
@@ -604,7 +866,9 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
           >
             Cài đặt
           </button>
-          <button type="button" className="answer-badge" onClick={() => setDrawerOpen(true)}>Đáp án ({answers.length})</button>
+          <button type="button" className="answer-badge" onClick={() => setDrawerOpen(true)}>
+            Đáp án ({task === 'qa' ? vqaQueue.length : answers.length})
+          </button>
         </div>
         {settingsOpen && (
           <LlmSettingsPopover
@@ -641,25 +905,23 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
           events={events}
           pending={searchMutation.isPending}
           onTaskChange={changeTask}
-          onDescriptionChange={(value) => { setDescription(value); invalidateImprovedQuery(); }}
-          onQuestionChange={(value) => { setQuestion(value); invalidateImprovedQuery(); }}
+          onDescriptionChange={(value) => { setDescription(value); clearQueryImproverError(); }}
+          onQuestionChange={(value) => { setQuestion(value); clearQueryImproverError(); }}
           onEventChange={(eventId, value) => {
             setEvents((current) => current.map((item) => (
               item.event_id === eventId ? { ...item, description: value } : item
             )));
-            invalidateImprovedQuery();
+            clearQueryImproverError();
           }}
-          onAddEvent={() => { addEvent(); invalidateImprovedQuery(); }}
-          onRemoveEvent={(eventId) => { removeEvent(eventId); invalidateImprovedQuery(); }}
+          onAddEvent={() => { addEvent(); clearQueryImproverError(); }}
+          onRemoveEvent={(eventId) => { removeEvent(eventId); clearQueryImproverError(); }}
           queryImproverEnabled={queryImproverSettings.enabled}
-          improvedQuery={improvedQuery}
           queryImproverPending={queryImproverMutation.isPending}
           queryImproverError={queryImproverError}
           onQueryImproverChange={(enabled) => {
             setQueryImproverSettings((current) => ({ ...current, enabled }));
-            if (!enabled) invalidateImprovedQuery();
+            if (!enabled) clearQueryImproverError();
           }}
-          onImprovedQueryChange={setImprovedQuery}
           onImproveQuery={createImprovedQuery}
           onQueryImproverSave={saveQueryImproverSettingsForSession}
           onQueryImproverReset={resetQueryImproverSettings}
@@ -684,7 +946,20 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
             skipped={normalized.skipped}
             onSelect={selectSearchFrame}
             onReorder={(from, to) => setRankedFrames((current) => reorderFrames(current, from, to))}
+            onQueryFrame={queryByFrame}
             onExport={task === 'textual_kis' ? exportRankedTextualFrames : undefined}
+            queueKeys={task === 'qa' ? vqaQueueKeys : undefined}
+            downvotedKeys={task === 'qa' ? downvotedKeys : undefined}
+            queueCount={task === 'qa' ? vqaQueue.length : undefined}
+            onAddToQueue={task === 'qa' ? addFrameToVqaQueue : undefined}
+            onToggleDownvote={task === 'qa' ? toggleFrameDownvote : undefined}
+            onFillQueue={task === 'qa' ? fillVqaAnswerQueue : undefined}
+            batchTopK={task === 'qa' ? batchTopK : undefined}
+            onBatchTopKChange={task === 'qa' ? setBatchTopK : undefined}
+            onRunBatchVqa={task === 'qa' ? runBatchVqa : undefined}
+            onStopBatchVqa={task === 'qa' ? stopBatchVqa : undefined}
+            batchVqaLoading={task === 'qa' ? batchVqaLoading : false}
+            batchVqaProgress={task === 'qa' ? batchVqaProgress : null}
           />
           {selectedAnchor && activeFrame && (
             <FrameInspector
@@ -706,7 +981,7 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
               onFrameSelect={selectNeighborFrame}
               onQaAnswerChange={setQaAnswer}
               onSuggestVqaAnswer={task === 'qa' ? suggestAnswer : undefined}
-              vqaAnswerLoading={vqaAnswerMutation.isPending}
+              vqaAnswerLoading={vqaAnswerMutation.isPending || batchVqaLoading}
               onAddAnswer={addCurrentAnswer}
               onAssignEvent={(index) => setAssignedFrames((current) => current.map((frame, frameIndex) => (
                 frameIndex === index ? activeFrame : frame
@@ -744,6 +1019,7 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
           initialTimestampMs={activeFrame.timestamp_ms}
           onClose={() => setStudioOpen(false)}
           onSelectFrame={selectStudioFrame}
+          loadExactFrame={exactFrameLoader}
         />
       )}
 
@@ -756,12 +1032,16 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
         open={drawerOpen}
         task={task}
         queryId={response?.query_id ?? 'draft-query'}
-        answers={answers}
+        answers={task === 'qa' ? vqaAnswers : answers}
         saveSelection={saveSelection}
         createPreview={createPreview}
         onClose={() => setDrawerOpen(false)}
         onRemove={removeAnswer}
         onMove={moveAnswer}
+        vqaQueue={task === 'qa' ? vqaQueue : undefined}
+        onRemoveVqaQueueItem={task === 'qa' ? removeVqaQueueItem : undefined}
+        onMoveVqaQueueItem={task === 'qa' ? moveVqaQueueItem : undefined}
+        onApplyAnswerToPending={task === 'qa' ? applyAnswerToAllPending : undefined}
       />
     </main>
   );

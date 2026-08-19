@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -170,7 +170,7 @@ function renderWorkbench({
 }
 
 describe('qualification frame-first workbench', () => {
-  it('previews one improved English query before using it for retrieval', async () => {
+  it('writes one improved English query into the primary input before retrieval', async () => {
     const user = userEvent.setup();
     const improveQuery = vi.fn(async (): Promise<QueryImprovementResponse> => ({
       original_query: 'Một cửa hàng trên phố',
@@ -183,17 +183,94 @@ describe('qualification frame-first workbench', () => {
     const { search } = renderWorkbench({ improveQuery });
 
     await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
-    await user.click(screen.getByLabelText('Bật cải thiện query tiếng Anh'));
-    await user.click(screen.getByRole('button', { name: 'Tạo query tiếng Anh' }));
+    await user.click(screen.getByLabelText('Bật Query Improver'));
+    await user.click(screen.getByRole('button', { name: 'Cải thiện query' }));
 
     expect(improveQuery).toHaveBeenCalledWith(expect.objectContaining({
       query: 'Một cửa hàng trên phố',
       task: 'textual_kis',
     }));
-    expect(await screen.findByDisplayValue('A shop on a street.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Mô tả sự kiện')).toHaveValue('A shop on a street.');
+    expect(screen.queryByLabelText('Query tiếng Anh đã cải thiện')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
     expect(search).toHaveBeenCalledWith(expect.objectContaining({ query: 'A shop on a street.' }));
+  });
+
+  it('does not show the original query as an improved preview when the improver falls back', async () => {
+    const user = userEvent.setup();
+    const improveQuery = vi.fn(async (): Promise<QueryImprovementResponse> => ({
+      original_query: 'Một cửa hàng trên phố',
+      improved_query: 'Một cửa hàng trên phố',
+      changed: false,
+      producer: 'query-improver-fallback',
+      model_version: 'unconfigured',
+      warning: 'query_improver_unavailable',
+    }));
+    renderWorkbench({ improveQuery });
+
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.click(screen.getByLabelText('Bật Query Improver'));
+    await user.click(screen.getByRole('button', { name: 'Cải thiện query' }));
+
+    expect(screen.getByLabelText('Mô tả sự kiện')).toHaveValue('Một cửa hàng trên phố');
+    expect(screen.queryByLabelText('Query tiếng Anh đã cải thiện')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('chưa được cấu hình LLM');
+  });
+
+  it('runs an image-only search after confirming a frame from the result list', async () => {
+    const user = userEvent.setup();
+    const search = vi.fn(async (request) => request.frame_query
+      ? { ...response, query: '', query_mode: 'frame_image' as const }
+      : response);
+    renderWorkbench({ search });
+
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+    await user.click(await screen.findByRole('button', { name: /Tìm kiếm bằng/ }));
+    expect(screen.getByRole('dialog', { name: 'Xác nhận tìm kiếm trên frame này' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Xác nhận tìm kiếm' }));
+
+    await waitFor(() => expect(search).toHaveBeenLastCalledWith(expect.objectContaining({
+      query: '',
+      task: 'textual_kis',
+      frame_query: { video_id: 'video_01', original_frame_id: 385 },
+    })));
+  });
+
+  it('improves both the event query and question for Q&A', async () => {
+    const user = userEvent.setup();
+    const improveQuery = vi.fn(async (): Promise<QueryImprovementResponse> => ({
+      original_query: 'Một cửa hàng trên phố',
+      improved_query: 'A shop on a street.',
+      original_question: 'Người phụ nữ đang cầm gì?',
+      improved_question: 'What is the woman holding?',
+      changed: true,
+      producer: 'test-query-improver',
+      model_version: 'test-model',
+      warning: null,
+    }));
+    const { search } = renderWorkbench({ improveQuery });
+
+    await user.click(screen.getByRole('tab', { name: 'Hỏi & Đáp' }));
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.type(screen.getByLabelText('Câu hỏi'), 'Người phụ nữ đang cầm gì?');
+    await user.click(screen.getByLabelText('Bật Query Improver'));
+    await user.click(screen.getByRole('button', { name: 'Cải thiện query & câu hỏi' }));
+
+    expect(improveQuery).toHaveBeenCalledWith(expect.objectContaining({
+      query: 'Một cửa hàng trên phố',
+      question: 'Người phụ nữ đang cầm gì?',
+      task: 'vqa',
+    }));
+    expect(screen.getByLabelText('Mô tả sự kiện')).toHaveValue('A shop on a street.');
+    expect(screen.getByLabelText('Câu hỏi')).toHaveValue('What is the woman holding?');
+
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+    expect(search).toHaveBeenCalledWith(expect.objectContaining({
+      query: 'A shop on a street.\nCâu hỏi: What is the woman holding?',
+    }));
   });
 
   it('keeps task input in the left sidebar and exposes task-specific fields', async () => {
@@ -549,6 +626,92 @@ describe('qualification frame-first workbench', () => {
     expect(screen.getByText('Rẽ phải')).toBeInTheDocument();
   });
 
+  it('fills the VQA queue with ranked frames and applies one answer to every pending item', async () => {
+    const user = userEvent.setup();
+    const multiFrameVqaResponse: SearchResponse = {
+      ...vqaResponse,
+      results: [385, 411, 530].map((frameId, index) => ({
+        ...vqaResponse.results[0],
+        video_id: `video_0${index + 1}`,
+        original_frame_id: frameId,
+        representative_frame: {
+          original_frame_id: frameId,
+          timestamp_ms: 12_800 + index * 1_000,
+          preview_uri: null,
+        },
+      })),
+    };
+    renderWorkbench({ searchResponse: multiFrameVqaResponse });
+
+    await user.click(screen.getByRole('tab', { name: 'Hỏi & Đáp' }));
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.type(screen.getByLabelText('Câu hỏi'), 'Người phụ nữ đang cầm gì?');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+    await user.click(screen.getByRole('button', { name: 'Fill hàng đợi (0/100)' }));
+
+    expect(screen.getByRole('button', { name: 'Đáp án (3)' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Đáp án (3)' }));
+    expect(screen.getAllByText('Đang chờ answer')).toHaveLength(3);
+
+    await user.type(screen.getByLabelText('Áp dụng cùng answer cho pending'), 'một chiếc chai');
+    await user.click(screen.getByRole('button', { name: 'Áp dụng (3)' }));
+
+    expect(screen.getByText(/3\/100 item · 3 đã trả lời/)).toBeInTheDocument();
+    expect(screen.getAllByText('một chiếc chai')).toHaveLength(3);
+    expect(screen.getByRole('button', { name: 'Export JSON' })).toBeEnabled();
+  });
+
+  it('runs batch VQA for the configured top-k frames and adds completed answers to the queue', async () => {
+    const user = userEvent.setup();
+    const suggestVqaAnswer = vi.fn(async () => vqaSuggestion);
+    renderWorkbench({ searchResponse: vqaResponse, suggestVqaAnswer });
+
+    await user.click(screen.getByRole('tab', { name: 'Hỏi & Đáp' }));
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.type(screen.getByLabelText('Câu hỏi'), 'Người phụ nữ đang cầm gì?');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+    await user.clear(screen.getByLabelText('Số frame batch VQA'));
+    await user.type(screen.getByLabelText('Số frame batch VQA'), '1');
+    await user.click(screen.getByRole('button', { name: 'LLM trả lời Top-K' }));
+
+    expect(await screen.findByText('Đã xử lý 1 frame: 1 answered.')).toBeInTheDocument();
+    expect(suggestVqaAnswer).toHaveBeenCalledWith(expect.objectContaining({
+      query_id: 'query_0001',
+      question: 'Người phụ nữ đang cầm gì?',
+      video_id: 'video_01',
+      original_frame_id: 385,
+    }));
+    await user.click(screen.getByRole('button', { name: 'Đáp án (1)' }));
+    expect(screen.getByText('Rẽ phải')).toBeInTheDocument();
+  });
+
+  it('stops a running VQA batch before sending the next rate-limited request', async () => {
+    const user = userEvent.setup();
+    const suggestVqaAnswer = vi.fn(async () => vqaSuggestion);
+    const multiFrameVqaResponse: SearchResponse = {
+      ...vqaResponse,
+      results: [385, 411].map((frameId, index) => ({
+        ...vqaResponse.results[0],
+        video_id: `video_0${index + 1}`,
+        original_frame_id: frameId,
+        representative_frame: { original_frame_id: frameId, timestamp_ms: 12_800 + index * 1_000, preview_uri: null },
+      })),
+    };
+    renderWorkbench({ searchResponse: multiFrameVqaResponse, suggestVqaAnswer });
+
+    await user.click(screen.getByRole('tab', { name: 'Hỏi & Đáp' }));
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.type(screen.getByLabelText('Câu hỏi'), 'Người phụ nữ đang cầm gì?');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+    await user.clear(screen.getByLabelText('Số frame batch VQA'));
+    await user.type(screen.getByLabelText('Số frame batch VQA'), '2');
+    await user.click(screen.getByRole('button', { name: 'LLM trả lời Top-K' }));
+    await user.click(await screen.findByRole('button', { name: 'Dừng batch' }));
+
+    expect(await screen.findByText(/Đã dừng batch VQA sau/, {}, { timeout: 5_000 })).toBeInTheDocument();
+    expect(suggestVqaAnswer).toHaveBeenCalledTimes(1);
+  });
+
   it('suggests a VQA answer for the selected frame without queueing it automatically', async () => {
     const user = userEvent.setup();
     const suggestVqaAnswer = vi.fn(async () => vqaSuggestion);
@@ -598,6 +761,23 @@ describe('qualification frame-first workbench', () => {
     expect(screen.queryByText('Đáp án (1)')).not.toBeInTheDocument();
   });
 
+  it('shows a readable error when single-frame VQA fails', async () => {
+    const user = userEvent.setup();
+    const suggestVqaAnswer = vi.fn(async () => {
+      throw new Error('VQA service unavailable');
+    });
+    renderWorkbench({ searchResponse: vqaResponse, suggestVqaAnswer });
+
+    await user.click(screen.getByRole('tab', { name: 'Hỏi & Đáp' }));
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.type(screen.getByLabelText('Câu hỏi'), 'Người phụ nữ đang cầm gì?');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+    await user.click(await screen.findByRole('button', { name: 'Chọn frame video_01 · 385' }));
+    await user.click(screen.getByRole('button', { name: 'Gợi ý answer bằng LLM' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('VQA service unavailable');
+  });
+
   it('sends the current tab embedding settings with the search request', async () => {
     const user = userEvent.setup();
     const search = vi.fn(async () => response);
@@ -621,6 +801,7 @@ describe('qualification frame-first workbench', () => {
         display_k: 20,
         branch_k: 100,
         fusion_k: 500,
+        near_frame_window_ms: 1000,
         rrf_k: 60,
         channel_weights: {
           visual: 1,
@@ -666,6 +847,7 @@ describe('qualification frame-first workbench', () => {
         display_k: 40,
         branch_k: 150,
         fusion_k: 600,
+        near_frame_window_ms: 1000,
         rrf_k: 60,
         channel_weights: {
           visual: 1,

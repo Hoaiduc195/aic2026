@@ -2,6 +2,7 @@ export interface QueryEmbeddingProvider {
   readonly isConfigured: boolean;
   readonly dimensions: number;
   embedText(query: string): Promise<readonly number[]>;
+  embedImage?(image: Uint8Array, mimeType: string): Promise<readonly number[]>;
 }
 
 export interface LanguageModel {
@@ -40,11 +41,39 @@ export class HttpQueryEmbeddingProvider implements QueryEmbeddingProvider {
     });
     if (!response.ok) throw new Error(`embedding service returned HTTP ${response.status}`);
     const payload = await response.json() as { embedding?: unknown };
-    if (!Array.isArray(payload.embedding) || payload.embedding.length !== this.dimensions
-      || payload.embedding.some((value) => typeof value !== 'number' || !Number.isFinite(value))) {
+    return this.parseEmbedding(payload.embedding);
+  }
+
+  async embedImage(image: Uint8Array, mimeType: string): Promise<readonly number[]> {
+    const normalizedMimeType = mimeType.split(';', 1)[0]?.trim().toLowerCase();
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(normalizedMimeType)) {
+      throw new Error('image embedding requires a supported image MIME type');
+    }
+    if (image.byteLength === 0 || image.byteLength > 12 * 1024 * 1024) {
+      throw new Error('image embedding input must be between 1 byte and 12 MiB');
+    }
+    const baseEndpoint = this.endpoint.replace(/\/+$/, '');
+    const endpoint = baseEndpoint.endsWith('/image') ? baseEndpoint : `${baseEndpoint}/image`;
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'content-type': normalizedMimeType,
+        ...(this.bearerToken ? { authorization: `Bearer ${this.bearerToken}` } : {}),
+      },
+      body: image as unknown as BodyInit,
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+    if (!response.ok) throw new Error(`embedding service returned HTTP ${response.status}`);
+    const payload = await response.json() as { embedding?: unknown };
+    return this.parseEmbedding(payload.embedding);
+  }
+
+  private parseEmbedding(value: unknown): readonly number[] {
+    if (!Array.isArray(value) || value.length !== this.dimensions
+      || value.some((item) => typeof item !== 'number' || !Number.isFinite(item))) {
       throw new Error(`embedding service must return ${this.dimensions} finite numbers`);
     }
-    return payload.embedding as number[];
+    return value as number[];
   }
 }
 
@@ -52,6 +81,9 @@ export class UnavailableQueryEmbeddingProvider implements QueryEmbeddingProvider
   readonly isConfigured = false;
   constructor(public readonly dimensions = 1024) {}
   async embedText(_query: string): Promise<readonly number[]> { throw new Error('query embedding service is not configured'); }
+  async embedImage(_image: Uint8Array, _mimeType: string): Promise<readonly number[]> {
+    throw new Error('query embedding service is not configured');
+  }
 }
 
 export interface OpenAICompatibleLanguageModelOptions {

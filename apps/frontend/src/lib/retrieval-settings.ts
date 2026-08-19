@@ -6,6 +6,7 @@ export const DEFAULT_RETRIEVAL_SETTINGS: RetrievalSettings = {
   display_k: 20,
   branch_k: 100,
   fusion_k: 500,
+  near_frame_window_ms: 1000,
   vlm_rerank: { enabled: false, top_k: 15, weight: 0.6 },
 };
 
@@ -32,6 +33,7 @@ export function loadRetrievalSettings(): RetrievalSettings {
       display_k: numberValue(value.display_k, DEFAULT_RETRIEVAL_SETTINGS.display_k),
       branch_k: numberValue(value.branch_k, DEFAULT_RETRIEVAL_SETTINGS.branch_k),
       fusion_k: numberValue(value.fusion_k, DEFAULT_RETRIEVAL_SETTINGS.fusion_k),
+      near_frame_window_ms: numberValue(value.near_frame_window_ms, DEFAULT_RETRIEVAL_SETTINGS.near_frame_window_ms ?? 1000),
       vlm_rerank: {
         enabled: vlm.enabled === true,
         top_k: numberValue(vlm.top_k, DEFAULT_RETRIEVAL_SETTINGS.vlm_rerank?.top_k ?? 15),
@@ -60,6 +62,10 @@ export function validateRetrievalSettings(settings: RetrievalSettings): string |
   if (settings.fusion_k < settings.display_k) {
     return 'Fusion candidate pool phải lớn hơn hoặc bằng số frame hiển thị.';
   }
+  const nearFrameWindowMs = settings.near_frame_window_ms ?? 1000;
+  if (!Number.isSafeInteger(nearFrameWindowMs) || nearFrameWindowMs < 0 || nearFrameWindowMs > 10000) {
+    return 'Khoảng cách frame gần nhau phải nằm trong khoảng 0–10000 ms.';
+  }
   const vlm = settings.vlm_rerank;
   if (vlm && (!Number.isSafeInteger(vlm.top_k) || vlm.top_k < 1 || vlm.top_k > 100)) {
     return 'VLM top-k phải nằm trong khoảng 1–100.';
@@ -75,6 +81,7 @@ export function buildSearchRetrievalConfig(settings: RetrievalSettings): SearchR
     display_k: settings.display_k,
     branch_k: settings.branch_k,
     fusion_k: settings.fusion_k,
+    near_frame_window_ms: settings.near_frame_window_ms ?? 1000,
     ...(settings.vlm_rerank?.enabled ? { vlm_rerank: { ...settings.vlm_rerank } } : {}),
   };
 }
