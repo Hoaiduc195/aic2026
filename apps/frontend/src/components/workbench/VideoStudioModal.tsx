@@ -142,8 +142,8 @@ export function VideoStudioModal({
     if (frame) setSelectedFrameId(frame.original_frame_id);
   }
 
-  async function loadCurrentVideoFrame(frameId: number) {
-    if (!loadExactFrame) return;
+  async function loadCurrentVideoFrame(frameId: number): Promise<CanonicalFrameResponse | null> {
+    if (!loadExactFrame) return null;
     setIsLoadingExactFrame(true);
     setExactFrameError(null);
     try {
@@ -152,8 +152,10 @@ export function VideoStudioModal({
       setSelectedFrameId(frame.original_frame_id);
       setCurrentTimeMs(frame.timestamp_ms);
       if (videoRef.current) videoRef.current.currentTime = frame.timestamp_ms / 1000;
+      return frame;
     } catch {
       setExactFrameError('Không tải được frame tại vị trí đang dừng. Hãy kiểm tra kết nối backend.');
+      return null;
     } finally {
       setIsLoadingExactFrame(false);
     }
@@ -161,7 +163,10 @@ export function VideoStudioModal({
 
   async function chooseCurrentVideoFrame() {
     if (!loadExactFrame) return;
-    await loadCurrentVideoFrame(currentVideoFrameId);
+    const frame = await loadCurrentVideoFrame(currentVideoFrameId);
+    if (!frame) return;
+    onSelectFrame(frame);
+    onClose();
   }
 
   function handleDialogKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
