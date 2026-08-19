@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { type CSSProperties, type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   FrameCandidate,
@@ -67,6 +67,16 @@ import {
   validateRrfSettings,
   type RrfSettings,
 } from '../lib/rrf-settings';
+import {
+  createWorkbenchHistoryEntry,
+  clearWorkbenchHistory,
+  getOrCreateWorkbenchSessionId,
+  loadWorkbenchHistory,
+  removeWorkbenchHistoryEntry,
+  saveWorkbenchHistoryEntry,
+  type WorkbenchHistoryEntry,
+  type WorkbenchSnapshot,
+} from '../lib/workbench-history';
 import { activeAsrSpans, studioFrameThumbnailUri } from '../lib/video-studio-model';
 import {
   buildRankedTextualSubmission,
@@ -96,6 +106,7 @@ import {
   MAX_INSPECTOR_WIDTH,
   MIN_INSPECTOR_WIDTH,
 } from './workbench/FrameInspector';
+import { HistoryPanel } from './workbench/HistoryPanel';
 import { LlmSettingsPopover } from './workbench/LlmSettingsPopover';
 import { SearchSidebar } from './workbench/SearchSidebar';
 import { VideoStudioModal } from './workbench/VideoStudioModal';
@@ -154,10 +165,30 @@ function buildWorkbenchQuery(
 
 const VQA_BATCH_INTERVAL_MS = 3_300;
 
+type TaskWorkspaceSnapshot = WorkbenchSnapshot & { readonly history_id: string | null };
+
+function emptyTaskWorkspaceSnapshot(task: QualificationTask): TaskWorkspaceSnapshot {
+  return {
+    task,
+    description: '',
+    question: '',
+    events: initialEvents(),
+    response: null,
+    rankedFrames: [],
+    selectedAnchor: null,
+    assignedFrames: [null],
+    answers: [],
+    qaAnswer: '',
+    vqaQueue: [],
+    history_id: null,
+  };
+}
+
 export function Workbench({ search, loadFrame, loadStudio, saveSelection, createPreview, suggestVqaAnswer, improveQuery }: Props) {
   const task = useWorkbenchStore((state) => state.task);
   const answers = useWorkbenchStore((state) => state.answers);
   const setTask = useWorkbenchStore((state) => state.setTask);
+  const replaceAnswers = useWorkbenchStore((state) => state.replaceAnswers);
   const addAnswer = useWorkbenchStore((state) => state.addAnswer);
   const removeAnswer = useWorkbenchStore((state) => state.removeAnswer);
   const moveAnswer = useWorkbenchStore((state) => state.moveAnswer);
@@ -183,6 +214,10 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState<WorkbenchHistoryEntry[]>([]);
+  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
+  const [taskSnapshots, setTaskSnapshots] = useState<Partial<Record<QualificationTask, TaskWorkspaceSnapshot>>>({});
   const [studioOpen, setStudioOpen] = useState(false);
   const [studioVideoId, setStudioVideoId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -196,6 +231,9 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
   const [retrievalError, setRetrievalError] = useState<string | null>(null);
   const [rrfSettings, setRrfSettings] = useState<RrfSettings>(DEFAULT_RRF_SETTINGS);
   const [rrfError, setRrfError] = useState<string | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const historyEntriesRef = useRef<readonly WorkbenchHistoryEntry[]>([]);
+  const restoredRankedQueryRef = useRef<string | null>(null);
 
   const searchMutation = useMutation({
     mutationFn: (request: SearchRequest) => search(request),
@@ -227,9 +265,40 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
   const vqaAnswers = useMemo(() => completedVqaAnswers(vqaQueue), [vqaQueue]);
   const vqaQueueKeys = useMemo(() => new Set(vqaQueue.map((item) => item.key)), [vqaQueue]);
 
+  const captureSnapshot = useCallback((overrides: Partial<WorkbenchSnapshot> = {}): WorkbenchSnapshot => ({
+    task,
+    description: overrides.description ?? description,
+    question: overrides.question ?? question,
+    events: overrides.events ?? events,
+    response: overrides.response !== undefined ? overrides.response : response,
+    rankedFrames: overrides.rankedFrames ?? rankedFrames,
+    selectedAnchor: overrides.selectedAnchor !== undefined ? overrides.selectedAnchor : selectedAnchor,
+    assignedFrames: overrides.assignedFrames ?? assignedFrames,
+    answers: overrides.answers ?? answers,
+    qaAnswer: overrides.qaAnswer ?? qaAnswer,
+    vqaQueue: overrides.vqaQueue ?? vqaQueue,
+  }), [
+    answers,
+    assignedFrames,
+    description,
+    events,
+    qaAnswer,
+    question,
+    rankedFrames,
+    response,
+    selectedAnchor,
+    task,
+    vqaQueue,
+  ]);
+
   useEffect(() => {
+    const responseQueryId = response?.query_id ?? null;
+    if (responseQueryId && restoredRankedQueryRef.current === responseQueryId) {
+      restoredRankedQueryRef.current = null;
+      return;
+    }
     setRankedFrames(normalized.frames);
-  }, [normalized.frames]);
+  }, [normalized.frames, response?.query_id]);
 
   useEffect(() => () => {
     batchAbortRef.current?.abort();
@@ -237,6 +306,10 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
   }, [reset]);
 
   useEffect(() => {
+    sessionIdRef.current = getOrCreateWorkbenchSessionId();
+    const loadedHistory = loadWorkbenchHistory();
+    historyEntriesRef.current = loadedHistory;
+    setHistoryEntries(loadedHistory);
     setLlmSettings(loadLlmSettings());
     setVlmSettings(loadVlmSettings());
     setEmbeddingSettings(loadEmbeddingSettings());
@@ -245,28 +318,87 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
     setQueryImproverSettings(loadQueryImproverSettings());
   }, []);
 
+  useEffect(() => {
+    historyEntriesRef.current = historyEntries;
+  }, [historyEntries]);
+
+  function persistHistoryEntries(entries: readonly WorkbenchHistoryEntry[]) {
+    const next = [...entries];
+    historyEntriesRef.current = next;
+    setHistoryEntries(next);
+  }
+
+  function addHistorySnapshot(snapshot: WorkbenchSnapshot): WorkbenchHistoryEntry {
+    const entry = createWorkbenchHistoryEntry(snapshot);
+    saveWorkbenchHistoryEntry(entry);
+    persistHistoryEntries(loadWorkbenchHistory());
+    return entry;
+  }
+
+  function currentSessionId(): string {
+    if (!sessionIdRef.current) sessionIdRef.current = getOrCreateWorkbenchSessionId();
+    return sessionIdRef.current;
+  }
+
+  useEffect(() => {
+    if (!activeHistoryId || !response) return;
+    const currentEntry = historyEntriesRef.current.find((entry) => entry.history_id === activeHistoryId);
+    if (!currentEntry) return;
+    const updatedEntry = createWorkbenchHistoryEntry(captureSnapshot(), new Date(currentEntry.created_at), activeHistoryId);
+    saveWorkbenchHistoryEntry(updatedEntry);
+    persistHistoryEntries(loadWorkbenchHistory());
+  }, [
+    activeHistoryId,
+    answers,
+    assignedFrames,
+    captureSnapshot,
+    description,
+    events,
+    qaAnswer,
+    question,
+    rankedFrames,
+    response,
+    selectedAnchor,
+    task,
+    vqaQueue,
+  ]);
+
   function clearQueryImproverError() {
     setQueryImproverError(null);
   }
 
-  function changeTask(nextTask: QualificationTask) {
-    batchAbortRef.current?.abort();
-    batchAbortRef.current = null;
-    setTask(nextTask);
-    setDescription('');
-    setQuestion('');
-    setEvents(initialEvents());
-    clearQueryImproverError();
-    setAssignedFrames([null]);
-    setResponse(null);
-    setSelectedAnchor(null);
+  function applyWorkspaceSnapshot(snapshot: WorkbenchSnapshot, historyId: string | null) {
+    setTask(snapshot.task);
+    replaceAnswers(snapshot.answers);
+    setDescription(snapshot.description);
+    setQuestion(snapshot.question);
+    setEvents(snapshot.events.map((event) => ({ ...event })));
+    restoredRankedQueryRef.current = snapshot.response?.query_id ?? null;
+    setResponse(snapshot.response);
+    setRankedFrames([...snapshot.rankedFrames]);
+    setSelectedAnchor(snapshot.selectedAnchor);
     setActiveFrame(null);
+    setAssignedFrames([...snapshot.assignedFrames]);
+    setQaAnswer(snapshot.qaAnswer);
+    setVqaQueue(snapshot.vqaQueue.map((item) => ({ ...item })));
+    setActiveHistoryId(historyId);
+    setDrawerOpen(false);
     setStudioOpen(false);
     setStudioVideoId(null);
-    setVqaQueue([]);
     setBatchVqaProgress(null);
     setError(null);
     setNotice(null);
+  }
+
+  function changeTask(nextTask: QualificationTask) {
+    if (nextTask === task) return;
+    batchAbortRef.current?.abort();
+    batchAbortRef.current = null;
+    const currentSnapshot: TaskWorkspaceSnapshot = { ...captureSnapshot(), history_id: activeHistoryId };
+    const nextSnapshot = taskSnapshots[nextTask] ?? emptyTaskWorkspaceSnapshot(nextTask);
+    setTaskSnapshots((current) => ({ ...current, [task]: currentSnapshot }));
+    applyWorkspaceSnapshot(nextSnapshot, nextSnapshot.history_id);
+    clearQueryImproverError();
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -282,6 +414,8 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
 
     setError(null);
     setNotice(null);
+    setActiveHistoryId(null);
+    restoredRankedQueryRef.current = null;
     setResponse(null);
     setSelectedAnchor(null);
     setActiveFrame(null);
@@ -316,10 +450,22 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
         query,
         task: backendTask,
         top_k: retrieval.display_k,
+        session_id: currentSessionId(),
         retrieval,
         ...(embedding ? { embedding } : {}),
       });
+      const nextFrames = toFrameCandidates(next).frames;
+      const snapshot = captureSnapshot({
+        response: next,
+        rankedFrames: nextFrames,
+        selectedAnchor: null,
+        vqaQueue: [],
+      });
+      const entry = addHistorySnapshot(snapshot);
       setResponse(next);
+      setRankedFrames(nextFrames);
+      setActiveHistoryId(entry.history_id);
+      setTaskSnapshots((current) => ({ ...current, [task]: { ...snapshot, history_id: entry.history_id } }));
     } catch (reason) {
       setError(readError(reason, 'Tìm kiếm thất bại.'));
     }
@@ -329,6 +475,8 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
     if (searchMutation.isPending) return;
     setError(null);
     setNotice(null);
+    setActiveHistoryId(null);
+    restoredRankedQueryRef.current = null;
     setResponse(null);
     setSelectedAnchor(null);
     setActiveFrame(null);
@@ -366,6 +514,7 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
         query: '',
         task: task === 'qa' ? 'vqa' : task,
         top_k: retrieval.display_k,
+        session_id: currentSessionId(),
         retrieval,
         frame_query: {
           video_id: frame.video_id,
@@ -373,11 +522,44 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
         },
         ...(embedding ? { embedding } : {}),
       });
+      const nextFrames = toFrameCandidates(next).frames;
+      const snapshot = captureSnapshot({
+        response: next,
+        rankedFrames: nextFrames,
+        selectedAnchor: null,
+        vqaQueue: [],
+      });
+      const entry = addHistorySnapshot(snapshot);
       setResponse(next);
+      setRankedFrames(nextFrames);
+      setActiveHistoryId(entry.history_id);
+      setTaskSnapshots((current) => ({ ...current, [task]: { ...snapshot, history_id: entry.history_id } }));
       setNotice(`Đã tìm kiếm các frame tương tự ${frame.video_id} · frame ${frame.original_frame_id}.`);
     } catch (reason) {
       setError(readError(reason, 'Tìm kiếm bằng frame thất bại.'));
     }
+  }
+
+  function restoreHistoryEntry(entry: WorkbenchHistoryEntry) {
+    batchAbortRef.current?.abort();
+    batchAbortRef.current = null;
+    setTaskSnapshots((current) => ({ ...current, [entry.task]: { ...entry, history_id: entry.history_id } }));
+    applyWorkspaceSnapshot(entry, entry.history_id);
+    setHistoryOpen(false);
+    clearQueryImproverError();
+  }
+
+  function removeHistoryEntry(historyId: string) {
+    removeWorkbenchHistoryEntry(historyId);
+    const next = loadWorkbenchHistory();
+    persistHistoryEntries(next);
+    if (activeHistoryId === historyId) setActiveHistoryId(null);
+  }
+
+  function clearHistory() {
+    clearWorkbenchHistory();
+    persistHistoryEntries([]);
+    setActiveHistoryId(null);
   }
 
   async function createImprovedQuery() {
@@ -847,6 +1029,15 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
           <button type="button" className="answer-badge" onClick={() => setDrawerOpen(true)}>
             Đáp án ({task === 'qa' ? vqaQueue.length : answers.length})
           </button>
+          <button
+            type="button"
+            className="quiet-button history-trigger"
+            aria-expanded={historyOpen}
+            aria-controls="history-modal-title"
+            onClick={() => setHistoryOpen(true)}
+          >
+            Lịch Sử
+          </button>
         </div>
         {settingsOpen && (
           <LlmSettingsPopover
@@ -1003,6 +1194,15 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
         {error && <p role="alert" className="toast error">{error}</p>}
         {notice && <p role="status" className="toast success">{notice}</p>}
       </div>
+
+      <HistoryPanel
+        open={historyOpen}
+        entries={historyEntries}
+        onClose={() => setHistoryOpen(false)}
+        onRestore={restoreHistoryEntry}
+        onRemove={removeHistoryEntry}
+        onClear={clearHistory}
+      />
 
       <AnswerDrawer
         open={drawerOpen}

@@ -145,6 +145,127 @@ textarea:focus-visible,
   color: #b54708;
 }
 
+.history-modal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  isolation: isolate;
+}
+
+.history-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border: 0;
+  background: rgba(9, 18, 27, 0.58);
+  backdrop-filter: blur(4px);
+}
+
+.history-modal {
+  position: relative;
+  z-index: 1;
+  width: min(680px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 48px));
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  border: 1px solid rgba(200, 208, 216, 0.9);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgba(9, 18, 27, 0.24);
+  animation: settings-popover-in 180ms ease-out;
+}
+
+.history-modal > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.history-modal h2 {
+  margin: 0;
+  font-size: 21px;
+  letter-spacing: -0.025em;
+}
+
+.history-modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.history-list {
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 16px;
+  list-style: none;
+}
+
+.history-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.history-entry-restore {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.history-entry-restore:hover {
+  background: var(--surface);
+}
+
+.history-entry-restore strong {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-entry-task,
+.history-entry-restore small {
+  color: var(--ink-muted);
+  font-size: 11px;
+}
+
+.history-entry-task {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.history-entry-remove {
+  align-self: center;
+}
+
+.history-empty {
+  margin: 0;
+  padding: 32px 24px;
+  color: var(--ink-muted);
+  text-align: center;
+}
+
 .settings-modal-layer {
   position: fixed;
   inset: 0;
@@ -1401,6 +1522,11 @@ textarea:focus-visible,
   .quiet-button:not(.settings-trigger),
   .confidence-badge {
     display: none;
+  }
+
+  .quiet-button.history-trigger {
+    display: inline-flex;
+    padding: 0 9px;
   }
 
   .settings-popover {
