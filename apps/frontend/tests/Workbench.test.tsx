@@ -761,7 +761,7 @@ describe('qualification frame-first workbench', () => {
     expect(screen.getByRole('button', { name: 'Export JSON' })).toBeEnabled();
   });
 
-  it('runs batch VQA for the configured top-k frames and adds completed answers to the queue', async () => {
+  it('runs batch VQA for the configured top-k frames without adding answers to the queue', async () => {
     const user = userEvent.setup();
     const suggestVqaAnswer = vi.fn(async () => vqaSuggestion);
     renderWorkbench({ searchResponse: vqaResponse, suggestVqaAnswer });
@@ -781,8 +781,9 @@ describe('qualification frame-first workbench', () => {
       video_id: 'video_01',
       original_frame_id: 385,
     }));
-    await user.click(screen.getByRole('button', { name: 'Đáp án (1)' }));
-    expect(screen.getByText('Rẽ phải')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Đáp án (0)' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Đáp án (0)' }));
+    expect(screen.getByText('Chưa có đáp án.')).toBeInTheDocument();
   });
 
   it('stops a running VQA batch before sending the next rate-limited request', async () => {
