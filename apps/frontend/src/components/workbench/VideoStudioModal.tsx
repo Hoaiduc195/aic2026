@@ -42,20 +42,19 @@ export function VideoStudioModal({
   const [currentTimeMs, setCurrentTimeMs] = useState(initialFrame?.timestamp_ms ?? 0);
   const [showBoxes, setShowBoxes] = useState(true);
   const [exactFrame, setExactFrame] = useState<CanonicalFrameResponse | null>(null);
-  const [frameIdInput, setFrameIdInput] = useState(String(initialFrameId));
   const [isLoadingExactFrame, setIsLoadingExactFrame] = useState(false);
   const [exactFrameError, setExactFrameError] = useState<string | null>(null);
   const selectedFrame = exactFrame
     ?? studio.frames.find((frame) => frame.original_frame_id === selectedFrameId)
     ?? initialFrame
     ?? null;
-  const maxFrameId = studio.video.frame_count === undefined || studio.video.frame_count === null
+  const lastFrameId = studio.video.frame_count === undefined || studio.video.frame_count === null
     ? 2_147_483_647
     : Math.max(0, studio.video.frame_count - 1);
   const currentVideoFrameId = Math.max(
     0,
     Math.min(
-      maxFrameId,
+      lastFrameId,
       Math.round((currentTimeMs / 1000) * Math.max(0, studio.video.fps)),
     ),
   );
@@ -86,7 +85,6 @@ export function VideoStudioModal({
   useEffect(() => {
     setSelectedFrameId(initialFrame?.original_frame_id ?? null);
     setCurrentTimeMs(initialFrame?.timestamp_ms ?? 0);
-    setFrameIdInput(String(initialFrameId));
     setExactFrame(null);
     setExactFrameError(null);
   }, [initialFrame?.original_frame_id, initialFrame?.timestamp_ms, initialFrameId]);
@@ -144,7 +142,7 @@ export function VideoStudioModal({
     if (frame) setSelectedFrameId(frame.original_frame_id);
   }
 
-  async function loadAndSelectExactFrame(frameId: number) {
+  async function loadCurrentVideoFrame(frameId: number) {
     if (!loadExactFrame) return;
     setIsLoadingExactFrame(true);
     setExactFrameError(null);
@@ -155,28 +153,15 @@ export function VideoStudioModal({
       setCurrentTimeMs(frame.timestamp_ms);
       if (videoRef.current) videoRef.current.currentTime = frame.timestamp_ms / 1000;
     } catch {
-      setExactFrameError('Không tải được canonical frame. Hãy kiểm tra frame ID và kết nối backend.');
+      setExactFrameError('Không tải được frame tại vị trí đang dừng. Hãy kiểm tra kết nối backend.');
     } finally {
       setIsLoadingExactFrame(false);
     }
   }
 
-  async function chooseExactFrame() {
-    if (!loadExactFrame) return;
-    const rawFrameId = frameIdInput.trim();
-    const frameId = Number(rawFrameId);
-    if (!rawFrameId || !Number.isInteger(frameId) || frameId < 0 || frameId > maxFrameId) {
-      setExactFrameError(`Frame ID phải là số nguyên từ 0 đến ${maxFrameId}.`);
-      return;
-    }
-
-    await loadAndSelectExactFrame(frameId);
-  }
-
   async function chooseCurrentVideoFrame() {
     if (!loadExactFrame) return;
-    setFrameIdInput(String(currentVideoFrameId));
-    await loadAndSelectExactFrame(currentVideoFrameId);
+    await loadCurrentVideoFrame(currentVideoFrameId);
   }
 
   function handleDialogKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
@@ -232,35 +217,18 @@ export function VideoStudioModal({
               onFrameSelect={selectFrame}
             />
 
-            <div className="video-studio-exact-picker" aria-label="Chọn canonical frame chính xác">
+            <div className="video-studio-exact-picker" aria-label="Chọn frame tại vị trí đang dừng">
               <div>
-                <p className="eyebrow">Canonical frame</p>
-                <label htmlFor="studio-exact-frame-id">Frame ID trong video</label>
+                <p className="eyebrow">Frame đại diện</p>
+                <span>Playhead hiện tại · frame {currentVideoFrameId} · {formatMs(currentTimeMs)}</span>
               </div>
               <div className="video-studio-exact-picker-controls">
-                <input
-                  id="studio-exact-frame-id"
-                  type="number"
-                  min={0}
-                  max={studio.video.frame_count === undefined || studio.video.frame_count === null ? undefined : Math.max(0, studio.video.frame_count - 1)}
-                  step={1}
-                  inputMode="numeric"
-                  value={frameIdInput}
-                  onChange={(event) => setFrameIdInput(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') void chooseExactFrame();
-                  }}
-                  aria-describedby="studio-exact-frame-help"
-                />
-                <button type="button" className="secondary-button" onClick={() => void chooseExactFrame()} disabled={!loadExactFrame || isLoadingExactFrame}>
-                  {isLoadingExactFrame ? 'Đang tải…' : 'Tải exact frame'}
-                </button>
                 <button type="button" className="secondary-button" onClick={() => void chooseCurrentVideoFrame()} disabled={!loadExactFrame || isLoadingExactFrame}>
-                  Chọn frame hiện tại
+                  {isLoadingExactFrame ? 'Đang tải…' : 'Chọn frame hiện tại'}
                 </button>
               </div>
-              <small id="studio-exact-frame-help">
-                Nhập số frame nguồn để xem đúng frame, kể cả khi frame đó không nằm trong danh sách keyframe thưa.
+              <small>
+                Tua hoặc dừng video tại khoảnh khắc cần nộp, sau đó tải đúng frame đang nằm dưới playhead.
               </small>
               {exactFrameError && <p className="inline-error" role="alert">{exactFrameError}</p>}
             </div>

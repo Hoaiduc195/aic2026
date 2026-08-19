@@ -1913,7 +1913,6 @@ textarea:focus-visible,
 
 .video-studio-exact-picker-controls {
   display: flex;
-  flex-wrap: wrap;
   gap: 8px;
 }
 

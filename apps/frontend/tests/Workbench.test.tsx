@@ -355,10 +355,10 @@ describe('qualification frame-first workbench', () => {
     await user.click(await screen.findByRole('button', { name: 'Chọn frame video_01 · 385' }));
     await user.click(screen.getByRole('button', { name: 'Xem video studio' }));
 
-    const frameInput = await screen.findByLabelText('Frame ID trong video');
-    await user.clear(frameInput);
-    await user.type(frameInput, '386');
-    await user.click(screen.getByRole('button', { name: 'Tải exact frame' }));
+    const video = await screen.findByLabelText('Video video_01');
+    Object.defineProperty(video, 'currentTime', { configurable: true, value: 386 / 30, writable: true });
+    fireEvent.timeUpdate(video);
+    await user.click(screen.getByRole('button', { name: 'Chọn frame hiện tại' }));
     expect(await screen.findByRole('heading', { name: 'Canonical frame 386' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Chọn frame đại diện (canonical frame 386)' }));
