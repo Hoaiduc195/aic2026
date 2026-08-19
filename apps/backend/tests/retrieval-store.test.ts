@@ -25,6 +25,23 @@ describe('PostgresRetrievalStore', () => {
     expect(params?.[7]).toContain('"original_frame_id":1');
   });
 
+  it('persists a non-empty label for image-only frame queries', async () => {
+    const db = database();
+    const store = new PostgresRetrievalStore(db);
+    const plan = {
+      query_id: 'q-frame', task: 'textual_kis', original_query: '[frame image query]', index_version: 'v1',
+    } as RetrievalExecutionPlan;
+
+    await store.saveRun({
+      query: '',
+      task: 'textual_kis',
+      frame_query: { video_id: 'video-01', original_frame_id: 385 },
+    }, plan, []);
+
+    const [, params] = vi.mocked(db.query).mock.calls[0];
+    expect(params?.[3]).toBe('[frame image query] video-01 frame 385');
+  });
+
   it('maps paginated candidates and selection revisions', async () => {
     const db = database([{
       total_count: '1', rank: 1, video_id: 'v', original_frame_id: 2,

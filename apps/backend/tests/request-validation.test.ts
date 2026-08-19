@@ -85,8 +85,13 @@ describe('parseSearchRequest', () => {
     expect(() => parseSearchRequest({
       query: 'query', task: 'textual_kis', retrieval: { near_frame_window_ms: -1 },
     })).toThrow('retrieval.near_frame_window_ms');
+    expect(parseSearchRequest({
+      query: 'query', task: 'textual_kis', retrieval: { near_frame_window_ms: 100_000 },
+    })).toMatchObject({
+      retrieval: { near_frame_window_ms: 100_000 },
+    });
     expect(() => parseSearchRequest({
-      query: 'query', task: 'textual_kis', retrieval: { near_frame_window_ms: 10001 },
+      query: 'query', task: 'textual_kis', retrieval: { near_frame_window_ms: 100_001 },
     })).toThrow('retrieval.near_frame_window_ms');
   });
 
