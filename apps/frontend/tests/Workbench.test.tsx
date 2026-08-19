@@ -310,9 +310,27 @@ describe('qualification frame-first workbench', () => {
     expect(screen.getByLabelText('Câu hỏi')).toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: 'TRAKE' }));
+    expect(screen.getByLabelText('Truy vấn chính')).toBeInTheDocument();
     expect(screen.getByLabelText('Mô tả sự kiện 1')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Thêm sự kiện' }));
     expect(screen.getByLabelText('Mô tả sự kiện 2')).toBeInTheDocument();
+  });
+
+  it('submits the TRAKE overview query before its ordered sub-events', async () => {
+    const user = userEvent.setup();
+    const { search } = renderWorkbench();
+
+    await user.click(screen.getByRole('tab', { name: 'TRAKE' }));
+    await user.type(screen.getByLabelText('Truy vấn chính'), 'Một người đi qua cửa hàng rồi rời đi');
+    await user.type(screen.getByLabelText('Mô tả sự kiện 1'), 'Người bước vào cửa hàng');
+    await user.click(screen.getByRole('button', { name: 'Thêm sự kiện' }));
+    await user.type(screen.getByLabelText('Mô tả sự kiện 2'), 'Người rời khỏi cửa hàng');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+
+    await waitFor(() => expect(search).toHaveBeenCalledWith(expect.objectContaining({
+      task: 'trake',
+      query: 'Một người đi qua cửa hàng rồi rời đi\n1. Người bước vào cửa hàng\n2. Người rời khỏi cửa hàng',
+    })));
   });
 
   it('opens frame evidence and lazily loads only the video studio', async () => {
