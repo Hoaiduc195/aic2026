@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -82,13 +82,14 @@ describe('VideoStudioModal', () => {
       objects: [{ evidence_id: 'object-exact', label: 'car', confidence: 0.88, normalized_bbox: [0.2, 0.2, 0.5, 0.5], producer: 'object:v1' }],
     };
     const loadExactFrame = vi.fn(async () => exactFrame);
+    const onClose = vi.fn();
     const onSelectFrame = vi.fn();
 
     render(
       <VideoStudioModal
         studio={studio}
         initialFrameId={50}
-        onClose={vi.fn()}
+        onClose={onClose}
         onSelectFrame={onSelectFrame}
         loadExactFrame={loadExactFrame}
       />,
@@ -102,13 +103,9 @@ describe('VideoStudioModal', () => {
     await user.click(screen.getByRole('button', { name: 'Chọn frame hiện tại' }));
 
     expect(loadExactFrame).toHaveBeenCalledWith(77);
-    expect(await screen.findByText('Canonical frame 77')).toBeInTheDocument();
-    expect(screen.getByText('Exact frame caption.')).toBeInTheDocument();
-    expect(screen.getAllByText('car').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/Annotation đang hiển thị lấy từ frame gần nhất.*50/)).toBeInTheDocument();
-    expect(screen.getByTestId('studio-selected-frame-image')).toHaveAttribute('src', exactFrame.thumbnail_uri);
-
-    await user.click(screen.getByRole('button', { name: 'Chọn frame đại diện (canonical frame 77)' }));
-    expect(onSelectFrame).toHaveBeenCalledWith(exactFrame);
+    await waitFor(() => {
+      expect(onSelectFrame).toHaveBeenCalledWith(exactFrame);
+      expect(onClose).toHaveBeenCalledOnce();
+    });
   });
 });

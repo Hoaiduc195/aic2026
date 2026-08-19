@@ -359,12 +359,9 @@ describe('qualification frame-first workbench', () => {
     Object.defineProperty(video, 'currentTime', { configurable: true, value: 386 / 30, writable: true });
     fireEvent.timeUpdate(video);
     await user.click(screen.getByRole('button', { name: 'Chọn frame hiện tại' }));
-    expect(await screen.findByRole('heading', { name: 'Canonical frame 386' })).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Chọn frame đại diện (canonical frame 386)' }));
 
     expect(screen.queryByRole('dialog', { name: 'Video studio video_01' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Frame 386' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Frame 386' })).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Frame 386 của video_01' })).toHaveAttribute(
       'src',
       '/api/v1/media/videos/video_01/frames/386/thumbnail',
