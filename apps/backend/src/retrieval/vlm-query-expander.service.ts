@@ -1,4 +1,4 @@
-﻿import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { APP_CONFIG, VISION_LANGUAGE_MODEL } from '../common/tokens';
 import type { BackendConfig } from '../common/config';
@@ -43,12 +43,12 @@ export class VlmQueryExpanderService {
     try {
       const variants = await this.callExpansionApi(query);
       this.logger.log(
-        VLM query expansion: "+query+" -> [+variants.map((v) => "+v+").join(', ')+],
+        `VLM query expansion: "${query}" -> [${variants.map((v) => `"${v}"`).join(', ')}]`,
       );
       return variants;
     } catch (error) {
       this.logger.warn(
-        VLM query expansion failed (non-fatal): +(error instanceof Error ? error.message : 'unknown error'),
+        `VLM query expansion failed (non-fatal): ${error instanceof Error ? error.message : 'unknown error'}`,
       );
       return [];
     }
@@ -59,18 +59,18 @@ export class VlmQueryExpanderService {
     const system =
       'You are a video retrieval query optimizer. ' +
       'Given a search query (possibly in Vietnamese or English), generate ' +
-      this.config.vlmQueryExpansionMaxVariants+' alternative English phrasings ' +
+      `${this.config.vlmQueryExpansionMaxVariants} alternative English phrasings ` +
       'that would help retrieve the same visual content from a video database. ' +
       'Focus on visual elements: objects, colors, actions, settings, people. ' +
       'Respond ONLY with a JSON array of strings - no markdown, no prose: ["variant1", "variant2", ...]';
 
-    const prompt = 'Original query: "'+query+'"\nGenerate alternative English search variants.';
+    const prompt = `Original query: "${query}"\nGenerate alternative English search variants.`;
 
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        ...(this.config.vlmApiKey ? { authorization: 'Bearer '+this.config.vlmApiKey } : {}),
+        ...(this.config.vlmApiKey ? { authorization: `Bearer ${this.config.vlmApiKey}` } : {}),
       },
       body: JSON.stringify({
         model: this.config.vlmModel,
@@ -79,21 +79,21 @@ export class VlmQueryExpanderService {
           { role: 'user', content: prompt },
         ],
         temperature: 0.3,
-        max_completion_tokens: 256,
+        max_tokens: 256,
       }),
       signal: AbortSignal.timeout(this.config.vlmTimeoutMs),
     });
 
     if (response.status === 429 || response.status >= 500) {
-      this.logger.warn('VLM expansion API returned HTTP '+response.status+', skipping');
+      this.logger.warn(`VLM expansion API returned HTTP ${response.status}, skipping`);
       return [];
     }
 
     if (!response.ok) {
-      throw new Error('VLM expansion endpoint returned HTTP '+response.status);
+      throw new Error(`VLM expansion endpoint returned HTTP ${response.status}`);
     }
 
-    const payload = await response.json() as {
+    const payload = (await response.json()) as {
       choices?: { message?: { content?: unknown } }[];
     };
     const raw = payload.choices?.[0]?.message?.content;
@@ -105,13 +105,13 @@ export class VlmQueryExpanderService {
 
   private buildEndpoint(): string {
     const base = (this.config.vlmBaseUrl ?? '').trim().replace(/\/+$/, '');
-    return base.endsWith('/chat/completions') ? base : base+'/chat/completions';
+    return base.endsWith('/chat/completions') ? base : `${base}/chat/completions`;
   }
 
   private parseVariants(text: string): string[] {
     const candidate = text
-      .replace(/^+(?:json)?\s*/i, '')
-      .replace(/\s*+$/, '')
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/, '')
       .trim();
     try {
       const parsed: unknown = JSON.parse(candidate);
@@ -125,3 +125,4 @@ export class VlmQueryExpanderService {
     }
   }
 }
+
