@@ -165,7 +165,7 @@ test.describe('qualification frame-first workbench', () => {
     await expect(page.getByLabel('Mô tả sự kiện 2')).toBeVisible();
   });
 
-  test('searches frames, lazy loads video and same-video frames, then queues the answer in the drawer', async ({ page }) => {
+  test('searches frames, opens video studio, then queues the answer in the drawer', async ({ page }) => {
     const requests = await mockFrameFirstApis(page);
     await page.goto('/');
 
