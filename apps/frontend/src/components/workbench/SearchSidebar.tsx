@@ -16,6 +16,10 @@ interface Props {
   description: string;
   question: string;
   events: readonly QualificationEventInput[];
+  queryImproverEnabled: boolean;
+  improvedQuery: string;
+  queryImproverPending: boolean;
+  queryImproverError: string | null;
   pending: boolean;
   onTaskChange: (task: QualificationTask) => void;
   onDescriptionChange: (value: string) => void;
@@ -23,6 +27,11 @@ interface Props {
   onEventChange: (eventId: string, value: string) => void;
   onAddEvent: () => void;
   onRemoveEvent: (eventId: string) => void;
+  onQueryImproverChange: (enabled: boolean) => void;
+  onImprovedQueryChange: (value: string) => void;
+  onImproveQuery: () => void;
+  onQueryImproverSave: () => void;
+  onQueryImproverReset: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onRrfChange: (settings: RrfSettings) => void;
   onRrfSave: () => void;
@@ -66,6 +75,10 @@ export function SearchSidebar({
   description,
   question,
   events,
+  queryImproverEnabled,
+  improvedQuery,
+  queryImproverPending,
+  queryImproverError,
   pending,
   onTaskChange,
   onDescriptionChange,
@@ -73,6 +86,11 @@ export function SearchSidebar({
   onEventChange,
   onAddEvent,
   onRemoveEvent,
+  onQueryImproverChange,
+  onImprovedQueryChange,
+  onImproveQuery,
+  onQueryImproverSave,
+  onQueryImproverReset,
   onSubmit,
   onRrfChange,
   onRrfSave,
@@ -81,6 +99,7 @@ export function SearchSidebar({
   onRetrievalSave,
   onRetrievalReset,
 }: Props) {
+  const vlmRerank = retrievalSettings.vlm_rerank ?? { enabled: false, top_k: 15, weight: 0.6 };
   const hasQuery = task === 'trake'
     ? events.length > 0 && events.every((item) => item.description.trim())
     : description.trim() && (task !== 'qa' || question.trim());
@@ -175,6 +194,58 @@ export function SearchSidebar({
           {pending ? 'Đang tìm…' : 'Tìm frame'}
         </button>
       </form>
+
+      <section className="sidebar-panel query-improver-panel" aria-labelledby="query-improver-title">
+        <div className="sidebar-panel-heading">
+          <div>
+            <p className="section-kicker">Chuẩn hóa truy vấn</p>
+            <h2 id="query-improver-title">Query Improver</h2>
+          </div>
+          <span className="sidebar-panel-badge">1 query</span>
+        </div>
+
+        <label className="settings-toggle">
+          <input
+            type="checkbox"
+            checked={queryImproverEnabled}
+            onChange={(event) => onQueryImproverChange(event.target.checked)}
+          />
+          <span>Bật cải thiện query tiếng Anh</span>
+        </label>
+
+        {queryImproverEnabled && (
+          <>
+            <label className="input-field compact-field" htmlFor="improved-query">
+              <span>Query tiếng Anh</span>
+              <textarea
+                id="improved-query"
+                aria-label="Query tiếng Anh đã cải thiện"
+                value={improvedQuery}
+                rows={4}
+                maxLength={2000}
+                placeholder="Bấm ‘Tạo query tiếng Anh’ để sinh preview…"
+                onChange={(event) => onImprovedQueryChange(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className="secondary-button full-width"
+              disabled={queryImproverPending || !hasQuery}
+              onClick={onImproveQuery}
+            >
+              {queryImproverPending ? 'Đang cải thiện…' : 'Tạo query tiếng Anh'}
+            </button>
+            <p className="sidebar-help">
+              Query tiếng Anh được dùng cho retrieval sau khi bạn kiểm tra hoặc chỉnh sửa preview.
+            </p>
+            {queryImproverError && <p className="settings-error" role="alert">{queryImproverError}</p>}
+            <div className="sidebar-panel-actions">
+              <button type="button" className="secondary-button" onClick={onQueryImproverReset}>Tắt mặc định</button>
+              <button type="button" className="primary-button" onClick={onQueryImproverSave}>Lưu Query Improver</button>
+            </div>
+          </>
+        )}
+      </section>
 
       <section className="sidebar-panel rrf-panel" aria-labelledby="rrf-settings-title">
         <div className="sidebar-panel-heading">
@@ -292,87 +363,73 @@ export function SearchSidebar({
           </label>
         </div>
 
-        <div className="vlm-rerank-controls" style={{ marginTop: '12px', padding: '10px', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.08)' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '8px' }}>
+        <label className="settings-toggle">
+          <input
+            id="vlm-rerank-enabled-sidebar"
+            type="checkbox"
+            checked={vlmRerank.enabled}
+            onChange={(event) => onRetrievalChange({
+              ...retrievalSettings,
+              vlm_rerank: { ...vlmRerank, enabled: event.target.checked },
+            })}
+          />
+          <span>Bật VLM rerank top-k (Gemini / Qwen)</span>
+        </label>
+        <div className="retrieval-settings-grid">
+          <label htmlFor="retrieval-vlm-top-k">
+            <span>VLM top-k</span>
             <input
-              id="vlm-rerank-enabled-sidebar"
-              type="checkbox"
-              checked={Boolean(retrievalSettings.vlm_rerank?.enabled)}
+              id="retrieval-vlm-top-k"
+              aria-label="VLM top-k"
+              type="number"
+              min="1"
+              max="100"
+              step="1"
+              value={displayNumberInput(vlmRerank.top_k)}
               onChange={(event) => onRetrievalChange({
                 ...retrievalSettings,
-                vlm_rerank: {
-                  ...retrievalSettings.vlm_rerank,
-                  enabled: event.target.checked,
-                  top_k: retrievalSettings.vlm_rerank?.top_k ?? 15,
-                  weight: retrievalSettings.vlm_rerank?.weight ?? 0.6,
-                },
+                vlm_rerank: { ...vlmRerank, top_k: parseNumberInput(event.target.value) },
               })}
             />
-            <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>Bật VLM Visual Rerank (Qwen2.5-VL / Gemini)</span>
           </label>
-
-          {retrievalSettings.vlm_rerank?.enabled && (
-            <div className="retrieval-settings-grid" style={{ marginTop: '6px' }}>
-              <label htmlFor="vlm-rerank-top-k">
-                <span>Top K rerank</span>
-                <input
-                  id="vlm-rerank-top-k"
-                  type="number"
-                  min="1"
-                  max="50"
-                  value={displayNumberInput(retrievalSettings.vlm_rerank.top_k ?? 20)}
-                  onChange={(event) => onRetrievalChange({
-                    ...retrievalSettings,
-                    vlm_rerank: {
-                      ...retrievalSettings.vlm_rerank,
-                      top_k: parseNumberInput(event.target.value),
-                    },
-                  })}
-                />
-              </label>
-              <label htmlFor="vlm-rerank-weight">
-                <span>Trọng số VLM (0-1)</span>
-                <input
-                  id="vlm-rerank-weight"
-                  type="number"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={displayNumberInput(retrievalSettings.vlm_rerank.weight ?? 0.7)}
-                  onChange={(event) => onRetrievalChange({
-                    ...retrievalSettings,
-                    vlm_rerank: {
-                      ...retrievalSettings.vlm_rerank,
-                      weight: parseNumberInput(event.target.value),
-                    },
-                  })}
-                />
-              </label>
-              <label htmlFor="vlm-rerank-min-score" style={{ gridColumn: '1 / -1' }}>
-                <span>Lọc frame score VLM &lt; (0 = tắt)</span>
-                <input
-                  id="vlm-rerank-min-score"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="5"
-                  value={displayNumberInput(retrievalSettings.vlm_rerank.vlm_min_score ?? 0)}
-                  onChange={(event) => onRetrievalChange({
-                    ...retrievalSettings,
-                    vlm_rerank: {
-                      ...retrievalSettings.vlm_rerank,
-                      vlm_min_score: parseNumberInput(event.target.value),
-                    },
-                  })}
-                />
-              </label>
-            </div>
-          )}
+          <label htmlFor="retrieval-vlm-weight">
+            <span>VLM weight</span>
+            <input
+              id="retrieval-vlm-weight"
+              aria-label="VLM weight"
+              type="number"
+              min="0"
+              max="1"
+              step="0.05"
+              inputMode="decimal"
+              value={displayNumberInput(vlmRerank.weight)}
+              onChange={(event) => onRetrievalChange({
+                ...retrievalSettings,
+                vlm_rerank: { ...vlmRerank, weight: parseNumberInput(event.target.value) },
+              })}
+            />
+          </label>
+          <label htmlFor="retrieval-vlm-min-score">
+            <span>VLM min score (0 = tắt)</span>
+            <input
+              id="retrieval-vlm-min-score"
+              aria-label="VLM min score"
+              type="number"
+              min="0"
+              max="100"
+              step="5"
+              value={displayNumberInput(vlmRerank.vlm_min_score ?? 0)}
+              onChange={(event) => onRetrievalChange({
+                ...retrievalSettings,
+                vlm_rerank: { ...vlmRerank, vlm_min_score: parseNumberInput(event.target.value) },
+              })}
+            />
+          </label>
         </div>
 
         {retrievalError && <p className="settings-error" role="alert">{retrievalError}</p>}
         <p className="sidebar-help">
-          Số frame là kết quả cuối cùng; candidate và fusion pool lớn hơn giúp RRF có thêm dữ liệu nhưng có thể chậm hơn.
+          Số frame là kết quả cuối cùng; VLM rerank gửi ảnh của top-k lên model nên chỉ bật khi backend đã cấu hình VLM.
         </p>
         <div className="sidebar-panel-actions">
           <button type="button" className="secondary-button" onClick={onRetrievalReset}>Khôi phục truy hồi mặc định</button>

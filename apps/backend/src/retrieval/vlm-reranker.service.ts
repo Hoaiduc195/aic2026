@@ -1,4 +1,4 @@
-﻿import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { APP_CONFIG, VISION_LANGUAGE_MODEL } from '../common/tokens';
 import type { BackendConfig } from '../common/config';
@@ -40,34 +40,29 @@ export class VlmRerankerService {
     const weight = overrides?.weight ?? this.config.vlmWeight;
     const targetCandidates = candidates.slice(0, topK);
     const remainingCandidates = candidates.slice(topK);
+    const concurrency = Math.max(1, this.config.vlmConcurrency || 4);
 
     this.logger.log(
-      'Starting VLM visual rerank for top ' + targetCandidates.length + ' candidates' +
-        (this.config.vlmAdaptiveTopK ? ' (adaptive, base=' + configTopK + ')' : '') +
-        ' using ' + this.vlm.modelName,
+      `Starting VLM visual rerank for top ${targetCandidates.length} candidates` +
+        (this.config.vlmAdaptiveTopK ? ` (adaptive, base=${configTopK})` : '') +
+        ` using ${this.vlm.modelName}`,
     );
 
-    const poolLimit = this.config.vlmConcurrency || 4;
     const outcomes: VlmRerankOutcome[] = [];
 
-    const chunks: FusedCandidate[][] = [];
-    for (let i = 0; i < targetCandidates.length; i += poolLimit) {
-      chunks.push(targetCandidates.slice(i, i + poolLimit));
-    }
-
-    for (const chunk of chunks) {
+    for (let index = 0; index < targetCandidates.length; index += concurrency) {
+      const chunk = targetCandidates.slice(index, index + concurrency);
       const chunkOutcomes = await Promise.all(
-        chunk.map(async (candidate) => this.evaluateCandidate(query, candidate, weight)),
+        chunk.map((candidate) => this.evaluateCandidate(query, candidate, weight)),
       );
       outcomes.push(...chunkOutcomes);
     }
 
     const rerankedTop = outcomes
-      .map((outcome) => {
-        const { candidate, relevance, adjustedScore } = outcome;
+      .map(({ candidate, relevance, adjustedScore }) => {
         if (!relevance) return candidate;
 
-        const vlmTrace: FusionTraceEntry = {
+        const trace: FusionTraceEntry = {
           branch: 'vlm_rerank',
           channel_rank: 1,
           channel_weight: weight,
@@ -84,7 +79,7 @@ export class VlmRerankerService {
           ...candidate,
           score: adjustedScore,
           matched_modalities: [...new Set([...candidate.matched_modalities, 'vlm_rerank'])],
-          fusion_trace: [vlmTrace, ...candidate.fusion_trace],
+          fusion_trace: [trace, ...candidate.fusion_trace],
         };
       })
       .sort((a, b) => b.score - a.score);
@@ -100,8 +95,8 @@ export class VlmRerankerService {
 
     if (minScore > 0 && filteredTop.length < rerankedTop.length) {
       this.logger.log(
-        'VLM filter: removed ' + (rerankedTop.length - filteredTop.length) + ' candidates ' +
-          'with score < ' + minScore + ' (kept ' + filteredTop.length + '/' + rerankedTop.length + ')',
+        `VLM filter: removed ${rerankedTop.length - filteredTop.length} candidates ` +
+          `with score < ${minScore} (kept ${filteredTop.length}/${rerankedTop.length})`,
       );
     }
 
@@ -111,8 +106,6 @@ export class VlmRerankerService {
   /**
    * Plan C: Adaptive top-K
    * CV (coefficient of variation) = stddev / mean of top-N scores.
-   * High CV -> scores spread wide -> top frames clearly better -> fewer VLM calls needed.
-   * Low CV  -> scores tightly clustered -> many frames compete -> more VLM calls needed.
    */
   private adaptiveTopK(candidates: readonly FusedCandidate[], baseTopK: number): number {
     const sampleSize = Math.min(candidates.length, baseTopK * 2);
@@ -128,7 +121,7 @@ export class VlmRerankerService {
     const scale = 1 + (0.3 - cv) * 2;
     const adaptive = Math.round(baseTopK * Math.max(0.5, Math.min(2, scale)));
 
-    this.logger.debug('Adaptive top-K: base=' + baseTopK + ', cv=' + cv.toFixed(3) + ', effective=' + adaptive);
+    this.logger.debug(`Adaptive top-K: base=${baseTopK}, cv=${cv.toFixed(3)}, effective=${adaptive}`);
     return adaptive;
   }
 
@@ -137,7 +130,7 @@ export class VlmRerankerService {
     candidate: FusedCandidate,
     weight: number,
   ): Promise<VlmRerankOutcome> {
-    if (!candidate.preview_uri || !candidate.preview_uri.startsWith('http')) {
+    if (!candidate.preview_uri?.startsWith('http')) {
       return { candidate, adjustedScore: candidate.score };
     }
 
@@ -154,10 +147,11 @@ export class VlmRerankerService {
       return { candidate, relevance, adjustedScore };
     } catch (error) {
       this.logger.warn(
-        'VLM rerank failed for frame ' + candidate.video_id + ':' + candidate.original_frame_id + ': ' +
+        `VLM rerank failed for frame ${candidate.video_id}:${candidate.original_frame_id}: ` +
           (error instanceof Error ? error.message : 'unknown error'),
       );
       return { candidate, adjustedScore: candidate.score };
     }
   }
 }
+

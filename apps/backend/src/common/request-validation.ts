@@ -9,6 +9,7 @@ import {
   type RetrievalOverrides,
   type SearchRequest,
   type TaskType,
+  type VlmRerankOverrides,
 } from './types';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -42,6 +43,22 @@ function parseChannelWeights(value: unknown): ChannelWeights {
   return weights;
 }
 
+function parseVlmRerank(value: unknown): VlmRerankOverrides {
+  if (!isRecord(value)) throw new BadRequestException('retrieval.vlm_rerank must be an object');
+  const overrides: { enabled?: boolean; top_k?: number; weight?: number } = {};
+  if (value.enabled !== undefined) {
+    if (typeof value.enabled !== 'boolean') throw new BadRequestException('retrieval.vlm_rerank.enabled must be a boolean');
+    overrides.enabled = value.enabled;
+  }
+  if (value.top_k !== undefined) {
+    overrides.top_k = boundedInteger(value.top_k, 'retrieval.vlm_rerank.top_k', 1, 100);
+  }
+  if (value.weight !== undefined) {
+    overrides.weight = boundedNumber(value.weight, 'retrieval.vlm_rerank.weight', 0, 1);
+  }
+  return overrides;
+}
+
 function optionalOverrides(value: unknown): RetrievalOverrides | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) throw new BadRequestException('retrieval must be an object');
@@ -53,6 +70,7 @@ function optionalOverrides(value: unknown): RetrievalOverrides | undefined {
     latency_budget_ms?: number;
     rrf_k?: number;
     channel_weights?: ChannelWeights;
+    vlm_rerank?: VlmRerankOverrides;
   } = {};
   if (value.branch_k !== undefined) overrides.branch_k = boundedInteger(value.branch_k, 'retrieval.branch_k', 1, 10000);
   if (value.fusion_k !== undefined) overrides.fusion_k = boundedInteger(value.fusion_k, 'retrieval.fusion_k', 1, 10000);
@@ -62,6 +80,7 @@ function optionalOverrides(value: unknown): RetrievalOverrides | undefined {
   }
   if (value.rrf_k !== undefined) overrides.rrf_k = boundedInteger(value.rrf_k, 'retrieval.rrf_k', 1, 1000);
   if (value.channel_weights !== undefined) overrides.channel_weights = parseChannelWeights(value.channel_weights);
+  if (value.vlm_rerank !== undefined) overrides.vlm_rerank = parseVlmRerank(value.vlm_rerank);
   return overrides;
 }
 

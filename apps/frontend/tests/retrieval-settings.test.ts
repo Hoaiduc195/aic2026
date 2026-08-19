@@ -19,6 +19,7 @@ describe('retrieval settings', () => {
       display_k: 40,
       branch_k: 150,
       fusion_k: 600,
+      vlm_rerank: { enabled: true, top_k: 10, weight: 0.7 },
     };
 
     expect(validateRetrievalSettings(settings)).toBeNull();
@@ -29,6 +30,7 @@ describe('retrieval settings', () => {
       display_k: 40,
       branch_k: 150,
       fusion_k: 600,
+      vlm_rerank: { enabled: true, top_k: 10, weight: 0.7 },
     });
   });
 
@@ -46,5 +48,9 @@ describe('retrieval settings', () => {
       display_k: 40,
       fusion_k: 20,
     })?.toLowerCase()).toContain('fusion');
+    expect(validateRetrievalSettings({
+      ...DEFAULT_RETRIEVAL_SETTINGS,
+      vlm_rerank: { enabled: true, top_k: 0, weight: 0.6 },
+    })).toContain('VLM');
   });
 });

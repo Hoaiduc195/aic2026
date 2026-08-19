@@ -1,3 +1,6 @@
+export type VlmAnswerStatus = 'answered' | 'needs_more_evidence' | 'abstained';
+export type VlmConfidenceLevel = 'high' | 'medium' | 'low';
+
 export interface VlmRelevanceResult {
   readonly score: number; // 0 - 100
   readonly match: boolean;
@@ -5,10 +8,10 @@ export interface VlmRelevanceResult {
 }
 
 export interface VlmAnswerResult {
-  readonly answer_status: 'answered' | 'needs_more_evidence' | 'abstained';
+  readonly answer_status: VlmAnswerStatus;
   readonly answer: string | null;
   readonly normalized_answer: string | null;
-  readonly confidence: { readonly level: 'high' | 'medium' | 'low'; readonly score: number };
+  readonly confidence: { readonly level: VlmConfidenceLevel; readonly score: number };
   readonly reason?: string;
 }
 
@@ -16,7 +19,11 @@ export interface VisionLanguageModel {
   readonly isConfigured: boolean;
   readonly modelName: string;
   verifyImageRelevance(input: { readonly query: string; readonly imageUrl: string }): Promise<VlmRelevanceResult>;
-  answerVisualQuestion(input: { readonly question: string; readonly imageUrl: string; readonly evidenceText?: string }): Promise<VlmAnswerResult>;
+  answerVisualQuestion(input: {
+    readonly question: string;
+    readonly imageUrl: string;
+    readonly evidenceText?: string;
+  }): Promise<VlmAnswerResult>;
 }
 
 export interface OpenAICompatibleVisionClientOptions {
@@ -56,6 +63,22 @@ function contentText(value: unknown): string | undefined {
   return text || undefined;
 }
 
+function answerStatus(value: unknown): VlmAnswerStatus {
+  return value === 'answered' || value === 'needs_more_evidence' || value === 'abstained'
+    ? value
+    : 'abstained';
+}
+
+function confidence(value: unknown, status: VlmAnswerStatus): VlmAnswerResult['confidence'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { level: 'low', score: status === 'answered' ? 0.8 : 0.2 };
+  }
+  const raw = value as Record<string, unknown>;
+  const level = raw.level === 'high' || raw.level === 'medium' || raw.level === 'low' ? raw.level : 'low';
+  const rawScore = typeof raw.score === 'number' && Number.isFinite(raw.score) ? raw.score : status === 'answered' ? 0.8 : 0.2;
+  return { level, score: Math.max(0, Math.min(1, rawScore)) };
+}
+
 export class OpenAICompatibleVisionClient implements VisionLanguageModel {
   readonly isConfigured = true;
   readonly modelName: string;
@@ -72,40 +95,31 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
     this.modelName = options.model.trim();
     this.apiKey = options.apiKey?.trim() || undefined;
     this.timeoutMs = options.timeoutMs ?? 10_000;
-    // 512 tokens gives headroom for verbose JSON reason fields from Gemini
     this.maxTokens = options.maxTokens ?? 512;
     this.temperature = options.temperature ?? 0;
-    // 1 retry to handle free-tier 429 rate-limit bursts gracefully
     this.retries = options.retries ?? 1;
   }
 
   async verifyImageRelevance(input: { readonly query: string; readonly imageUrl: string }): Promise<VlmRelevanceResult> {
-    // Concise system prompt: Gemini-3.x performs better with direct, unambiguous instructions
-    const system =
-      'You are a visual relevance scorer for video keyframes. ' +
-      'Given a search query and a keyframe image, rate how well the image matches the query. ' +
-      'Respond ONLY with a JSON object — no markdown, no prose: ' +
-      '{"score": <integer 0-100>, "match": <boolean>, "reason": <one-sentence string>}';
-
-    const prompt = `Query: "${input.query}"\nScore this keyframe image.`;
-
     const rawResponse = await this.callVisionChat({
-      system,
-      prompt,
+      system: [
+        'You are an expert video keyframe verifier.',
+        'Assess how well the provided video keyframe image matches the search query description.',
+        'Score relevance from 0 to 100, where 0 is irrelevant and 100 is a perfect match.',
+        'Return only JSON with the shape {"score":number,"match":boolean,"reason":string}.',
+      ].join(' '),
+      prompt: `Search Query: "${input.query}"\nAnalyze the keyframe image.`,
       imageUrl: input.imageUrl,
     });
-
     const parsed = parseJsonFromModelOutput<{ score?: unknown; match?: unknown; reason?: unknown }>(rawResponse);
-    if (!parsed) {
-      return { score: 50, match: false, reason: 'Failed to parse VLM response' };
-    }
-
+    if (!parsed) return { score: 50, match: false, reason: 'Failed to parse VLM response' };
     const rawScore = typeof parsed.score === 'number' && Number.isFinite(parsed.score) ? parsed.score : 50;
     const score = Math.max(0, Math.min(100, Math.round(rawScore)));
-    const match = typeof parsed.match === 'boolean' ? parsed.match : score >= 50;
-    const reason = typeof parsed.reason === 'string' ? parsed.reason.trim() : 'Evaluated by VLM';
-
-    return { score, match, reason };
+    return {
+      score,
+      match: typeof parsed.match === 'boolean' ? parsed.match : score >= 50,
+      reason: typeof parsed.reason === 'string' && parsed.reason.trim() ? parsed.reason.trim() : 'Evaluated by VLM',
+    };
   }
 
   async answerVisualQuestion(input: {
@@ -113,33 +127,27 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
     readonly imageUrl: string;
     readonly evidenceText?: string;
   }): Promise<VlmAnswerResult> {
-    // Direct, schema-anchored prompt yields cleaner JSON from Gemini-3.x
-    const system =
-      'You answer a single question about a video keyframe image. ' +
-      'Use visual evidence from the image and any supplied text evidence. ' +
-      'Answer in the same language as the question. ' +
-      'Respond ONLY with a JSON object — no markdown: ' +
-      '{"answer_status":"answered|needs_more_evidence|abstained","answer":string|null,' +
-      '"normalized_answer":string|null,"confidence":{"level":"high|medium|low","score":number},"reason":string}';
-
-    const promptText = input.evidenceText
-      ? `Question: ${input.question}\nSupporting Text Evidence:\n${input.evidenceText}`
-      : `Question: ${input.question}`;
-
     const rawResponse = await this.callVisionChat({
-      system,
-      prompt: promptText,
+      system: [
+        'Answer one question about the provided video keyframe image with the supplied image as the primary source and the optional evidence as supporting context.',
+        'Use evidence to add context or disambiguate, but do not let it override a clear visual observation.',
+        'The evidence may be incomplete, noisy, stale, or incorrect.',
+        'Answer concisely in the same language as the question.',
+        'Do not invent details that are neither visible in the image nor reasonably supported by the combined context.',
+        'Return only JSON with answer_status, answer, normalized_answer, confidence with level and score, and optional reason.',
+      ].join(' '),
+      prompt: input.evidenceText
+        ? `Question: ${input.question}\nSupporting Text Evidence:\n${input.evidenceText}`
+        : `Question: ${input.question}`,
       imageUrl: input.imageUrl,
     });
-
     const parsed = parseJsonFromModelOutput<{
       answer_status?: unknown;
       answer?: unknown;
       normalized_answer?: unknown;
-      confidence?: { level?: unknown; score?: unknown };
+      confidence?: unknown;
       reason?: unknown;
     }>(rawResponse);
-
     if (!parsed) {
       return {
         answer_status: 'abstained',
@@ -150,38 +158,18 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
       };
     }
 
-    const answerStatus =
-      parsed.answer_status === 'answered' ||
-      parsed.answer_status === 'needs_more_evidence' ||
-      parsed.answer_status === 'abstained'
-        ? parsed.answer_status
-        : 'abstained';
-
+    const status = answerStatus(parsed.answer_status);
     const answer = typeof parsed.answer === 'string' && parsed.answer.trim() ? parsed.answer.trim() : null;
     const normalizedAnswer =
       typeof parsed.normalized_answer === 'string' && parsed.normalized_answer.trim()
         ? parsed.normalized_answer.trim()
         : answer;
-
-    const confLevel =
-      parsed.confidence?.level === 'high' ||
-      parsed.confidence?.level === 'medium' ||
-      parsed.confidence?.level === 'low'
-        ? parsed.confidence.level
-        : 'low';
-    const confScore =
-      typeof parsed.confidence?.score === 'number' && Number.isFinite(parsed.confidence.score)
-        ? Math.max(0, Math.min(1, parsed.confidence.score))
-        : answerStatus === 'answered'
-          ? 0.8
-          : 0.2;
-
     return {
-      answer_status: answerStatus,
+      answer_status: status,
       answer,
       normalized_answer: normalizedAnswer,
-      confidence: { level: confLevel, score: confScore },
-      reason: typeof parsed.reason === 'string' ? parsed.reason : undefined,
+      confidence: confidence(parsed.confidence, status),
+      ...(typeof parsed.reason === 'string' && parsed.reason.trim() ? { reason: parsed.reason.trim() } : {}),
     };
   }
 
@@ -216,13 +204,12 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
           },
         ],
         temperature: this.temperature,
-        // max_completion_tokens is the preferred param for Gemini 3.x via OpenAI-compat endpoint
-        max_completion_tokens: this.maxTokens,
+        max_tokens: this.maxTokens,
+        stream: false,
       }),
       signal: AbortSignal.timeout(this.timeoutMs),
     });
 
-    // Retry on 429 (rate limit) or 5xx (transient server errors)
     if ((response.status === 429 || response.status >= 500) && attemptsLeft > 0) {
       const retryAfterMs = response.status === 429 ? 8_000 : 2_000;
       await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
@@ -230,12 +217,12 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
     }
 
     if (!response.ok) {
-      throw new Error(`VLM Vision endpoint returned HTTP ${response.status}`);
+      throw new Error(`VLM vision endpoint returned HTTP ${response.status}`);
     }
 
     const payload = (await response.json()) as OpenAIChatResponse;
     const text = contentText(payload.choices?.[0]?.message?.content);
-    if (!text) throw new Error('VLM Vision response has no text content');
+    if (!text) throw new Error('VLM vision response has no text content');
     return text;
   }
 }
@@ -244,11 +231,16 @@ export class UnavailableVisionLanguageModel implements VisionLanguageModel {
   readonly isConfigured = false;
   readonly modelName = 'unconfigured';
 
-  async verifyImageRelevance(): Promise<VlmRelevanceResult> {
-    throw new Error('VLM Vision service is not configured');
+  async verifyImageRelevance(_input: { readonly query: string; readonly imageUrl: string }): Promise<VlmRelevanceResult> {
+    throw new Error('VLM vision service is not configured');
   }
 
-  async answerVisualQuestion(): Promise<VlmAnswerResult> {
-    throw new Error('VLM Vision service is not configured');
+  async answerVisualQuestion(_input: {
+    readonly question: string;
+    readonly imageUrl: string;
+    readonly evidenceText?: string;
+  }): Promise<VlmAnswerResult> {
+    throw new Error('VLM vision service is not configured');
   }
 }
+

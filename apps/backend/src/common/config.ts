@@ -102,6 +102,12 @@ export function loadConfig(): BackendConfig {
   if (Boolean(llmBaseUrl) !== Boolean(llmModel)) {
     throw new Error('LLM_BASE_URL and LLM_MODEL must be configured together');
   }
+  const vlmEnabled = optionalEnv('VLM_ENABLED') === 'true';
+  const vlmBaseUrl = optionalEnv('VLM_BASE_URL') ?? llmBaseUrl;
+  const vlmModel = optionalEnv('VLM_MODEL') ?? llmModel;
+  if (Boolean(vlmBaseUrl) !== Boolean(vlmModel)) {
+    throw new Error('VLM_BASE_URL and VLM_MODEL must be configured together');
+  }
 
   const versionStatus = optionalEnv('VERSION_STATUS') ?? 'staged';
   if (!['staged', 'active', 'retired'].includes(versionStatus)) throw new Error('VERSION_STATUS must be staged, active or retired');
@@ -135,14 +141,14 @@ export function loadConfig(): BackendConfig {
     llmTimeoutMs: positiveInteger(process.env.LLM_TIMEOUT_MS, 15_000),
     llmMaxTokens: positiveInteger(process.env.LLM_MAX_TOKENS, 128),
     llmTemperature: boundedNumber(process.env.LLM_TEMPERATURE, 0, 0, 2),
-    vlmEnabled: optionalEnv('VLM_ENABLED') === 'true',
-    vlmBaseUrl: optionalEnv('VLM_BASE_URL') || llmBaseUrl,
-    vlmApiKey: optionalEnv('VLM_API_KEY') || optionalEnv('LLM_API_KEY'),
-    vlmModel: optionalEnv('VLM_MODEL') || llmModel || 'Qwen/Qwen2.5-VL-7B-Instruct',
+    vlmEnabled,
+    vlmBaseUrl: vlmBaseUrl ?? optionalEnv('VLM_BASE_URL') ?? llmBaseUrl,
+    vlmApiKey: optionalEnv('VLM_API_KEY') ?? optionalEnv('LLM_API_KEY'),
+    vlmModel: vlmModel ?? optionalEnv('VLM_MODEL') ?? llmModel ?? (vlmEnabled ? 'Qwen/Qwen2.5-VL-7B-Instruct' : undefined),
     vlmTimeoutMs: positiveInteger(process.env.VLM_TIMEOUT_MS, 10_000),
     vlmTopK: positiveInteger(process.env.VLM_TOP_K, 20),
     vlmWeight: boundedNumber(process.env.VLM_WEIGHT, 0.7, 0, 1),
-    vlmConcurrency: positiveInteger(process.env.VLM_CONCURRENCY, 4),
+    vlmConcurrency: positiveInteger(process.env.VLM_CONCURRENCY, 5),
     // Plan A: filter frames with VLM score below threshold (0 = disabled)
     vlmMinScore: boundedNumber(process.env.VLM_MIN_SCORE, 0, 0, 100),
     // Plan B: generate additional English query variants before search

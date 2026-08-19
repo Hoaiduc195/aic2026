@@ -3,19 +3,18 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 
-import {
-  LANGUAGE_MODEL, OBJECT_STORAGE, VISION_LANGUAGE_MODEL, VQA_GROUNDING_REPOSITORY,
-} from '../../common/tokens';
+import { LANGUAGE_MODEL, OBJECT_STORAGE, VISION_LANGUAGE_MODEL, VQA_GROUNDING_REPOSITORY } from '../../common/tokens';
+import { fetchImageAsDataUrl } from '../../compute/image-data-url';
 import { OpenAICompatibleLanguageModel, type LanguageModel } from '../../compute/model-ports';
-import type { VisionLanguageModel } from '../../compute/vlm-vision.client';
+import { OpenAICompatibleVisionClient, type VisionLanguageModel, type VlmAnswerResult } from '../../compute/vlm-vision.client';
 import type { ObjectStorage } from '../../storage/object-storage';
 import type { VqaAnswerRequest } from './vqa-answer.request';
 import type { VqaGroundingEvidence, VqaGroundingRepository } from './vqa-grounding.repository';
-import { Optional } from '@nestjs/common';
 
 export type VqaAnswerStatus = 'answered' | 'needs_more_evidence' | 'abstained';
 export type VqaConfidenceLevel = 'low' | 'medium' | 'high';
@@ -130,32 +129,49 @@ export class VqaAnswerService {
 
     const selectedEvidence = compactEvidence(context.evidence);
 
-    // Multimodal VLM visual path
-    if (this.vlm?.isConfigured && context.thumbnail_object_key && this.storage?.isConfigured) {
+    const visionModel = request.vlm
+      ? new OpenAICompatibleVisionClient({
+        baseUrl: request.vlm.base_url,
+        apiKey: request.vlm.api_key,
+        model: request.vlm.model,
+        timeoutMs: request.vlm.timeout_ms,
+        maxTokens: request.vlm.max_tokens,
+        temperature: request.vlm.temperature,
+      })
+      : this.vlm;
+    let imageDataUrl: string | undefined;
+    if (context.thumbnail_object_key && this.storage?.isConfigured) {
       try {
-        const imageUrl = await this.storage.signReadUrl(context.thumbnail_object_key);
-        const vlmResult = await this.vlm.answerVisualQuestion({
+        const signedUrl = await this.storage.signReadUrl(context.thumbnail_object_key);
+        imageDataUrl = await fetchImageAsDataUrl(signedUrl);
+      } catch {
+        imageDataUrl = undefined;
+      }
+    }
+    let visualResult: VlmAnswerResult | undefined;
+    if (visionModel?.isConfigured && imageDataUrl) {
+      try {
+        visualResult = await visionModel.answerVisualQuestion({
           question: request.question,
-          imageUrl,
-          evidenceText: selectedEvidence.text,
+          imageUrl: imageDataUrl,
+          evidenceText: selectedEvidence.text || undefined,
         });
-
-        if (vlmResult.answer_status === 'answered' && vlmResult.answer) {
+        if (visualResult.answer_status === 'answered' && visualResult.answer) {
           return baseResponse(
             request,
             context,
-            this.vlm.modelName,
+            visionModel.modelName,
             selectedEvidence.rows.map((item) => item.evidence_id),
             'answered',
-            { reason: vlmResult.reason ?? 'grounded_vlm_visual_answer' },
-            vlmResult.answer,
-            vlmResult.normalized_answer || vlmResult.answer,
-            vlmResult.confidence,
+            { reason: visualResult.reason ?? 'grounded_vlm_visual_answer' },
+            visualResult.answer,
+            visualResult.normalized_answer || visualResult.answer,
+            visualResult.confidence,
             VLM_PRODUCER,
           );
         }
       } catch {
-        // Fallback to text LLM if VLM fails
+        visualResult = undefined;
       }
     }
 
@@ -170,6 +186,20 @@ export class VqaAnswerService {
       })
       : this.languageModel;
     if (!languageModel.isConfigured) {
+      if (visualResult) {
+        return baseResponse(
+          request,
+          context,
+          visionModel?.modelName ?? 'unconfigured',
+          selectedEvidence.rows.map((item) => item.evidence_id),
+          visualResult.answer_status,
+          { reason: visualResult.reason ?? 'vlm_abstained' },
+          visualResult.answer,
+          visualResult.normalized_answer,
+          visualResult.confidence,
+          VLM_PRODUCER,
+        );
+      }
       throw new ServiceUnavailableException('LLM answer service is not configured');
     }
 
@@ -180,17 +210,23 @@ export class VqaAnswerService {
     }
 
     const system = [
-      'You answer one video question using only the supplied evidence.',
-      'Do not infer facts that are not present in the evidence.',
+      'Answer one video question by inspecting the supplied keyframe image as the primary source.',
+      'Treat the accompanying text evidence as supporting reference only; it may be incomplete, noisy, stale, or incorrect.',
+      'Use evidence to provide context or disambiguate, but do not let it override a clear visual observation.',
+      'Do not invent details that are neither visible in the image nor reasonably supported by the combined context.',
       'Answer in the same language as the question.',
-      'If the evidence is insufficient, use needs_more_evidence or abstained.',
-      'Return JSON only: {"answer_status":"answered|needs_more_evidence|abstained","answer":string|null,"normalized_answer":string|null,"confidence":{"level":"low|medium|high","score":number}}.',
+      'If the image and supporting context are insufficient, use needs_more_evidence or abstained.',
+      'Return JSON only. Every key is mandatory and must be present: answer_status must be exactly answered, needs_more_evidence, or abstained; answer must be a string or null; normalized_answer must be a string or null; confidence must be an object with level and score.',
     ].join(' ');
     const prompt = `Question: ${request.question}\nEvidence:\n${selectedEvidence.text}`;
 
     let output: string;
     try {
-      output = await languageModel.complete({ system, prompt });
+      output = await languageModel.complete({
+        system,
+        prompt,
+        ...(imageDataUrl ? { imageDataUrl } : {}),
+      });
     } catch {
       throw new BadGatewayException('LLM answer service failed');
     }

@@ -9,6 +9,8 @@ import type {
   QualificationAnswer,
   QualificationEventInput,
   QualificationTask,
+  QueryImprovementRequest,
+  QueryImprovementResponse,
   SearchRequest,
   SearchResponse,
   SelectionRevision,
@@ -30,6 +32,19 @@ import {
   validateLlmSettings,
   type LlmSettings,
 } from '../lib/llm-settings';
+import {
+  loadQueryImproverSettings,
+  saveQueryImproverSettings,
+  type QueryImproverSettings,
+} from '../lib/query-improver-settings';
+import {
+  DEFAULT_VLM_SETTINGS,
+  buildVqaVlmConfig,
+  loadVlmSettings,
+  saveVlmSettings,
+  validateVlmSettings,
+  type VlmSettings,
+} from '../lib/vlm-settings';
 import {
   buildSearchEmbeddingConfig,
   DEFAULT_EMBEDDING_SETTINGS,
@@ -81,13 +96,33 @@ interface Props {
   saveSelection: (queryId: string, task: QualificationTask, answers: readonly QualificationAnswer[]) => Promise<SelectionRevision>;
   createPreview: (queryId: string, task: QualificationTask, answers: readonly QualificationAnswer[]) => Promise<SubmissionPreview>;
   suggestVqaAnswer: (request: VqaAnswerRequest) => Promise<VqaAnswerSuggestion>;
+  improveQuery: (request: QueryImprovementRequest) => Promise<QueryImprovementResponse>;
 }
 
 function initialEvents(): QualificationEventInput[] {
   return [{ event_id: 'event-1', event_ordinal: 1, description: '' }];
 }
 
-export function Workbench({ search, loadFrames, loadStudio, saveSelection, createPreview, suggestVqaAnswer }: Props) {
+function buildWorkbenchQuery(
+  task: QualificationTask,
+  description: string,
+  question: string,
+  events: readonly QualificationEventInput[],
+): { query: string; backendTask: QueryImprovementRequest['task'] } {
+  const eventDescriptions = events.map((item) => item.description.trim());
+  const cleanDescription = description.trim();
+  const cleanQuestion = question.trim();
+  return {
+    query: task === 'trake'
+      ? eventDescriptions.map((item, index) => `${index + 1}. ${item}`).join('\n')
+      : task === 'qa'
+        ? `${cleanDescription}\nCâu hỏi: ${cleanQuestion}`
+        : cleanDescription,
+    backendTask: task === 'qa' ? 'vqa' : task,
+  };
+}
+
+export function Workbench({ search, loadFrames, loadStudio, saveSelection, createPreview, suggestVqaAnswer, improveQuery }: Props) {
   const task = useWorkbenchStore((state) => state.task);
   const answers = useWorkbenchStore((state) => state.answers);
   const setTask = useWorkbenchStore((state) => state.setTask);
@@ -99,6 +134,9 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
   const [description, setDescription] = useState('');
   const [question, setQuestion] = useState('');
   const [events, setEvents] = useState<QualificationEventInput[]>(initialEvents);
+  const [queryImproverSettings, setQueryImproverSettings] = useState<QueryImproverSettings>({ enabled: false });
+  const [improvedQuery, setImprovedQuery] = useState('');
+  const [queryImproverError, setQueryImproverError] = useState<string | null>(null);
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [rankedFrames, setRankedFrames] = useState<FrameCandidate[]>([]);
   const [selectedAnchor, setSelectedAnchor] = useState<FrameCandidate | null>(null);
@@ -114,6 +152,8 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [llmSettings, setLlmSettings] = useState<LlmSettings>(DEFAULT_LLM_SETTINGS);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [vlmSettings, setVlmSettings] = useState<VlmSettings>(DEFAULT_VLM_SETTINGS);
+  const [vlmError, setVlmError] = useState<string | null>(null);
   const [embeddingSettings, setEmbeddingSettings] = useState<EmbeddingSettings>(DEFAULT_EMBEDDING_SETTINGS);
   const [embeddingError, setEmbeddingError] = useState<string | null>(null);
   const [retrievalSettings, setRetrievalSettings] = useState<RetrievalSettings>(DEFAULT_RETRIEVAL_SETTINGS);
@@ -126,6 +166,9 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
   });
   const vqaAnswerMutation = useMutation({
     mutationFn: (request: VqaAnswerRequest) => suggestVqaAnswer(request),
+  });
+  const queryImproverMutation = useMutation({
+    mutationFn: (request: QueryImprovementRequest) => improveQuery(request),
   });
   const studioQuery = useQuery({
     queryKey: ['video-studio', studioVideoId],
@@ -148,16 +191,24 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
 
   useEffect(() => {
     setLlmSettings(loadLlmSettings());
+    setVlmSettings(loadVlmSettings());
     setEmbeddingSettings(loadEmbeddingSettings());
     setRetrievalSettings(loadRetrievalSettings());
     setRrfSettings(loadRrfSettings());
+    setQueryImproverSettings(loadQueryImproverSettings());
   }, []);
+
+  function invalidateImprovedQuery() {
+    setImprovedQuery('');
+    setQueryImproverError(null);
+  }
 
   function changeTask(nextTask: QualificationTask) {
     setTask(nextTask);
     setDescription('');
     setQuestion('');
     setEvents(initialEvents());
+    invalidateImprovedQuery();
     setAssignedFrames([null]);
     setResponse(null);
     setSelectedAnchor(null);
@@ -177,12 +228,10 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
     if (task === 'trake' ? eventDescriptions.length !== events.length : !cleanDescription) return;
     if (task === 'qa' && !cleanQuestion) return;
 
-    const query = task === 'trake'
-      ? eventDescriptions.map((item, index) => `${index + 1}. ${item}`).join('\n')
-      : task === 'qa'
-        ? `${cleanDescription}\nCâu hỏi: ${cleanQuestion}`
-        : cleanDescription;
-    const backendTask = task === 'qa' ? 'vqa' : task;
+    const { query, backendTask } = buildWorkbenchQuery(task, description, question, events);
+    const retrievalQuery = queryImproverSettings.enabled && improvedQuery.trim()
+      ? improvedQuery.trim()
+      : query;
 
     setError(null);
     setNotice(null);
@@ -213,16 +262,63 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
         ...buildSearchRrfConfig(rrfSettings),
       };
       const next = await searchMutation.mutateAsync({
-        query,
+        query: retrievalQuery,
         task: backendTask,
         top_k: retrieval.display_k,
         retrieval,
         ...(embedding ? { embedding } : {}),
       });
       setResponse(next);
+      if (queryImproverSettings.enabled && !improvedQuery.trim()) {
+        setNotice('Chưa có preview query tiếng Anh; hệ thống tìm bằng query gốc.');
+      }
     } catch (reason) {
       setError(readError(reason, 'Tìm kiếm thất bại.'));
     }
+  }
+
+  async function createImprovedQuery() {
+    const eventDescriptions = events.map((item) => item.description.trim());
+    const cleanDescription = description.trim();
+    const cleanQuestion = question.trim();
+    if (task === 'trake' ? eventDescriptions.length !== events.length : !cleanDescription) return;
+    if (task === 'qa' && !cleanQuestion) return;
+
+    const { query, backendTask } = buildWorkbenchQuery(task, description, question, events);
+    setQueryImproverError(null);
+    setNotice(null);
+    try {
+      const frontendLlm = llmSettings.enabled && validateLlmSettings(llmSettings) === null
+        ? buildVqaLlmConfig(llmSettings)
+        : undefined;
+      const result = await queryImproverMutation.mutateAsync({
+        query,
+        task: backendTask,
+        ...(frontendLlm ? { llm: frontendLlm } : {}),
+      });
+      setImprovedQuery(result.improved_query);
+      setNotice(result.warning
+        ? 'Không dùng được Query Improver; preview đang giữ query gốc.'
+        : 'Đã tạo query tiếng Anh. Bạn có thể chỉnh sửa trước khi tìm.');
+    } catch (reason) {
+      setQueryImproverError(readError(reason, 'Không thể cải thiện query.'));
+      setNotice(llmSettings.enabled && validateLlmSettings(llmSettings) !== null
+        ? 'Cấu hình LLM frontend chưa hợp lệ; backend sẽ được dùng nếu có.'
+        : null);
+    }
+  }
+
+  function saveQueryImproverSettingsForSession() {
+    saveQueryImproverSettings(queryImproverSettings);
+    setNotice(queryImproverSettings.enabled ? 'Đã bật Query Improver.' : 'Đã tắt Query Improver.');
+  }
+
+  function resetQueryImproverSettings() {
+    const defaults = { enabled: false };
+    setQueryImproverSettings(defaults);
+    saveQueryImproverSettings(defaults);
+    invalidateImprovedQuery();
+    setNotice('Đã tắt Query Improver.');
   }
 
   function selectSearchFrame(frame: FrameCandidate) {
@@ -347,12 +443,14 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
     setNotice(null);
     try {
       const llm = buildVqaLlmConfig(llmSettings);
+      const vlm = buildVqaVlmConfig(vlmSettings);
       const suggestion = await vqaAnswerMutation.mutateAsync({
         query_id: response.query_id,
         question: question.trim(),
         video_id: activeFrame.video_id,
         original_frame_id: activeFrame.original_frame_id,
         ...(llm ? { llm } : {}),
+        ...(vlm ? { vlm } : {}),
       });
       if (suggestion.answer_status === 'answered' && suggestion.answer?.trim()) {
         setQaAnswer(suggestion.answer.trim());
@@ -383,6 +481,24 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
     setLlmSettings({ ...DEFAULT_LLM_SETTINGS });
     saveLlmSettings(DEFAULT_LLM_SETTINGS);
     setSettingsError(null);
+  }
+
+  function saveVlmSettingsForSession() {
+    const validationError = validateVlmSettings(vlmSettings);
+    if (validationError) {
+      setVlmError(validationError);
+      return;
+    }
+    saveVlmSettings(vlmSettings);
+    setVlmError(null);
+    setSettingsOpen(false);
+    setNotice(vlmSettings.enabled ? 'Đã lưu cấu hình VLM cho MoreVQA.' : 'Đã tắt cấu hình VLM cho MoreVQA.');
+  }
+
+  function resetVlmSettings() {
+    setVlmSettings({ ...DEFAULT_VLM_SETTINGS });
+    saveVlmSettings(DEFAULT_VLM_SETTINGS);
+    setVlmError(null);
   }
 
   function saveEmbeddingSettingsForSession() {
@@ -479,6 +595,7 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
             aria-controls="llm-settings"
             onClick={() => {
               setSettingsError(null);
+              setVlmError(null);
               setEmbeddingError(null);
               setRetrievalError(null);
               setRrfError(null);
@@ -496,6 +613,11 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
             onChange={setLlmSettings}
             onSave={saveSettings}
             onReset={resetSettings}
+            vlmSettings={vlmSettings}
+            vlmError={vlmError}
+            onVlmChange={setVlmSettings}
+            onVlmSave={saveVlmSettingsForSession}
+            onVlmReset={resetVlmSettings}
             embeddingSettings={embeddingSettings}
             embeddingError={embeddingError}
             onEmbeddingChange={setEmbeddingSettings}
@@ -519,13 +641,28 @@ export function Workbench({ search, loadFrames, loadStudio, saveSelection, creat
           events={events}
           pending={searchMutation.isPending}
           onTaskChange={changeTask}
-          onDescriptionChange={setDescription}
-          onQuestionChange={setQuestion}
-          onEventChange={(eventId, value) => setEvents((current) => current.map((item) => (
-            item.event_id === eventId ? { ...item, description: value } : item
-          )))}
-          onAddEvent={addEvent}
-          onRemoveEvent={removeEvent}
+          onDescriptionChange={(value) => { setDescription(value); invalidateImprovedQuery(); }}
+          onQuestionChange={(value) => { setQuestion(value); invalidateImprovedQuery(); }}
+          onEventChange={(eventId, value) => {
+            setEvents((current) => current.map((item) => (
+              item.event_id === eventId ? { ...item, description: value } : item
+            )));
+            invalidateImprovedQuery();
+          }}
+          onAddEvent={() => { addEvent(); invalidateImprovedQuery(); }}
+          onRemoveEvent={(eventId) => { removeEvent(eventId); invalidateImprovedQuery(); }}
+          queryImproverEnabled={queryImproverSettings.enabled}
+          improvedQuery={improvedQuery}
+          queryImproverPending={queryImproverMutation.isPending}
+          queryImproverError={queryImproverError}
+          onQueryImproverChange={(enabled) => {
+            setQueryImproverSettings((current) => ({ ...current, enabled }));
+            if (!enabled) invalidateImprovedQuery();
+          }}
+          onImprovedQueryChange={setImprovedQuery}
+          onImproveQuery={createImprovedQuery}
+          onQueryImproverSave={saveQueryImproverSettingsForSession}
+          onQueryImproverReset={resetQueryImproverSettings}
           onSubmit={submit}
           onRrfChange={setRrfSettings}
           onRrfSave={saveRrfSettingsForSession}

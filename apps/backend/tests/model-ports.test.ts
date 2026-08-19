@@ -46,6 +46,8 @@ describe('query embedding providers', () => {
       model: 'aic-qa',
       temperature: 0,
       max_tokens: 128,
+      response_format: { type: 'json_object' },
+      stream: false,
       messages: [
         { role: 'system', content: 'system prompt' },
         { role: 'user', content: 'user prompt' },
@@ -64,5 +66,26 @@ describe('query embedding providers', () => {
     await expect(provider.complete({ system: 's', prompt: 'p' })).rejects.toThrow('content');
     await expect(new UnavailableLanguageModel().complete({ system: 's', prompt: 'p' }))
       .rejects.toThrow('not configured');
+  });
+
+  it('sends a downloaded keyframe data URL as an image content block', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: '{"answer_status":"answered"}' } }],
+    }), { status: 200 })));
+    const provider = new OpenAICompatibleLanguageModel({ baseUrl: 'https://llm.test/v1', model: 'aic-qa' });
+
+    await provider.complete({
+      system: 'system prompt',
+      prompt: 'Question: What is visible?',
+      imageDataUrl: 'data:image/jpeg;base64,/9j/2Q==',
+    });
+
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)) as {
+      messages: Array<{ content: unknown }>;
+    };
+    expect(body.messages[1].content).toEqual([
+      { type: 'text', text: 'Question: What is visible?' },
+      { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,/9j/2Q==' } },
+    ]);
   });
 });

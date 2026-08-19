@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { DatabaseClient } from '../src/database/database.client';
 import { UnavailableLanguageModel, type LanguageModel } from '../src/compute/model-ports';
+import type { VisionLanguageModel, VlmAnswerResult } from '../src/compute/vlm-vision.client';
 import {
   parseVqaAnswerRequest,
   type VqaAnswerRequest,
@@ -29,7 +30,7 @@ function context(evidence: VqaGroundingContext['evidence'] = [{
 }]): VqaGroundingContext {
   return {
     query_id: 'query-1', task: 'vqa', video_id: 'video-1', original_frame_id: 42,
-    timestamp_ms: 4200, evidence,
+    timestamp_ms: 4200, thumbnail_object_key: 'keyframes/video-1/42.jpg', evidence,
   };
 }
 
@@ -63,7 +64,12 @@ describe('VQA answer grounding', () => {
       answer_status: 'answered', answer: 'một chiếc chai', normalized_answer: 'một chiếc chai',
       evidence_ids: ['caption-1', 'object-1'], model_version: 'aic-qa-v1',
     });
-    expect(vi.mocked(languageModel.complete).mock.calls[0][0].system.toLowerCase()).toContain('only the supplied evidence');
+    const systemPrompt = vi.mocked(languageModel.complete).mock.calls[0][0].system.toLowerCase();
+    expect(systemPrompt).toContain('primary source');
+    expect(systemPrompt).toContain('supporting reference only');
+    expect(systemPrompt).toContain('do not let it override');
+    expect(systemPrompt).not.toContain('only the supplied evidence');
+    expect(vi.mocked(languageModel.complete).mock.calls[0][0].system).toContain('Every key is mandatory');
     expect(vi.mocked(languageModel.complete).mock.calls[0][0].prompt).toContain('A woman is holding a bottle.');
     expect(vi.mocked(languageModel.complete).mock.calls[0][0].prompt).toContain('bottle');
   });
@@ -108,6 +114,108 @@ describe('VQA answer grounding', () => {
     expect(new Headers(init?.headers).get('authorization')).toBe('Bearer request-secret');
   });
 
+  it('downloads the selected-frame thumbnail before passing it to the configured LLM', async () => {
+    const imageBytes = Uint8Array.from([0xff, 0xd8, 0xff, 0xd9]);
+    vi.stubGlobal('fetch', vi.fn(async (input: unknown) => String(input) === 'https://signed.test/keyframes/video-1/42.jpg'
+      ? new Response(imageBytes, { status: 200, headers: { 'content-type': 'image/jpeg' } })
+      : new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({
+          answer_status: 'answered', answer: 'a bottle', normalized_answer: 'a bottle',
+          confidence: { level: 'high', score: 0.8 },
+        }) } }],
+      }), { status: 200 })));
+    const storage = {
+      isConfigured: true,
+      signReadUrl: vi.fn(async (key: string) => `https://signed.test/${key}`),
+      health: vi.fn(async () => true),
+    };
+    const service = new VqaAnswerService(
+      { find: vi.fn(async () => context()) },
+      new UnavailableLanguageModel(),
+      undefined,
+      storage,
+    );
+
+    await expect(service.answer({
+      ...input,
+      llm: {
+        base_url: 'https://custom-llm.test/v1', model: 'custom-v1',
+        timeout_ms: 2_000, max_tokens: 64, temperature: 0.2,
+      },
+    })).resolves.toMatchObject({ answer_status: 'answered', model_version: 'custom-v1' });
+
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body)) as {
+      messages: Array<{ content: unknown }>;
+    };
+    expect(storage.signReadUrl).toHaveBeenCalledWith('keyframes/video-1/42.jpg');
+    expect(vi.mocked(fetch).mock.calls[0][0]).toBe('https://signed.test/keyframes/video-1/42.jpg');
+    expect(body.messages[1].content).toEqual(expect.arrayContaining([
+      { type: 'text', text: expect.stringContaining('Question: Người phụ nữ đang cầm vật gì?') },
+      { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,/9j/2Q==' } },
+    ]));
+  });
+
+  it('uses the signed keyframe thumbnail for multimodal VQA before text fallback', async () => {
+    const imageBytes = Uint8Array.from([0xff, 0xd8, 0xff, 0xd9]);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(imageBytes, {
+      status: 200, headers: { 'content-type': 'image/jpeg' },
+    })));
+    const vlm: VisionLanguageModel = {
+      isConfigured: true,
+      modelName: 'vision-v1',
+      verifyImageRelevance: vi.fn(),
+      answerVisualQuestion: vi.fn(async (): Promise<VlmAnswerResult> => ({
+        answer_status: 'answered', answer: 'a bottle', normalized_answer: 'a bottle',
+        confidence: { level: 'high', score: 0.95 }, reason: 'visible in frame',
+      })),
+    };
+    const storage = {
+      isConfigured: true,
+      signReadUrl: vi.fn(async (key: string) => `https://signed.test/${key}`),
+      health: vi.fn(async () => true),
+    };
+    const service = new VqaAnswerService({ find: vi.fn(async () => context()) }, new UnavailableLanguageModel(), vlm, storage);
+
+    await expect(service.answer(input)).resolves.toMatchObject({
+      answer_status: 'answered', producer: 'vlm-vision-openai-compatible', model_version: 'vision-v1',
+    });
+    expect(storage.signReadUrl).toHaveBeenCalledWith('keyframes/video-1/42.jpg');
+    expect(vlm.answerVisualQuestion).toHaveBeenCalledWith(expect.objectContaining({
+      imageUrl: 'data:image/jpeg;base64,/9j/2Q==',
+    }));
+  });
+
+  it('uses the request VLM config when the injected VLM is unavailable', async () => {
+    const imageBytes = Uint8Array.from([0xff, 0xd8, 0xff, 0xd9]);
+    vi.stubGlobal('fetch', vi.fn(async (input: unknown) => String(input) === 'https://signed.test/frame.jpg'
+      ? new Response(imageBytes, { status: 200, headers: { 'content-type': 'image/jpeg' } })
+      : new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({
+          answer_status: 'answered', answer: 'a bottle', normalized_answer: 'a bottle',
+          confidence: { level: 'high', score: 0.8 },
+        }) } }],
+      }), { status: 200 })));
+    const service = new VqaAnswerService(
+      { find: vi.fn(async () => context()) }, new UnavailableLanguageModel(), undefined,
+      { isConfigured: true, signReadUrl: vi.fn(async () => 'https://signed.test/frame.jpg'), health: vi.fn(async () => true) },
+    );
+
+    await expect(service.answer({
+      ...input,
+      vlm: {
+        base_url: 'https://vision.test/v1', api_key: 'vision-secret', model: 'vision-v1',
+        timeout_ms: 2_000, max_tokens: 256, temperature: 0,
+      },
+    })).resolves.toMatchObject({ answer_status: 'answered', producer: 'vlm-vision-openai-compatible' });
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body)) as { messages: Array<{ content: unknown }> };
+    expect(body.messages[1].content).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'image_url' }),
+    ]));
+    expect(body.messages[1].content).toEqual(expect.arrayContaining([
+      { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,/9j/2Q==' } },
+    ]));
+  });
+
   it('reports an unavailable grounding database as a service-unavailable response', async () => {
     await expect(new VqaAnswerService(new UnavailableVqaGroundingRepository(), model('{}')).answer(input))
       .rejects.toMatchObject({ status: 503 });
@@ -144,6 +252,14 @@ describe('VQA answer request validation and grounding repository', () => {
       ...input,
       llm: { base_url: 'ftp://unsafe.test/v1', model: 'custom-v1' },
     })).toThrow('base_url');
+    expect(parseVqaAnswerRequest({
+      ...input,
+      vlm: { base_url: 'https://vision.test/v1', model: 'vision-v1', timeout_ms: 2_000, max_tokens: 256, temperature: 0 },
+    })).toMatchObject({ vlm: { base_url: 'https://vision.test/v1', model: 'vision-v1' } });
+    expect(() => parseVqaAnswerRequest({
+      ...input,
+      vlm: { base_url: 'https://vision.test/v1', model: 'vision-v1', timeout_ms: 50, max_tokens: 256, temperature: 0 },
+    })).toThrow('timeout_ms');
   });
 
   it('loads the VQA run, exact frame and evidence with one parameterized query', async () => {
@@ -152,6 +268,7 @@ describe('VQA answer request validation and grounding repository', () => {
       health: vi.fn(async () => true),
       query: vi.fn(async () => ({ rows: [{
         query_id: 'query-1', task: 'vqa', video_id: 'video-1', original_frame_id: 42, timestamp_ms: 4200,
+        thumbnail_object_key: 'keyframes/video-1/42.jpg',
         evidence_id: 'caption-1', type: 'caption', start_ms: 4200, end_ms: 4300,
         snippet: 'A woman is holding a bottle.', producer: 'caption:v1',
       }] as never[], rowCount: 1 })),
@@ -160,6 +277,7 @@ describe('VQA answer request validation and grounding repository', () => {
     const result = await new PostgresVqaGroundingRepository(database).find('query-1', 'video-1', 42);
 
     expect(result).toMatchObject({ query_id: 'query-1', task: 'vqa', timestamp_ms: 4200 });
+    expect(result?.thumbnail_object_key).toBe('keyframes/video-1/42.jpg');
     expect(result?.evidence).toEqual([expect.objectContaining({ evidence_id: 'caption-1', snippet: 'A woman is holding a bottle.' })]);
     expect(vi.mocked(database.query).mock.calls[0][1]).toEqual(['query-1', 'video-1', 42]);
   });

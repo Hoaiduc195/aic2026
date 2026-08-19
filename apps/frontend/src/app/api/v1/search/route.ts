@@ -8,6 +8,7 @@ import {
   type SearchRequest,
   type SearchRetrievalConfig,
   type SearchRrfBranch,
+  type VlmRerankConfig,
 } from '../../../../lib/contracts';
 import { attachMediaSession } from '../../../../lib/server-media-access';
 
@@ -87,12 +88,27 @@ function normalizeRetrieval(value: unknown): SearchRetrievalConfig | undefined {
     }
   }
 
+  let vlmRerank: VlmRerankConfig | undefined;
+  if (input.vlm_rerank !== undefined) {
+    if (!input.vlm_rerank || typeof input.vlm_rerank !== 'object' || Array.isArray(input.vlm_rerank)) {
+      throw new Error('retrieval vlm_rerank is invalid');
+    }
+    const raw = input.vlm_rerank as Record<string, unknown>;
+    if (typeof raw.enabled !== 'boolean'
+      || !Number.isSafeInteger(raw.top_k) || (raw.top_k as number) < 1 || (raw.top_k as number) > 100
+      || typeof raw.weight !== 'number' || !Number.isFinite(raw.weight) || raw.weight < 0 || raw.weight > 1) {
+      throw new Error('retrieval vlm_rerank is invalid');
+    }
+    vlmRerank = { enabled: raw.enabled, top_k: raw.top_k as number, weight: raw.weight };
+  }
+
   return {
     display_k: input.display_k as number,
     branch_k: input.branch_k as number,
     fusion_k: input.fusion_k as number,
     ...(rrfK === undefined ? {} : { rrf_k: rrfK }),
     ...(channelWeights === undefined ? {} : { channel_weights: channelWeights }),
+    ...(vlmRerank === undefined ? {} : { vlm_rerank: vlmRerank }),
   };
 }
 

@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 
 import type { EmbeddingSettings } from '../../lib/embedding-settings';
 import type { LlmSettings } from '../../lib/llm-settings';
+import type { VlmSettings } from '../../lib/vlm-settings';
 
 function parseNumberInput(value: string): number {
   return value === '' ? Number.NaN : Number(value);
@@ -20,6 +21,11 @@ interface Props {
   onChange: (settings: LlmSettings) => void;
   onSave: () => void;
   onReset: () => void;
+  vlmSettings: VlmSettings;
+  vlmError: string | null;
+  onVlmChange: (settings: VlmSettings) => void;
+  onVlmSave: () => void;
+  onVlmReset: () => void;
   embeddingSettings: EmbeddingSettings;
   embeddingError: string | null;
   onEmbeddingChange: (settings: EmbeddingSettings) => void;
@@ -34,6 +40,11 @@ export function LlmSettingsPopover({
   onChange,
   onSave,
   onReset,
+  vlmSettings,
+  vlmError,
+  onVlmChange,
+  onVlmSave,
+  onVlmReset,
   embeddingSettings,
   embeddingError,
   onEmbeddingChange,
@@ -66,6 +77,10 @@ export function LlmSettingsPopover({
 
   function updateEmbedding<K extends keyof EmbeddingSettings>(key: K, value: EmbeddingSettings[K]) {
     onEmbeddingChange({ ...embeddingSettings, [key]: value });
+  }
+
+  function updateVlm<K extends keyof VlmSettings>(key: K, value: VlmSettings[K]) {
+    onVlmChange({ ...vlmSettings, [key]: value });
   }
 
   const modal = (
@@ -174,6 +189,97 @@ export function LlmSettingsPopover({
       <div className="settings-actions">
         <button type="button" className="quiet-button" onClick={onReset}>Khôi phục mặc định</button>
         <button type="button" className="primary-button" onClick={onSave}>Lưu cài đặt LLM</button>
+      </div>
+
+      <div className="settings-divider" />
+      <div aria-labelledby="vlm-settings-title">
+        <p className="section-kicker">MoreVQA · trả lời dựa trên ảnh keyframe</p>
+        <h3 id="vlm-settings-title">Cài đặt VLM</h3>
+        <label className="settings-toggle">
+          <input
+            type="checkbox"
+            checked={vlmSettings.enabled}
+            onChange={(event) => updateVlm('enabled', event.target.checked)}
+          />
+          <span>Bật VLM cho VQA đa phương thức</span>
+        </label>
+        <p className="settings-help">VLM nhận ảnh keyframe đã ký từ R2 cùng với evidence text. Nếu lỗi, hệ thống tự fallback về LLM text.</p>
+
+        <label htmlFor="vlm-base-url">
+          <span>Endpoint VLM</span>
+          <input
+            id="vlm-base-url"
+            type="url"
+            value={vlmSettings.base_url}
+            placeholder="https://vision-provider.example/v1"
+            onChange={(event) => updateVlm('base_url', event.target.value)}
+          />
+        </label>
+        <label htmlFor="vlm-api-key">
+          <span>API key VLM</span>
+          <input
+            id="vlm-api-key"
+            type="password"
+            value={vlmSettings.api_key}
+            autoComplete="off"
+            placeholder="Để trống nếu endpoint không cần key"
+            onChange={(event) => updateVlm('api_key', event.target.value)}
+          />
+        </label>
+        <label htmlFor="vlm-model">
+          <span>Model VLM</span>
+          <input
+            id="vlm-model"
+            type="text"
+            value={vlmSettings.model}
+            placeholder="Qwen/Qwen2.5-VL-7B-Instruct"
+            onChange={(event) => updateVlm('model', event.target.value)}
+          />
+        </label>
+        <div className="settings-grid">
+          <label htmlFor="vlm-timeout">
+            <span>Timeout VLM (ms)</span>
+            <input
+              id="vlm-timeout"
+              type="number"
+              min={100}
+              max={120000}
+              step={100}
+              value={displayNumberInput(vlmSettings.timeout_ms)}
+              onChange={(event) => updateVlm('timeout_ms', parseNumberInput(event.target.value))}
+            />
+          </label>
+          <label htmlFor="vlm-max-tokens">
+            <span>Max tokens VLM</span>
+            <input
+              id="vlm-max-tokens"
+              type="number"
+              min={1}
+              max={4096}
+              step={1}
+              value={displayNumberInput(vlmSettings.max_tokens)}
+              onChange={(event) => updateVlm('max_tokens', parseNumberInput(event.target.value))}
+            />
+          </label>
+        </div>
+        <label htmlFor="vlm-temperature">
+          <span>Temperature VLM</span>
+          <input
+            id="vlm-temperature"
+            type="number"
+            min={0}
+            max={2}
+            step={0.1}
+            value={displayNumberInput(vlmSettings.temperature)}
+            onChange={(event) => updateVlm('temperature', parseNumberInput(event.target.value))}
+          />
+        </label>
+        {vlmError && <p className="settings-error" role="alert">{vlmError}</p>}
+        <p className="settings-help">API key VLM chỉ giữ trong bộ nhớ tab hiện tại và không được lưu vào localStorage.</p>
+        <div className="settings-actions">
+          <button type="button" className="quiet-button" onClick={onVlmReset}>Khôi phục VLM mặc định</button>
+          <button type="button" className="primary-button" onClick={onVlmSave}>Lưu cài đặt VLM</button>
+        </div>
       </div>
 
       <div className="settings-divider" />

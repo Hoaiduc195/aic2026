@@ -11,14 +11,11 @@ import {
 import {
   HttpQueryEmbeddingProvider,
   OpenAICompatibleLanguageModel,
-  type QueryEmbeddingProvider,
   UnavailableLanguageModel,
+  type QueryEmbeddingProvider,
   UnavailableQueryEmbeddingProvider,
 } from './compute/model-ports';
-import {
-  OpenAICompatibleVisionClient,
-  UnavailableVisionLanguageModel,
-} from './compute/vlm-vision.client';
+import { OpenAICompatibleVisionClient, UnavailableVisionLanguageModel } from './compute/vlm-vision.client';
 import type { DatabaseClient } from './database/database.client';
 import { PostgresDatabase } from './database/postgres.database';
 import { EmbeddingService } from './embedding_services/embedding.service';
@@ -34,6 +31,8 @@ import { PostgresClipBranch } from './retrieval/postgres-clip.branch';
 import { RetrievalService } from './retrieval/retrieval.service';
 import { VlmRerankerService } from './retrieval/vlm-reranker.service';
 import { VlmQueryExpanderService } from './retrieval/vlm-query-expander.service';
+import { QueryImproverController } from './query-improver/query-improver.controller';
+import { QueryImproverService } from './query-improver/query-improver.service';
 import { PostgresRetrievalStore, UnavailableRetrievalStore } from './retrieval/retrieval.store';
 import { EmptyEvidenceRepository, PostgresEvidenceRepository } from './retrieval/evidence.repository';
 import { SearchController } from './search/search.controller';
@@ -88,7 +87,15 @@ function createTaskRegistry(config: ReturnType<typeof loadConfig>): TaskExecutor
 
 @Module({
   imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }])],
-  controllers: [HealthController, SearchController, MediaController, ManualController, SubmissionController, VqaAnswerController],
+  controllers: [
+    HealthController,
+    SearchController,
+    MediaController,
+    ManualController,
+    SubmissionController,
+    VqaAnswerController,
+    QueryImproverController,
+  ],
   providers: [
     { provide: APP_CONFIG, useFactory: loadConfig },
     {
@@ -122,6 +129,20 @@ function createTaskRegistry(config: ReturnType<typeof loadConfig>): TaskExecutor
           temperature: config.llmTemperature,
         })
         : new UnavailableLanguageModel(),
+      inject: [APP_CONFIG],
+    },
+    {
+      provide: VISION_LANGUAGE_MODEL,
+      useFactory: (config: ReturnType<typeof loadConfig>) => config.vlmEnabled && config.vlmBaseUrl && config.vlmModel
+        ? new OpenAICompatibleVisionClient({
+          baseUrl: config.vlmBaseUrl,
+          model: config.vlmModel,
+          apiKey: config.vlmApiKey,
+          timeoutMs: config.vlmTimeoutMs,
+          maxTokens: config.llmMaxTokens,
+          temperature: config.llmTemperature,
+        })
+        : new UnavailableVisionLanguageModel(),
       inject: [APP_CONFIG],
     },
     { provide: RETRIEVAL_BRANCHES, useFactory: createBranches, inject: [DATABASE, QUERY_EMBEDDER] },
@@ -168,25 +189,16 @@ function createTaskRegistry(config: ReturnType<typeof loadConfig>): TaskExecutor
       inject: [DATABASE],
     },
     {
+      provide: VLM_RERANKER,
+      useFactory: (config: ReturnType<typeof loadConfig>, vlm: OpenAICompatibleVisionClient | UnavailableVisionLanguageModel) => (
+        new VlmRerankerService(config, vlm)
+      ),
+      inject: [APP_CONFIG, VISION_LANGUAGE_MODEL],
+    },
+    {
       provide: TASK_EXECUTOR_REGISTRY,
       useFactory: createTaskRegistry,
       inject: [APP_CONFIG],
-    },
-    {
-      provide: VISION_LANGUAGE_MODEL,
-      useFactory: (config: ReturnType<typeof loadConfig>) => config.vlmBaseUrl && config.vlmModel
-        ? new OpenAICompatibleVisionClient({
-          baseUrl: config.vlmBaseUrl,
-          model: config.vlmModel,
-          apiKey: config.vlmApiKey,
-          timeoutMs: config.vlmTimeoutMs,
-        })
-        : new UnavailableVisionLanguageModel(),
-      inject: [APP_CONFIG],
-    },
-    {
-      provide: VLM_RERANKER,
-      useClass: VlmRerankerService,
     },
     {
       provide: VLM_QUERY_EXPANDER,
@@ -197,6 +209,7 @@ function createTaskRegistry(config: ReturnType<typeof loadConfig>): TaskExecutor
     RetrievalService,
     MediaService,
     VqaAnswerService,
+    QueryImproverService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })

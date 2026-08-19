@@ -16,9 +16,10 @@ submit lên hệ thống cuộc thi.
 - Operator token, CORS, rate limit 120 request/phút và input validation.
 - Degraded mode khi Neon, R2 hoặc model service chưa được cấu hình.
 
-Các port `LanguageModel`, `VisionLanguageModel`, `TemporalAligner` và
-`QueryEmbeddingProvider` nằm trong `src/compute/model-ports.ts`. NestJS không tải
-PyTorch/VLM/LLM trực tiếp.
+Các port `LanguageModel`, `TemporalAligner` và `QueryEmbeddingProvider` nằm trong
+`src/compute/model-ports.ts`; `VisionLanguageModel` và adapter OpenAI-compatible
+nằm trong `src/compute/vlm-vision.client.ts`. NestJS chỉ gọi model qua HTTP, không
+tải PyTorch/VLM/LLM trực tiếp.
 
 ## Cấu hình và chạy
 
@@ -52,6 +53,22 @@ features/<dataset-version>/<modality>/<model-version>/<artifact>
 đúng cùng checkpoint/projection/normalization; chỉ cùng số chiều là chưa đủ. Nếu
 chưa cấu hình, CLIP branch được đánh dấu
 `unavailable`; caption/ASR/OCR/object vẫn hoạt động.
+
+MoreVQA là nhánh tùy chọn của VQA:
+
+- Backend lấy `frames.thumbnail_object_key`, ký presigned URL bằng R2 rồi gửi
+  text cùng `image_url` tới VLM OpenAI-compatible.
+- Nếu VLM lỗi, thiếu thumbnail hoặc không trả lời được, hệ thống fallback về
+  LLM text hiện tại.
+- Có thể bật VLM mặc định bằng `VLM_ENABLED=true`, `VLM_BASE_URL` và `VLM_MODEL`.
+  Frontend cũng cho phép cấu hình VLM theo từng request; API key chỉ nằm trong
+  memory của tab.
+- VLM visual rerank mặc định tắt. Khi bật `retrieval.vlm_rerank`, backend chỉ
+  gửi ảnh của `top_k` candidate đầu tiên và ghi trace `vlm_rerank` vào response.
+
+Endpoint trả lời VQA là `POST /v1/vqa/answer`; request có thể thêm `vlm` với
+các trường `base_url`, `api_key`, `model`, `timeout_ms`, `max_tokens` và
+`temperature`.
 
 ## API
 

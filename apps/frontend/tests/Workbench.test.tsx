@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { Workbench } from '@/components/Workbench';
 import type {
+  QueryImprovementResponse,
   SearchResponse,
   SelectionRevision,
   SubmissionPreview,
@@ -142,6 +143,14 @@ function renderWorkbench({
     query_id: 'query_0001', task: 'textual_kis', answer_count: 1, answers: [], csv: '', submittable: false, warnings: [],
   })),
   suggestVqaAnswer = vi.fn(async (): Promise<VqaAnswerSuggestion> => vqaSuggestion),
+  improveQuery = vi.fn(async (): Promise<QueryImprovementResponse> => ({
+    original_query: 'Một cửa hàng trên phố',
+    improved_query: 'A shop on a street.',
+    changed: true,
+    producer: 'test-query-improver',
+    model_version: 'test-model',
+    warning: null,
+  })),
 } = {}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = render(
@@ -153,6 +162,7 @@ function renderWorkbench({
         saveSelection={saveSelection}
         createPreview={createPreview}
         suggestVqaAnswer={suggestVqaAnswer}
+        improveQuery={improveQuery}
       />
     </QueryClientProvider>,
   );
@@ -160,6 +170,32 @@ function renderWorkbench({
 }
 
 describe('qualification frame-first workbench', () => {
+  it('previews one improved English query before using it for retrieval', async () => {
+    const user = userEvent.setup();
+    const improveQuery = vi.fn(async (): Promise<QueryImprovementResponse> => ({
+      original_query: 'Một cửa hàng trên phố',
+      improved_query: 'A shop on a street.',
+      changed: true,
+      producer: 'test-query-improver',
+      model_version: 'test-model',
+      warning: null,
+    }));
+    const { search } = renderWorkbench({ improveQuery });
+
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.click(screen.getByLabelText('Bật cải thiện query tiếng Anh'));
+    await user.click(screen.getByRole('button', { name: 'Tạo query tiếng Anh' }));
+
+    expect(improveQuery).toHaveBeenCalledWith(expect.objectContaining({
+      query: 'Một cửa hàng trên phố',
+      task: 'textual_kis',
+    }));
+    expect(await screen.findByDisplayValue('A shop on a street.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+    expect(search).toHaveBeenCalledWith(expect.objectContaining({ query: 'A shop on a street.' }));
+  });
+
   it('keeps task input in the left sidebar and exposes task-specific fields', async () => {
     const user = userEvent.setup();
     renderWorkbench();
@@ -531,6 +567,16 @@ describe('qualification frame-first workbench', () => {
     await user.clear(screen.getByLabelText('Temperature'));
     await user.type(screen.getByLabelText('Temperature'), '0.2');
     await user.click(screen.getByRole('button', { name: 'Lưu cài đặt LLM' }));
+    await user.click(screen.getByRole('button', { name: 'Cài đặt' }));
+    await user.click(screen.getByLabelText('Bật VLM cho VQA đa phương thức'));
+    await user.type(screen.getByLabelText('Endpoint VLM'), 'https://vision.test/v1');
+    await user.type(screen.getByLabelText('API key VLM'), 'vision-secret');
+    await user.type(screen.getByLabelText('Model VLM'), 'vision-v1');
+    await user.clear(screen.getByLabelText('Timeout VLM (ms)'));
+    await user.type(screen.getByLabelText('Timeout VLM (ms)'), '3000');
+    await user.clear(screen.getByLabelText('Max tokens VLM'));
+    await user.type(screen.getByLabelText('Max tokens VLM'), '256');
+    await user.click(screen.getByRole('button', { name: 'Lưu cài đặt VLM' }));
     await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
     await user.type(screen.getByLabelText('Câu hỏi'), 'Người phụ nữ đang cầm gì?');
     await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
@@ -543,10 +589,15 @@ describe('qualification frame-first workbench', () => {
         base_url: 'https://llm.test/v1', api_key: 'request-secret', model: 'custom-v1',
         timeout_ms: 2500, max_tokens: 64, temperature: 0.2,
       },
+      vlm: {
+        base_url: 'https://vision.test/v1', api_key: 'vision-secret', model: 'vision-v1',
+        timeout_ms: 3000, max_tokens: 256, temperature: 0,
+      },
     });
     expect(screen.getByRole('textbox', { name: 'Câu trả lời' })).toHaveValue('Rẽ phải');
     expect(screen.queryByText('Đáp án (1)')).not.toBeInTheDocument();
-  });
+  }, 15_000);
+
 
   it('sends the current tab embedding settings with the search request', async () => {
     const user = userEvent.setup();

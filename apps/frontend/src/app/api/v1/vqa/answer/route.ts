@@ -16,7 +16,7 @@ function validFrameId(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 2_147_483_647;
 }
 
-function normalizeLlmConfig(value: unknown): Record<string, unknown> | null {
+function normalizeModelConfig(value: unknown): Record<string, unknown> | null {
   if (!isRecord(value)) return null;
   if (typeof value.base_url !== 'string' || value.base_url.trim().length < 1 || value.base_url.trim().length > 2000) return null;
   if (typeof value.model !== 'string' || !value.model.trim() || value.model.trim().length > 200) return null;
@@ -50,7 +50,8 @@ export async function POST(request: NextRequest) {
     || typeof body.video_id !== 'string'
     || !backendPathId(body.video_id)
     || !validFrameId(body.original_frame_id)
-    || (body.llm !== undefined && !normalizeLlmConfig(body.llm))
+    || (body.llm !== undefined && !normalizeModelConfig(body.llm))
+    || (body.vlm !== undefined && !normalizeModelConfig(body.vlm))
   ) {
     return NextResponse.json({ message: 'query_id, question, video_id và original_frame_id là bắt buộc.' }, { status: 400 });
   }
@@ -65,7 +66,8 @@ export async function POST(request: NextRequest) {
         question: body.question.trim(),
         video_id: body.video_id,
         original_frame_id: body.original_frame_id,
-        ...(body.llm === undefined ? {} : { llm: normalizeLlmConfig(body.llm) }),
+        ...(body.llm === undefined ? {} : { llm: normalizeModelConfig(body.llm) }),
+        ...(body.vlm === undefined ? {} : { vlm: normalizeModelConfig(body.vlm) }),
       }),
     });
   } catch {

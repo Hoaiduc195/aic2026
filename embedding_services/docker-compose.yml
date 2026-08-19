@@ -1,0 +1,22 @@
+services:
+  embedding:
+    build:
+      context: ..
+      dockerfile: embedding_services/Dockerfile
+    image: aic-embedding:local
+    container_name: aic-embedding
+    ports:
+      - "8001:8001"
+    environment:
+      EMBEDDING_TOKEN: ${EMBEDDING_TOKEN:-}
+      EMBEDDING_DEVICE: ${EMBEDDING_DEVICE:-auto}
+    volumes:
+      - aic-embedding-model-cache:/models
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  aic-embedding-model-cache:

@@ -4,14 +4,14 @@ export interface QueryEmbeddingProvider {
   embedText(query: string): Promise<readonly number[]>;
 }
 
-export interface VisionLanguageModel {
-  answer(input: { readonly question: string; readonly imageUrls: readonly string[] }): Promise<{ answer: string; confidence?: number }>;
-}
-
 export interface LanguageModel {
   readonly isConfigured: boolean;
   readonly modelName: string;
-  complete(input: { readonly system: string; readonly prompt: string }): Promise<string>;
+  complete(input: {
+    readonly system: string;
+    readonly prompt: string;
+    readonly imageDataUrl?: string;
+  }): Promise<string>;
 }
 
 export interface TemporalAligner {
@@ -99,7 +99,12 @@ export class OpenAICompatibleLanguageModel implements LanguageModel {
     this.temperature = options.temperature ?? 0;
   }
 
-  async complete(input: { readonly system: string; readonly prompt: string }): Promise<string> {
+  async complete(input: {
+    readonly system: string;
+    readonly prompt: string;
+    readonly imageDataUrl?: string;
+  }): Promise<string> {
+    const imageDataUrl = input.imageDataUrl?.trim();
     const response = await fetch(this.endpoint, {
       method: 'POST',
       headers: {
@@ -110,10 +115,20 @@ export class OpenAICompatibleLanguageModel implements LanguageModel {
         model: this.modelName,
         messages: [
           { role: 'system', content: input.system },
-          { role: 'user', content: input.prompt },
+          {
+            role: 'user',
+            content: imageDataUrl
+              ? [
+                { type: 'text', text: input.prompt },
+                { type: 'image_url', image_url: { url: imageDataUrl } },
+              ]
+              : input.prompt,
+          },
         ],
         temperature: this.temperature,
         max_tokens: this.maxTokens,
+        response_format: { type: 'json_object' },
+        stream: false,
       }),
       signal: AbortSignal.timeout(this.timeoutMs),
     });
@@ -129,7 +144,11 @@ export class UnavailableLanguageModel implements LanguageModel {
   readonly isConfigured = false;
   readonly modelName = 'unconfigured';
 
-  async complete(_input: { readonly system: string; readonly prompt: string }): Promise<string> {
+  async complete(_input: {
+    readonly system: string;
+    readonly prompt: string;
+    readonly imageDataUrl?: string;
+  }): Promise<string> {
     throw new Error('LLM answer service is not configured');
   }
 }

@@ -10,6 +10,8 @@ export type SearchTask =
   | 'trake'
   | 'kisc';
 
+export type QueryImproverTask = 'textual_kis' | 'vqa' | 'trake';
+
 export const SEARCH_RRF_BRANCHES = [
   'visual',
   'ocr_lexical',
@@ -42,6 +44,21 @@ export interface SearchRequest {
   session_id?: string;
   embedding?: SearchEmbeddingConfig;
   retrieval?: SearchRetrievalConfig;
+}
+
+export interface QueryImprovementRequest {
+  query: string;
+  task: QueryImproverTask;
+  llm?: VqaLlmConfig;
+}
+
+export interface QueryImprovementResponse {
+  original_query: string;
+  improved_query: string;
+  changed: boolean;
+  producer: string;
+  model_version: string;
+  warning: string | null;
 }
 
 export interface SearchEmbeddingConfig {
@@ -146,9 +163,19 @@ export interface VqaAnswerRequest {
   video_id: string;
   original_frame_id: number;
   llm?: VqaLlmConfig;
+  vlm?: VqaVlmConfig;
 }
 
 export interface VqaLlmConfig {
+  base_url: string;
+  api_key?: string;
+  model: string;
+  timeout_ms: number;
+  max_tokens: number;
+  temperature: number;
+}
+
+export interface VqaVlmConfig {
   base_url: string;
   api_key?: string;
   model: string;

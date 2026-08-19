@@ -24,7 +24,6 @@ import type { EvidenceRepository, EvidenceView } from './evidence.repository';
 import type { ObjectStorage } from '../storage/object-storage';
 import { signPreviewUris, withPreviewReferences } from '../storage/preview-url';
 import type { EmbeddingService } from '../embedding_services/embedding.service';
-
 import type { VlmRerankerService } from './vlm-reranker.service';
 import type { VlmQueryExpanderService } from './vlm-query-expander.service';
 
@@ -126,7 +125,6 @@ export class RetrievalService {
         warnings.push('preview_signing_failed');
       }
     }
-
     if (this.vlmReranker) {
       try {
         responseCandidates = await this.vlmReranker.rerank(
@@ -135,10 +133,11 @@ export class RetrievalService {
           request.retrieval?.vlm_rerank,
         );
       } catch (error) {
-        this.logger.warn(`vlm reranking failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+        this.logger.warn(`VLM reranking failed: ${error instanceof Error ? error.message : 'unknown error'}`);
         warnings.push('vlm_reranking_failed');
       }
     }
+
 
     let evidenceById: ReadonlyMap<string, EvidenceView> = new Map();
     try {

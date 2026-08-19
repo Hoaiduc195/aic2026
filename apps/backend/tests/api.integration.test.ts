@@ -13,6 +13,8 @@ import { RetrievalService } from '../src/retrieval/retrieval.service';
 import { SearchController } from '../src/search/search.controller';
 import { VqaAnswerController } from '../src/tasks/vqa/vqa-answer.controller';
 import { VqaAnswerService } from '../src/tasks/vqa/vqa-answer.service';
+import { QueryImproverController } from '../src/query-improver/query-improver.controller';
+import { QueryImproverService } from '../src/query-improver/query-improver.service';
 
 describe('backend HTTP API', () => {
   let app: INestApplication;
@@ -43,16 +45,27 @@ describe('backend HTTP API', () => {
       producer: 'test', model_version: 'test-v1',
     })),
   };
+  const queryImprover = {
+    improve: vi.fn(async (input) => ({
+      original_query: input.query,
+      improved_query: 'A person walking.',
+      changed: true,
+      producer: 'test-query-improver',
+      model_version: 'test-v1',
+      warning: null,
+    })),
+  };
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({
-      controllers: [SearchController, MediaController, ManualController, SubmissionController, VqaAnswerController],
+      controllers: [SearchController, MediaController, ManualController, SubmissionController, VqaAnswerController, QueryImproverController],
       providers: [
         { provide: RetrievalService, useValue: retrieval },
         { provide: MediaService, useValue: media },
         { provide: RETRIEVAL_STORE, useValue: store },
         { provide: OBJECT_STORAGE, useValue: storage },
         { provide: VqaAnswerService, useValue: vqaAnswer },
+        { provide: QueryImproverService, useValue: queryImprover },
       ],
     }).compile();
     app = module.createNestApplication();
@@ -95,6 +108,17 @@ describe('backend HTTP API', () => {
     expect(vqaAnswer.answer).toHaveBeenCalledWith({
       query_id: 'q-1', question: 'What is held?', video_id: 'video-1', original_frame_id: 42,
     });
+  });
+
+  it('protects and validates the query improver endpoint', async () => {
+    await request(app.getHttpServer()).post('/v1/query/improve')
+      .send({ query: 'một người đi bộ', task: 'textual_kis' }).expect(401);
+    await request(app.getHttpServer()).post('/v1/query/improve')
+      .set('x-operator-token', 'operator-secret')
+      .send({ query: 'một người đi bộ', task: 'textual_kis' })
+      .expect(201)
+      .expect(({ body }) => expect(body).toMatchObject({ improved_query: 'A person walking.' }));
+    expect(queryImprover.improve).toHaveBeenCalledWith({ query: 'một người đi bộ', task: 'textual_kis' });
   });
 
   it('supports configurable manual top-k, revision save and preview-only export', async () => {
