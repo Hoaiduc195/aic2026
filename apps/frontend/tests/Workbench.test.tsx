@@ -290,7 +290,7 @@ describe('qualification frame-first workbench', () => {
     expect(screen.getByLabelText('Mô tả sự kiện 2')).toBeInTheDocument();
   });
 
-  it('opens frame evidence and lazily loads the video studio and neighboring frames', async () => {
+  it('opens frame evidence and lazily loads only the video studio', async () => {
     const user = userEvent.setup();
     const { loadStudio, loadFrames } = renderWorkbench();
 
@@ -303,17 +303,13 @@ describe('qualification frame-first workbench', () => {
     expect(screen.getByText('rẽ phải rồi đi thẳng')).toBeInTheDocument();
     expect(loadStudio).not.toHaveBeenCalled();
     expect(loadFrames).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Xem các frame cùng video' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Các frame cùng video' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Xem video studio' }));
     expect(await screen.findByLabelText('Video video_01')).toHaveAttribute('src', playback.playback_uri);
     expect(loadStudio).toHaveBeenCalledWith('video_01', expect.anything());
-
-    await user.click(screen.getByRole('button', { name: 'Xem các frame cùng video' }));
-    expect(await screen.findByRole('button', { name: 'Chọn keyframe 4 · source frame 351' })).toBeInTheDocument();
-    expect(loadFrames).toHaveBeenCalledWith('video_01', 385, 25);
-
-    await user.click(screen.getByRole('button', { name: 'Chọn keyframe 4 · source frame 351' }));
-    expect(screen.getByText('Frame 351')).toBeInTheDocument();
+    expect(loadFrames).not.toHaveBeenCalled();
   });
 
   it('does not render visual embedding evidence in the frame inspector', async () => {
@@ -953,7 +949,7 @@ describe('qualification frame-first workbench', () => {
     expect(settingsTrigger).toHaveFocus();
   });
 
-  it('builds an ordered TRAKE sequence from the selected frame and its filmstrip', async () => {
+  it('builds an ordered TRAKE sequence from the selected frame and video studio', async () => {
     const user = userEvent.setup();
     renderWorkbench();
 
@@ -965,8 +961,9 @@ describe('qualification frame-first workbench', () => {
     await user.click(await screen.findByRole('button', { name: 'Chọn frame video_01 · 385' }));
 
     await user.click(screen.getAllByRole('button', { name: 'Gán frame hiện tại' })[0]);
-    await user.click(screen.getByRole('button', { name: 'Xem các frame cùng video' }));
-    await user.click(await screen.findByRole('button', { name: 'Chọn keyframe 5 · source frame 411' }));
+    await user.click(screen.getByRole('button', { name: 'Xem video studio' }));
+    await user.click(await screen.findByRole('button', { name: 'Chọn keyframe 6 · source frame 411' }));
+    await user.click(screen.getByRole('button', { name: 'Dùng keyframe 6' }));
     await user.click(screen.getByRole('button', { name: 'Gán frame hiện tại' }));
     await user.click(screen.getByRole('button', { name: 'Thêm chuỗi vào đáp án' }));
 

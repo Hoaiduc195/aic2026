@@ -182,12 +182,8 @@ test.describe('qualification frame-first workbench', () => {
     await expect(page.getByLabel('Video video_01')).toHaveAttribute('src', playbackResponse.playback_uri);
     expect(requests.playback).toBe(1);
 
-    await page.getByRole('button', { name: 'Xem các frame cùng video' }).click();
-    await expect(page.getByRole('button', { name: 'Chọn frame 351' })).toBeVisible();
-    expect(requests.frames).toBe(1);
-
-    await page.getByRole('button', { name: 'Chọn frame 351' }).click();
-    await expect(page.getByText('Frame 351')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Xem các frame cùng video' })).toHaveCount(0);
+    expect(requests.frames).toBe(0);
 
     await page.getByRole('button', { name: 'Thêm vào đáp án' }).click();
     await expect(page.getByText('video_01 · frame 351')).toHaveCount(0);
