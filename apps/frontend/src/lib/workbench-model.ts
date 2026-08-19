@@ -101,6 +101,17 @@ export function reorderFrames(
   return next;
 }
 
+export type FrameBoundary = 'top' | 'bottom';
+
+export function moveFrameToBoundary(
+  frames: readonly FrameCandidate[],
+  from: number,
+  boundary: FrameBoundary,
+): FrameCandidate[] {
+  const to = boundary === 'top' ? 0 : frames.length - 1;
+  return reorderFrames(frames, from, to);
+}
+
 export function buildRankedTextualSubmission(
   queryId: string,
   frames: readonly FrameCandidate[],

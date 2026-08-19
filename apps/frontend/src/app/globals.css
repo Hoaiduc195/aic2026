@@ -803,11 +803,6 @@ textarea:focus-visible,
   border-color: rgba(23, 132, 84, 0.55);
 }
 
-.frame-card[data-downvoted="true"] {
-  border-color: rgba(188, 93, 48, 0.55);
-  background: #fffaf7;
-}
-
 .frame-thumbnail {
   position: relative;
   min-height: 108px;
@@ -895,10 +890,17 @@ textarea:focus-visible,
   font-size: 12px;
 }
 
-.frame-card-controls .queue-card-action.active {
-  border-color: #bc5d30;
-  background: #fff0e9;
-  color: #a34621;
+.frame-card-controls .frame-boundary-action {
+  min-width: 31px;
+  border-color: rgba(30, 101, 117, 0.32);
+  background: #f3fbfc;
+  color: #1e6575;
+  font-size: 15px;
+}
+
+.frame-card-controls .frame-boundary-action:not(:disabled):hover {
+  border-color: rgba(30, 101, 117, 0.7);
+  background: #e2f5f7;
 }
 
 .frame-query-modal-layer {

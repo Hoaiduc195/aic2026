@@ -6,7 +6,6 @@ import {
   completedVqaAnswers,
   fillVqaQueue,
   queueKey,
-  toggleVqaQueueDownvote,
   type VqaQueueItem,
 } from '@/lib/vqa-queue-model';
 
@@ -27,27 +26,26 @@ function frame(index: number): FrameCandidate {
 
 describe('VQA queue model', () => {
   it('deduplicates frames by video and original frame identity', () => {
-    const first = fillVqaQueue([], [frame(1), frame(2)], new Set(), 100);
-    const duplicate = fillVqaQueue(first, [{ ...frame(1), result_key: 'different-result-key' }], new Set(), 100);
+    const first = fillVqaQueue([], [frame(1), frame(2)], 100);
+    const duplicate = fillVqaQueue(first, [{ ...frame(1), result_key: 'different-result-key' }], 100);
 
     expect(duplicate).toHaveLength(2);
     expect(duplicate.map((item) => item.key)).toEqual([queueKey(frame(1)), queueKey(frame(2))]);
   });
 
-  it('keeps non-downvoted frames before downvoted frames and caps at 100', () => {
+  it('preserves ranked frame order and caps the queue at 100 items', () => {
     const frames = Array.from({ length: 101 }, (_, index) => frame(index));
-    const queue = fillVqaQueue([], frames, new Set([queueKey(frame(0)), queueKey(frame(2))]), 100);
+    const queue = fillVqaQueue([], frames, 100);
 
     expect(queue).toHaveLength(100);
-    expect(queue.slice(0, 97).every((item) => !item.downvoted)).toBe(true);
-    expect(queue.slice(-2).map((item) => item.frame_id)).toEqual([100, 0]);
-    expect(queue.some((item) => item.frame_id === 2)).toBe(false);
+    expect(queue.slice(0, 3).map((item) => item.frame_id)).toEqual([0, 1, 2]);
+    expect(queue.at(-1)?.frame_id).toBe(99);
   });
 
   it('applies one answer only to pending queue items', () => {
     const queue: VqaQueueItem[] = [
-      { ...fillVqaQueue([], [frame(1)], new Set(), 100)[0], status: 'pending' },
-      { ...fillVqaQueue([], [frame(2)], new Set(), 100)[0], status: 'answered', answer: 'đã có' },
+      { ...fillVqaQueue([], [frame(1)], 100)[0], status: 'pending' },
+      { ...fillVqaQueue([], [frame(2)], 100)[0], status: 'answered', answer: 'đã có' },
     ];
 
     const next = applyAnswerToPending(queue, 'cùng một đáp án');
@@ -58,16 +56,8 @@ describe('VQA queue model', () => {
     ]);
   });
 
-  it('moves a downvoted queue item to the end without deleting it', () => {
-    const queue = fillVqaQueue([], [frame(1), frame(2)], new Set(), 100);
-    const next = toggleVqaQueueDownvote(queue, queue[0].key, true);
-
-    expect(next.map((item) => item.frame_id)).toEqual([2, 1]);
-    expect(next[1].downvoted).toBe(true);
-  });
-
   it('converts only answered queue items to submission answers in queue order', () => {
-    const queue = fillVqaQueue([], [frame(1), frame(2)], new Set(), 100);
+    const queue = fillVqaQueue([], [frame(1), frame(2)], 100);
     const answered = applyAnswerToPending(queue, 'answer');
 
     expect(completedVqaAnswers(answered)).toEqual([

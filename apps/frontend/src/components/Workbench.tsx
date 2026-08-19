@@ -72,6 +72,7 @@ import {
 import { activeAsrSpans, studioFrameThumbnailUri } from '../lib/video-studio-model';
 import {
   buildRankedTextualSubmission,
+  moveFrameToBoundary,
   reorderFrames,
   toFrameCandidates,
   validateTrakeSequence,
@@ -86,7 +87,6 @@ import {
   moveVqaQueueItem as moveVqaQueueItemModel,
   queueKey,
   removeVqaQueueItem as removeVqaQueueItemModel,
-  toggleVqaQueueDownvote,
   updateVqaQueueItem,
   type VqaQueueItem,
 } from '../lib/vqa-queue-model';
@@ -179,7 +179,6 @@ export function Workbench({ search, loadFrames, loadFrame, loadStudio, saveSelec
   const [assignedFrames, setAssignedFrames] = useState<Array<FrameCandidate | null>>([null]);
   const [qaAnswer, setQaAnswer] = useState('');
   const [vqaQueue, setVqaQueue] = useState<VqaQueueItem[]>([]);
-  const [downvotedKeys, setDownvotedKeys] = useState<Set<string>>(new Set());
   const [batchTopK, setBatchTopK] = useState('10');
   const [batchVqaLoading, setBatchVqaLoading] = useState(false);
   const [batchVqaProgress, setBatchVqaProgress] = useState<{ completed: number; total: number; failed: number } | null>(null);
@@ -268,7 +267,6 @@ export function Workbench({ search, loadFrames, loadFrame, loadStudio, saveSelec
     setStudioOpen(false);
     setStudioVideoId(null);
     setVqaQueue([]);
-    setDownvotedKeys(new Set());
     setBatchVqaProgress(null);
     setError(null);
     setNotice(null);
@@ -293,7 +291,6 @@ export function Workbench({ search, loadFrames, loadFrame, loadStudio, saveSelec
     batchAbortRef.current?.abort();
     batchAbortRef.current = null;
     setVqaQueue([]);
-    setDownvotedKeys(new Set());
     setBatchVqaProgress(null);
     const embeddingValidationError = validateEmbeddingSettings(embeddingSettings);
     if (embeddingValidationError) {
@@ -342,7 +339,6 @@ export function Workbench({ search, loadFrames, loadFrame, loadStudio, saveSelec
     batchAbortRef.current?.abort();
     batchAbortRef.current = null;
     setVqaQueue([]);
-    setDownvotedKeys(new Set());
     setBatchVqaProgress(null);
 
     const embeddingValidationError = validateEmbeddingSettings(embeddingSettings);
@@ -551,26 +547,23 @@ export function Workbench({ search, loadFrames, loadFrame, loadStudio, saveSelec
       setError('Hàng đợi đã đạt giới hạn 100 frame.');
       return;
     }
-    setVqaQueue((current) => addVqaFrame(current, frame, downvotedKeys.has(key)));
+    setVqaQueue((current) => addVqaFrame(current, frame));
     setError(null);
     setNotice(`Đã thêm frame ${frame.original_frame_id} vào hàng đợi.`);
   }
 
-  function toggleFrameDownvote(frame: FrameCandidate) {
-    const key = queueKey(frame);
-    const nextDownvoted = !downvotedKeys.has(key);
-    setDownvotedKeys((current) => {
-      const next = new Set(current);
-      if (nextDownvoted) next.add(key);
-      else next.delete(key);
-      return next;
+  function moveFrameToEdge(frame: FrameCandidate, boundary: 'top' | 'bottom') {
+    setRankedFrames((current) => {
+      const from = current.findIndex((candidate) => candidate.result_key === frame.result_key);
+      return from < 0 ? current : moveFrameToBoundary(current, from, boundary);
     });
-    setVqaQueue((current) => toggleVqaQueueDownvote(current, key, nextDownvoted));
-    setNotice(nextDownvoted ? `Đã downvote frame ${frame.original_frame_id}.` : `Đã bỏ downvote frame ${frame.original_frame_id}.`);
+    setNotice(boundary === 'top'
+      ? `Đã upvote frame ${frame.original_frame_id}, đưa lên đầu.`
+      : `Đã downvote frame ${frame.original_frame_id}, đưa xuống cuối.`);
   }
 
   function fillVqaAnswerQueue() {
-    setVqaQueue((current) => fillVqaQueue(current, rankedFrames, downvotedKeys, 100));
+    setVqaQueue((current) => fillVqaQueue(current, rankedFrames, 100));
     setNotice(`Đã fill hàng đợi theo thứ tự hiện tại (${Math.min(100, rankedFrames.length)} frame).`);
   }
 
@@ -635,7 +628,7 @@ export function Workbench({ search, loadFrames, loadFrame, loadStudio, saveSelec
         if (result.status === 'skipped') return;
         const key = queueKey(result.frame);
         setVqaQueue((current) => {
-          const withFrame = addVqaFrame(current, result.frame, downvotedKeys.has(key));
+          const withFrame = addVqaFrame(current, result.frame);
           if (result.status === 'answered' && result.answer) {
             return updateVqaQueueItem(withFrame, key, { status: 'answered', answer: result.answer });
           }
@@ -679,7 +672,7 @@ export function Workbench({ search, loadFrames, loadFrame, loadStudio, saveSelec
         return;
       }
       setVqaQueue((current) => {
-        const withFrame = addVqaFrame(current, activeFrame, downvotedKeys.has(activeKey));
+        const withFrame = addVqaFrame(current, activeFrame);
         return updateVqaQueueItem(withFrame, activeKey, { status: 'answered', answer: qaAnswer.trim() });
       });
       setQaAnswer('');
@@ -946,13 +939,13 @@ export function Workbench({ search, loadFrames, loadFrame, loadStudio, saveSelec
             skipped={normalized.skipped}
             onSelect={selectSearchFrame}
             onReorder={(from, to) => setRankedFrames((current) => reorderFrames(current, from, to))}
+            onMoveToTop={(frame) => moveFrameToEdge(frame, 'top')}
+            onMoveToBottom={(frame) => moveFrameToEdge(frame, 'bottom')}
             onQueryFrame={queryByFrame}
             onExport={task === 'textual_kis' ? exportRankedTextualFrames : undefined}
             queueKeys={task === 'qa' ? vqaQueueKeys : undefined}
-            downvotedKeys={task === 'qa' ? downvotedKeys : undefined}
             queueCount={task === 'qa' ? vqaQueue.length : undefined}
             onAddToQueue={task === 'qa' ? addFrameToVqaQueue : undefined}
-            onToggleDownvote={task === 'qa' ? toggleFrameDownvote : undefined}
             onFillQueue={task === 'qa' ? fillVqaAnswerQueue : undefined}
             batchTopK={task === 'qa' ? batchTopK : undefined}
             onBatchTopKChange={task === 'qa' ? setBatchTopK : undefined}

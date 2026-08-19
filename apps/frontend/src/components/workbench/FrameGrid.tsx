@@ -26,13 +26,13 @@ interface Props {
   skipped: number;
   onSelect: (frame: FrameCandidate) => void;
   onReorder: (from: number, to: number) => void;
+  onMoveToTop?: (frame: FrameCandidate) => void;
+  onMoveToBottom?: (frame: FrameCandidate) => void;
   onQueryFrame?: (frame: FrameCandidate) => void;
   onExport?: () => void;
   queueKeys?: ReadonlySet<string>;
-  downvotedKeys?: ReadonlySet<string>;
   queueCount?: number;
   onAddToQueue?: (frame: FrameCandidate) => void;
-  onToggleDownvote?: (frame: FrameCandidate) => void;
   onFillQueue?: () => void;
   batchTopK?: string;
   onBatchTopKChange?: (value: string) => void;
@@ -59,13 +59,13 @@ export function FrameGrid({
   skipped,
   onSelect,
   onReorder,
+  onMoveToTop,
+  onMoveToBottom,
   onQueryFrame,
   onExport,
   queueKeys = new Set<string>(),
-  downvotedKeys = new Set<string>(),
   queueCount = 0,
   onAddToQueue,
-  onToggleDownvote,
   onFillQueue,
   batchTopK = '10',
   onBatchTopKChange,
@@ -417,7 +417,6 @@ export function FrameGrid({
           const selected = frame.result_key === selectedKey;
           const frameQueueKey = queueKey(frame);
           const queued = queueKeys.has(frameQueueKey);
-          const downvoted = downvotedKeys.has(frameQueueKey);
           const modalityLabel = displayMatchedModalities(frame.matched_modalities);
           const resultLabel = frameCandidateLabel(frame);
           const displayLabel = frameCandidateDisplayLabel(frame);
@@ -425,7 +424,6 @@ export function FrameGrid({
             <li
               className={`frame-card frame-list-item frame-list-item--spacious${entry.dragging ? ' frame-list-item--dragging' : ''}${selected ? ' selected' : ''}`}
               data-queued={queued ? 'true' : undefined}
-              data-downvoted={downvoted ? 'true' : undefined}
               data-frame-key={frame.result_key}
               key={frame.result_key}
               onPointerDown={(event) => handlePointerDown(event, index)}
@@ -478,15 +476,26 @@ export function FrameGrid({
                     {queued ? '✓' : '+'}
                   </button>
                 )}
-                {onToggleDownvote && (
+                {onMoveToTop && (
                   <button
                     type="button"
-                    className={`queue-card-action${downvoted ? ' active' : ''}`}
-                    aria-label={downvoted ? `Bỏ downvote ${resultLabel}` : `Downvote ${resultLabel}`}
-                    aria-pressed={downvoted}
-                    onClick={() => onToggleDownvote(frame)}
+                    className="queue-card-action frame-boundary-action"
+                    aria-label={`Upvote ${resultLabel} — đưa lên đầu`}
+                    disabled={index === 0}
+                    onClick={() => onMoveToTop(frame)}
                   >
-                    ↓
+                    ⤒
+                  </button>
+                )}
+                {onMoveToBottom && (
+                  <button
+                    type="button"
+                    className="queue-card-action frame-boundary-action"
+                    aria-label={`Downvote ${resultLabel} — đưa xuống cuối`}
+                    disabled={index === frames.length - 1}
+                    onClick={() => onMoveToBottom(frame)}
+                  >
+                    ⤓
                   </button>
                 )}
                 {onQueryFrame && (
@@ -616,6 +625,8 @@ function DragPreview({
       </div>
       <div className="frame-card-controls frame-drag-preview-controls" aria-hidden="true">
         <span className="drag-hint">Kéo để xếp hạng</span>
+        <span className="frame-drag-preview-button">⤒</span>
+        <span className="frame-drag-preview-button">⤓</span>
         <span className="frame-drag-preview-button">↑</span>
         <span className="frame-drag-preview-button">↓</span>
       </div>

@@ -12,7 +12,6 @@ export interface VqaQueueItem {
   readonly status: VqaQueueStatus;
   readonly answer?: string;
   readonly error?: string;
-  readonly downvoted: boolean;
 }
 
 export function queueKey(frame: Pick<FrameCandidate, 'video_id' | 'original_frame_id'>): string {
@@ -24,14 +23,13 @@ function limitValue(value: number): number {
   return Math.max(0, Math.min(VQA_QUEUE_LIMIT, Math.floor(value)));
 }
 
-function itemFromFrame(frame: FrameCandidate, downvoted = false): VqaQueueItem {
+function itemFromFrame(frame: FrameCandidate): VqaQueueItem {
   return {
     key: queueKey(frame),
     video_id: frame.video_id,
     frame_id: frame.original_frame_id,
     thumbnail_uri: frame.thumbnail_uri,
     status: 'pending',
-    downvoted,
   };
 }
 
@@ -44,24 +42,13 @@ function deduplicateQueue(items: readonly VqaQueueItem[]): VqaQueueItem[] {
   }).map((item) => ({ ...item }));
 }
 
-function rankDownvoted(items: readonly VqaQueueItem[]): VqaQueueItem[] {
-  return [
-    ...items.filter((item) => !item.downvoted),
-    ...items.filter((item) => item.downvoted),
-  ];
-}
-
 export function fillVqaQueue(
   existing: readonly VqaQueueItem[],
   frames: readonly FrameCandidate[],
-  downvotedKeys: ReadonlySet<string>,
   limit = VQA_QUEUE_LIMIT,
 ): VqaQueueItem[] {
   const maxItems = limitValue(limit);
-  const current = deduplicateQueue(existing).map((item) => ({
-    ...item,
-    downvoted: downvotedKeys.has(item.key),
-  }));
+  const current = deduplicateQueue(existing);
   const known = new Set(current.map((item) => item.key));
   const additions = frames
     .filter((frame) => {
@@ -70,33 +57,21 @@ export function fillVqaQueue(
       known.add(key);
       return true;
     })
-    .map((frame) => itemFromFrame(frame, downvotedKeys.has(queueKey(frame))));
+    .map((frame) => itemFromFrame(frame));
 
-  return rankDownvoted([...current, ...additions]).slice(0, maxItems);
+  return [...current, ...additions].slice(0, maxItems);
 }
 
 export function addVqaFrame(
   existing: readonly VqaQueueItem[],
   frame: FrameCandidate,
-  downvoted: boolean,
   limit = VQA_QUEUE_LIMIT,
 ): VqaQueueItem[] {
   const current = deduplicateQueue(existing);
   const key = queueKey(frame);
-  const existingItem = current.find((item) => item.key === key);
-  if (existingItem) {
-    return current.map((item) => item.key === key ? { ...item, downvoted } : item);
-  }
+  if (current.some((item) => item.key === key)) return current;
   if (current.length >= limitValue(limit)) return current;
-  return [...current, itemFromFrame(frame, downvoted)];
-}
-
-export function toggleVqaQueueDownvote(
-  existing: readonly VqaQueueItem[],
-  key: string,
-  downvoted: boolean,
-): VqaQueueItem[] {
-  return rankDownvoted(existing.map((item) => item.key === key ? { ...item, downvoted } : { ...item }));
+  return [...current, itemFromFrame(frame)];
 }
 
 export function applyAnswerToPending(
