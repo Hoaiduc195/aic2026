@@ -812,8 +812,7 @@ textarea:focus-visible,
 
 .frame-thumbnail img,
 .inspector-media img,
-.inspector-media video,
-.filmstrip img {
+.inspector-media video {
   width: 100%;
   height: 100%;
   display: block;
@@ -1068,7 +1067,7 @@ textarea:focus-visible,
 
 .media-actions {
   display: grid;
-  grid-template-columns: 0.7fr 1.3fr;
+  grid-template-columns: 1fr;
   gap: 8px;
   padding: 14px 18px;
 }
@@ -1076,49 +1075,6 @@ textarea:focus-visible,
 .media-actions button {
   padding: 0 8px;
   font-size: 11px;
-}
-
-.filmstrip {
-  padding: 0 18px 16px;
-  border-bottom: 1px solid var(--line);
-}
-
-.filmstrip-track {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 6px;
-}
-
-.filmstrip button {
-  flex: 0 0 116px;
-  overflow: hidden;
-  padding: 0 0 7px;
-  text-align: left;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #fff;
-}
-
-.filmstrip button[aria-pressed="true"] {
-  border-color: var(--accent);
-}
-
-.filmstrip img {
-  height: 65px;
-  margin-bottom: 6px;
-}
-
-.filmstrip span,
-.filmstrip small {
-  display: block;
-  padding: 0 7px;
-  font-size: 10px;
-}
-
-.filmstrip small {
-  margin-top: 2px;
-  color: var(--ink-muted);
 }
 
 .answer-builder,

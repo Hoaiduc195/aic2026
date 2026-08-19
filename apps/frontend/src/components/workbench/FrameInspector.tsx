@@ -1,10 +1,8 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
-  useEffect,
   useMemo,
   useRef,
   useState,
@@ -15,10 +13,7 @@ import type {
   QualificationEventInput,
   QualificationTask,
   SearchEvidence,
-  VideoFrame,
-  VideoFramesResponse,
 } from '../../lib/contracts';
-import { keyframeLabel } from '../../lib/video-studio-model';
 import { displayMatchedModalities, formatMs, groupEvidence } from '../../lib/workbench-model';
 
 export const DEFAULT_INSPECTOR_WIDTH = 410;
@@ -34,11 +29,9 @@ interface Props {
   events: readonly QualificationEventInput[];
   assignedFrames: readonly (FrameCandidate | null)[];
   qaAnswer: string;
-  loadFrames: (videoId: string, centerFrameId: number, limit: number) => Promise<VideoFramesResponse>;
   onClose: () => void;
   onOpenStudio: () => void;
   onInspectorWidthChange: (width: number) => void;
-  onFrameSelect: (frame: VideoFrame) => void;
   onQaAnswerChange: (value: string) => void;
   onSuggestVqaAnswer?: () => void;
   vqaAnswerLoading?: boolean;
@@ -65,18 +58,15 @@ export function FrameInspector({
   events,
   assignedFrames,
   qaAnswer,
-  loadFrames,
   onClose,
   onOpenStudio,
   onInspectorWidthChange,
-  onFrameSelect,
   onQaAnswerChange,
   onSuggestVqaAnswer,
   vqaAnswerLoading = false,
   onAddAnswer,
   onAssignEvent,
 }: Props) {
-  const [showFrames, setShowFrames] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartRef = useRef<{ clientX: number; width: number } | null>(null);
   const evidence = useMemo(
@@ -84,21 +74,6 @@ export function FrameInspector({
     [active.evidence, active.timestamp_ms],
   );
   const modalityLabel = displayMatchedModalities(active.matched_modalities);
-
-  const framesQuery = useQuery({
-    queryKey: ['video-frames', anchor.video_id, anchor.original_frame_id],
-    queryFn: () => loadFrames(anchor.video_id, anchor.original_frame_id, 25),
-    enabled: false,
-  });
-
-  useEffect(() => {
-    setShowFrames(false);
-  }, [anchor.result_key]);
-
-  function requestFrames() {
-    setShowFrames(true);
-    void framesQuery.refetch();
-  }
 
   function beginResize(event: ReactPointerEvent<HTMLDivElement>) {
     event.preventDefault();
@@ -180,36 +155,7 @@ export function FrameInspector({
         <button type="button" className="secondary-button" onClick={onOpenStudio}>
           Xem video studio
         </button>
-        <button type="button" className="secondary-button" disabled={framesQuery.isFetching} onClick={requestFrames}>
-          {framesQuery.isFetching ? 'Đang tải frame…' : 'Xem các frame cùng video'}
-        </button>
       </div>
-      {framesQuery.error && (
-        <p className="inline-error" role="alert">
-          {readError(framesQuery.error)}
-        </p>
-      )}
-
-      {showFrames && framesQuery.data && (
-        <section className="filmstrip" aria-label="Các frame cùng video">
-          <div className="filmstrip-track">
-            {framesQuery.data.frames.map((frame) => (
-              <button
-                type="button"
-                key={`${frame.video_id}-${frame.original_frame_id}`}
-                aria-label={`Chọn ${keyframeLabel(frame).toLowerCase()}`}
-                aria-pressed={active.original_frame_id === frame.original_frame_id}
-                onClick={() => onFrameSelect(frame)}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={frame.thumbnail_uri} alt={`${keyframeLabel(frame)} của ${frame.video_id}`} loading="lazy" />
-                <span>#{frame.keyframe_no}</span>
-                <small>Source frame {frame.original_frame_id} · {formatMs(frame.timestamp_ms)}</small>
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
 
       <section className="answer-builder">
         <h3>{task === 'trake' ? 'Gán chuỗi sự kiện' : 'Tạo đáp án'}</h3>
@@ -279,8 +225,4 @@ function EvidenceBlock({ label, items }: { label: string; items: readonly Search
       ))}
     </div>
   );
-}
-
-function readError(error: unknown): string {
-  return error instanceof Error ? error.message : 'Không thể tải dữ liệu media.';
 }

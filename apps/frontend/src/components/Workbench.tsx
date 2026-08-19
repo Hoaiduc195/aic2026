@@ -20,8 +20,6 @@ import type {
   TrakeAnswer,
   VqaAnswerRequest,
   VqaAnswerSuggestion,
-  VideoFrame,
-  VideoFramesResponse,
   VideoStudioResponse,
 } from '../lib/contracts';
 import {
@@ -104,7 +102,6 @@ import { VideoStudioModal } from './workbench/VideoStudioModal';
 
 interface Props {
   search: (request: SearchRequest) => Promise<SearchResponse>;
-  loadFrames: (videoId: string, centerFrameId: number, limit: number) => Promise<VideoFramesResponse>;
   loadFrame?: (videoId: string, frameId: number, signal?: AbortSignal) => Promise<CanonicalFrameResponse>;
   loadStudio: (videoId: string, signal?: AbortSignal) => Promise<VideoStudioResponse>;
   saveSelection: (queryId: string, task: QualificationTask, answers: readonly QualificationAnswer[]) => Promise<SelectionRevision>;
@@ -157,7 +154,7 @@ function buildWorkbenchQuery(
 
 const VQA_BATCH_INTERVAL_MS = 3_300;
 
-export function Workbench({ search, loadFrames, loadFrame, loadStudio, saveSelection, createPreview, suggestVqaAnswer, improveQuery }: Props) {
+export function Workbench({ search, loadFrame, loadStudio, saveSelection, createPreview, suggestVqaAnswer, improveQuery }: Props) {
   const task = useWorkbenchStore((state) => state.task);
   const answers = useWorkbenchStore((state) => state.answers);
   const setTask = useWorkbenchStore((state) => state.setTask);
@@ -479,18 +476,6 @@ export function Workbench({ search, loadFrames, loadFrame, loadStudio, saveSelec
     link.remove();
     URL.revokeObjectURL(url);
     setNotice(`Đã export ${payload.answers.length} kết quả theo thứ tự hiện tại.`);
-  }
-
-  function selectNeighborFrame(frame: VideoFrame) {
-    if (!selectedAnchor) return;
-    setActiveFrame({
-      ...selectedAnchor,
-      keyframe_no: frame.keyframe_no ?? undefined,
-      original_frame_id: frame.original_frame_id,
-      timestamp_ms: frame.timestamp_ms,
-      thumbnail_uri: frame.thumbnail_uri,
-      evidence: frame.evidence ? [...frame.evidence] : [...selectedAnchor.evidence],
-    });
   }
 
   function openStudio() {
@@ -963,7 +948,6 @@ export function Workbench({ search, loadFrames, loadFrame, loadStudio, saveSelec
               events={events}
               assignedFrames={assignedFrames}
               qaAnswer={qaAnswer}
-              loadFrames={loadFrames}
               onClose={() => {
                 setSelectedAnchor(null);
                 setActiveFrame(null);
@@ -971,7 +955,6 @@ export function Workbench({ search, loadFrames, loadFrame, loadStudio, saveSelec
               }}
               onOpenStudio={openStudio}
               onInspectorWidthChange={resizeInspector}
-              onFrameSelect={selectNeighborFrame}
               onQaAnswerChange={setQaAnswer}
               onSuggestVqaAnswer={task === 'qa' ? suggestAnswer : undefined}
               vqaAnswerLoading={vqaAnswerMutation.isPending || batchVqaLoading}
