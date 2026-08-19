@@ -7,6 +7,7 @@ import {
   displayMatchedModalities,
   formatMs,
   groupEvidence,
+  moveFrameToBoundary,
   parseFrame,
   reorderFrames,
   resultKey,
@@ -152,5 +153,29 @@ describe('workbench answer model', () => {
     expect(submission?.answers).toHaveLength(100);
     expect(submission?.answers[0]).toEqual({ video_id: 'video_2', frame_id: 2 });
     expect(submission?.answers[99]).toEqual({ video_id: 'video_99', frame_id: 99 });
+  });
+
+  it('moves a ranked frame directly to the top or bottom without mutating the input', () => {
+    const frames = Array.from({ length: 4 }, (_, index) => ({
+      result_key: `video_${index}`,
+      video_id: `video_${index}`,
+      original_frame_id: index,
+      timestamp_ms: index * 1_000,
+      thumbnail_uri: `/frame/${index}`,
+      start_ms: index * 1_000,
+      end_ms: index * 1_000 + 500,
+      score: 1 - index / 10,
+      evidence: [],
+      matched_modalities: [],
+    } satisfies FrameCandidate));
+
+    const top = moveFrameToBoundary(frames, 2, 'top');
+    const bottom = moveFrameToBoundary(frames, 1, 'bottom');
+
+    expect(top.map((frame) => frame.original_frame_id)).toEqual([2, 0, 1, 3]);
+    expect(bottom.map((frame) => frame.original_frame_id)).toEqual([0, 2, 3, 1]);
+    expect(moveFrameToBoundary(frames, 0, 'top')).toEqual(frames);
+    expect(moveFrameToBoundary(frames, 3, 'bottom')).toEqual(frames);
+    expect(frames.map((frame) => frame.original_frame_id)).toEqual([0, 1, 2, 3]);
   });
 });

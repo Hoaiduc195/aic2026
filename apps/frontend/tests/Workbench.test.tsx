@@ -487,6 +487,48 @@ describe('qualification frame-first workbench', () => {
     click.mockRestore();
   });
 
+  it('moves a result frame directly to the top or bottom with boundary actions', async () => {
+    const user = userEvent.setup();
+    const rankedResponse: SearchResponse = {
+      ...response,
+      results: [
+        response.results[0],
+        {
+          ...response.results[0],
+          video_id: 'video_02',
+          original_frame_id: 410,
+          representative_frame: { original_frame_id: 410, timestamp_ms: 15_000, preview_uri: null },
+        },
+        {
+          ...response.results[0],
+          video_id: 'video_03',
+          original_frame_id: 530,
+          representative_frame: { original_frame_id: 530, timestamp_ms: 18_000, preview_uri: null },
+        },
+      ],
+    };
+    renderWorkbench({ searchResponse: rankedResponse });
+
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+
+    const rankedCards = () => screen.getAllByRole('button', { name: /^Chọn frame/ });
+    await user.click(screen.getByRole('button', { name: 'Upvote frame video_03 · 530 — đưa lên đầu' }));
+    expect(rankedCards().map((card) => card.getAttribute('aria-label'))).toEqual([
+      'Chọn frame video_03 · 530',
+      'Chọn frame video_01 · 385',
+      'Chọn frame video_02 · 410',
+    ]);
+
+    await user.click(screen.getByRole('button', { name: 'Downvote frame video_01 · 385 — đưa xuống cuối' }));
+    expect(rankedCards().map((card) => card.getAttribute('aria-label'))).toEqual([
+      'Chọn frame video_03 · 530',
+      'Chọn frame video_02 · 410',
+      'Chọn frame video_01 · 385',
+    ]);
+    expect(screen.queryByText('Downvote frame video_01 · 385')).not.toBeInTheDocument();
+  });
+
   it('supports pointer drag and drop for changing frame rank', async () => {
     const user = userEvent.setup();
     const rankedResponse: SearchResponse = {
