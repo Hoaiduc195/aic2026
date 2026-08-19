@@ -1,0 +1,4 @@
+﻿modal>=0.73
+numpy<2
+pillow
+pandas
