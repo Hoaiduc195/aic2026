@@ -97,8 +97,9 @@ export function SearchSidebar({
 }: Props) {
   const vlmRerank = retrievalSettings.vlm_rerank ?? { enabled: false, top_k: 15, weight: 0.6 };
   const hasQuery = task === 'trake'
-    ? events.length > 0 && events.every((item) => item.description.trim())
+    ? Boolean(description.trim()) && events.length > 0 && events.every((item) => item.description.trim())
     : description.trim() && (task !== 'qa' || question.trim());
+  const descriptionLabel = task === 'trake' ? 'Truy vấn chính' : 'Mô tả sự kiện';
 
   return (
     <aside className="search-sidebar" aria-label="Bộ điều khiển tìm kiếm">
@@ -123,19 +124,21 @@ export function SearchSidebar({
       </div>
 
       <form className="search-form" onSubmit={onSubmit}>
-        {task !== 'trake' ? (
-          <label className="input-field">
-            <span>Mô tả sự kiện</span>
-            <textarea
-              aria-label="Mô tả sự kiện"
-              value={description}
-              maxLength={2000}
-              rows={8}
-              placeholder="Mô tả người, hành động, đồ vật, địa điểm hoặc chữ xuất hiện…"
-              onChange={(event) => onDescriptionChange(event.target.value)}
-            />
-          </label>
-        ) : (
+        <label className="input-field">
+          <span>{descriptionLabel}</span>
+          <textarea
+            aria-label={descriptionLabel}
+            value={description}
+            maxLength={2000}
+            rows={8}
+            placeholder={task === 'trake'
+              ? 'Mô tả tổng quát toàn bộ chuỗi hành động cần tìm…'
+              : 'Mô tả người, hành động, đồ vật, địa điểm hoặc chữ xuất hiện…'}
+            onChange={(event) => onDescriptionChange(event.target.value)}
+          />
+        </label>
+
+        {task === 'trake' && (
           <fieldset className="event-editor">
             <legend>Chuỗi sự kiện theo thứ tự</legend>
             {events.map((item, index) => (
@@ -197,7 +200,7 @@ export function SearchSidebar({
             <p className="section-kicker">Chuẩn hóa truy vấn</p>
             <h2 id="query-improver-title">Query Improver</h2>
           </div>
-          <span className="sidebar-panel-badge">{task === 'qa' ? 'query + question' : task === 'trake' ? `${events.length} event` : '1 query'}</span>
+          <span className="sidebar-panel-badge">{task === 'qa' ? 'query + question' : task === 'trake' ? `query + ${events.length} event` : '1 query'}</span>
         </div>
 
         <label className="settings-toggle">
@@ -219,7 +222,7 @@ export function SearchSidebar({
             >
               {queryImproverPending
                 ? 'Đang cải thiện…'
-                : task === 'qa' ? 'Cải thiện query & câu hỏi' : task === 'trake' ? 'Cải thiện các event' : 'Cải thiện query'}
+                : task === 'qa' ? 'Cải thiện query & câu hỏi' : task === 'trake' ? 'Cải thiện query & các event' : 'Cải thiện query'}
             </button>
             <p className="sidebar-help">
               Kết quả cải thiện sẽ được ghi trực tiếp vào ô nhập chính trước khi tìm.

@@ -298,6 +298,35 @@ describe('qualification frame-first workbench', () => {
     }));
   });
 
+  it('improves the TRAKE overview and ordered events together', async () => {
+    const user = userEvent.setup();
+    const improveQuery = vi.fn(async (): Promise<QueryImprovementResponse> => ({
+      original_query: 'Một người đi qua cửa hàng rồi rời đi\n1. Người bước vào cửa hàng\n2. Người rời khỏi cửa hàng',
+      improved_query: 'A person crosses a shop and then leaves\n1. The person enters the shop\n2. The person leaves the shop',
+      changed: true,
+      producer: 'test-query-improver',
+      model_version: 'test-model',
+      warning: null,
+    }));
+    renderWorkbench({ improveQuery });
+
+    await user.click(screen.getByRole('tab', { name: 'TRAKE' }));
+    await user.type(screen.getByLabelText('Truy vấn chính'), 'Một người đi qua cửa hàng rồi rời đi');
+    await user.type(screen.getByLabelText('Mô tả sự kiện 1'), 'Người bước vào cửa hàng');
+    await user.click(screen.getByRole('button', { name: 'Thêm sự kiện' }));
+    await user.type(screen.getByLabelText('Mô tả sự kiện 2'), 'Người rời khỏi cửa hàng');
+    await user.click(screen.getByLabelText('Bật Query Improver'));
+    await user.click(screen.getByRole('button', { name: 'Cải thiện query & các event' }));
+
+    expect(improveQuery).toHaveBeenCalledWith(expect.objectContaining({
+      task: 'trake',
+      query: 'Một người đi qua cửa hàng rồi rời đi\n1. Người bước vào cửa hàng\n2. Người rời khỏi cửa hàng',
+    }));
+    expect(screen.getByLabelText('Truy vấn chính')).toHaveValue('A person crosses a shop and then leaves');
+    expect(screen.getByLabelText('Mô tả sự kiện 1')).toHaveValue('The person enters the shop');
+    expect(screen.getByLabelText('Mô tả sự kiện 2')).toHaveValue('The person leaves the shop');
+  });
+
   it('keeps task input in the left sidebar and exposes task-specific fields', async () => {
     const user = userEvent.setup();
     renderWorkbench();
@@ -1066,6 +1095,7 @@ describe('qualification frame-first workbench', () => {
     renderWorkbench();
 
     await user.click(screen.getByRole('tab', { name: 'TRAKE' }));
+    await user.type(screen.getByLabelText('Truy vấn chính'), 'Một người đi qua cửa hàng rồi rời đi');
     await user.type(screen.getByLabelText('Mô tả sự kiện 1'), 'Người bước vào cửa hàng');
     await user.click(screen.getByRole('button', { name: 'Thêm sự kiện' }));
     await user.type(screen.getByLabelText('Mô tả sự kiện 2'), 'Người rời khỏi quầy');

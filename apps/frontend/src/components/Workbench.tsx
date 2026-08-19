@@ -138,10 +138,21 @@ function queryImproverWarningMessage(warning: string | null): string {
   }
 }
 
-function improvedEventLines(value: string): string[] {
-  return value.split('\n')
-    .map((line) => line.replace(/^\s*\d+[.)]\s*/, '').trim())
+interface TrakeQueryParts {
+  readonly overview: string;
+  readonly events: string[];
+}
+
+function parseTrakeQuery(value: string): TrakeQueryParts | null {
+  const lines = value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const firstEventIndex = lines.findIndex((line) => /^\d+[.)]\s*/.test(line));
+  if (firstEventIndex <= 0) return null;
+
+  const overview = lines.slice(0, firstEventIndex).join('\n').trim();
+  const events = lines.slice(firstEventIndex)
+    .map((line) => line.replace(/^\d+[.)]\s*/, '').trim())
     .filter(Boolean);
+  return overview && events.length > 0 ? { overview, events } : null;
 }
 
 function buildWorkbenchQuery(
@@ -155,7 +166,7 @@ function buildWorkbenchQuery(
   const cleanQuestion = question.trim();
   return {
     query: task === 'trake'
-      ? eventDescriptions.map((item, index) => `${index + 1}. ${item}`).join('\n')
+      ? [cleanDescription, ...eventDescriptions.map((item, index) => `${index + 1}. ${item}`)].join('\n')
       : task === 'qa'
         ? `${cleanDescription}\nCâu hỏi: ${cleanQuestion}`
         : cleanDescription,
@@ -407,7 +418,9 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
     const cleanDescription = description.trim();
     const cleanQuestion = question.trim();
     if (searchMutation.isPending) return;
-    if (task === 'trake' ? eventDescriptions.length !== events.length : !cleanDescription) return;
+    if (task === 'trake'
+      ? !cleanDescription || eventDescriptions.length !== events.length
+      : !cleanDescription) return;
     if (task === 'qa' && !cleanQuestion) return;
 
     const { query, backendTask } = buildWorkbenchQuery(task, description, question, events);
@@ -566,7 +579,9 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
     const eventDescriptions = events.map((item) => item.description.trim());
     const cleanDescription = description.trim();
     const cleanQuestion = question.trim();
-    if (task === 'trake' ? eventDescriptions.length !== events.length : !cleanDescription) return;
+    if (task === 'trake'
+      ? !cleanDescription || eventDescriptions.length !== events.length
+      : !cleanDescription) return;
     if (task === 'qa' && !cleanQuestion) return;
 
     const { query, backendTask } = buildWorkbenchQuery(task, description, question, events);
@@ -598,16 +613,17 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
         setQuestion(result.improved_question);
         setNotice('Đã cải thiện query và câu hỏi tiếng Anh trực tiếp trong ô nhập.');
       } else if (task === 'trake') {
-        const improvedEvents = improvedEventLines(result.improved_query);
-        if (improvedEvents.length !== events.length) {
-          setQueryImproverError('Query Improver không giữ đúng số lượng event TRAKE.');
+        const improvedTrakeQuery = parseTrakeQuery(result.improved_query);
+        if (!improvedTrakeQuery || improvedTrakeQuery.events.length !== events.length) {
+          setQueryImproverError('Query Improver không giữ đúng query chính và số lượng event TRAKE.');
           return;
         }
+        setDescription(improvedTrakeQuery.overview);
         setEvents((current) => current.map((item, index) => ({
           ...item,
-          description: improvedEvents[index] ?? item.description,
+          description: improvedTrakeQuery.events[index] ?? item.description,
         })));
-        setNotice('Đã cải thiện các event TRAKE trực tiếp trong ô nhập.');
+        setNotice('Đã cải thiện query chính và các event TRAKE trực tiếp trong ô nhập.');
       } else {
         setDescription(result.improved_query);
         setNotice('Đã cải thiện query tiếng Anh trực tiếp trong ô nhập.');

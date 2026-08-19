@@ -52,22 +52,38 @@ function normalizeQuery(value: string): string {
   return value.trim().replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ');
 }
 
-function eventLines(value: string): string[] {
-  return value.split('\n')
-    .map((line) => line.replace(/^\s*\d+[.)]\s*/, '').trim())
+interface TrakeQueryParts {
+  readonly overview: string | null;
+  readonly events: string[];
+}
+
+function parseTrakeQuery(value: string): TrakeQueryParts | null {
+  const lines = value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const firstEventIndex = lines.findIndex((line) => /^\d+[.)]\s*/.test(line));
+  if (firstEventIndex < 0) return null;
+
+  const overview = firstEventIndex === 0 ? null : lines.slice(0, firstEventIndex).join('\n').trim();
+  const events = lines.slice(firstEventIndex)
+    .map((line) => line.replace(/^\d+[.)]\s*/, '').trim())
     .filter(Boolean);
+  return events.length > 0 ? { overview, events } : null;
 }
 
 function normalizeTrakeQuery(original: string, improved: string): string | null {
-  const originalEvents = eventLines(original);
-  const improvedEvents = eventLines(improved);
-  if (originalEvents.length === 0 || originalEvents.length !== improvedEvents.length) return null;
-  return improvedEvents.map((event, index) => `${index + 1}. ${event}`).join('\n');
+  const originalParts = parseTrakeQuery(original);
+  const improvedParts = parseTrakeQuery(improved);
+  if (!originalParts || !improvedParts || originalParts.events.length !== improvedParts.events.length) return null;
+  if (originalParts.overview !== null && improvedParts.overview === null) return null;
+
+  return [
+    ...(improvedParts.overview === null ? [] : [improvedParts.overview]),
+    ...improvedParts.events.map((event, index) => `${index + 1}. ${event}`),
+  ].join('\n');
 }
 
 function systemPrompt(task: QueryImprovementRequest['task']): string {
   const trakeInstruction = task === 'trake'
-    ? 'For TRAKE, preserve the number of event lines and their order. Return one improved English event per numbered line.'
+    ? 'For TRAKE, preserve the overall query before the numbered lines, then preserve the number and order of event lines. Return one improved English overall query first and one improved English event per numbered line.'
     : 'Return one improved query, not a list of alternatives.';
   const outputInstruction = task === 'vqa'
     ? 'For VQA, improve the event query and the question independently. Return JSON only with exactly two fields: {"improved_query":"...","improved_question":"..."}.'
