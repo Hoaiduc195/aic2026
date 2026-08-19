@@ -55,4 +55,15 @@ describe('retrieval settings', () => {
       vlm_rerank: { enabled: true, top_k: 0, weight: 0.6 },
     })).toContain('VLM');
   });
+
+  it('accepts a 100-second near-frame window but rejects values above it', () => {
+    expect(validateRetrievalSettings({
+      ...DEFAULT_RETRIEVAL_SETTINGS,
+      near_frame_window_ms: 100_000,
+    })).toBeNull();
+    expect(validateRetrievalSettings({
+      ...DEFAULT_RETRIEVAL_SETTINGS,
+      near_frame_window_ms: 100_001,
+    })).not.toBeNull();
+  });
 });

@@ -136,6 +136,7 @@ describe('search proxy route', () => {
           display_k: 40,
           branch_k: 150,
           fusion_k: 600,
+          near_frame_window_ms: 100_000,
           rrf_k: 30,
           channel_weights: { clip: 1.4, object: 0.5 },
           vlm_rerank: { enabled: true, top_k: 10, weight: 0.7 },
@@ -151,6 +152,7 @@ describe('search proxy route', () => {
         display_k: 40,
         branch_k: 150,
         fusion_k: 600,
+        near_frame_window_ms: 100_000,
         rrf_k: 30,
         channel_weights: { clip: 1.4, object: 0.5 },
         vlm_rerank: { enabled: true, top_k: 10, weight: 0.7 },
@@ -220,6 +222,31 @@ describe('search proxy route', () => {
         query: 'cửa hàng',
         task: 'textual_kis',
         retrieval: { display_k: 101, branch_k: 150, fusion_k: 600 },
+      }),
+    });
+    const response = await POST(request);
+
+    expect(response.status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a near-frame window above 100 seconds', async () => {
+    process.env.BACKEND_API_URL = 'http://backend.internal';
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const request = new NextRequest('http://localhost/api/v1/search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        query: 'cửa hàng',
+        task: 'textual_kis',
+        retrieval: {
+          display_k: 20,
+          branch_k: 100,
+          fusion_k: 500,
+          near_frame_window_ms: 100_001,
+        },
       }),
     });
     const response = await POST(request);
