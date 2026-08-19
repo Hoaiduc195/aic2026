@@ -30,6 +30,8 @@ import { PostgresObjectBranch, PostgresTextBranch } from './retrieval/postgres-b
 import { PostgresClipBranch } from './retrieval/postgres-clip.branch';
 import { RetrievalService } from './retrieval/retrieval.service';
 import { VlmRerankerService } from './retrieval/vlm-reranker.service';
+import { QueryImproverController } from './query-improver/query-improver.controller';
+import { QueryImproverService } from './query-improver/query-improver.service';
 import { PostgresRetrievalStore, UnavailableRetrievalStore } from './retrieval/retrieval.store';
 import { EmptyEvidenceRepository, PostgresEvidenceRepository } from './retrieval/evidence.repository';
 import { SearchController } from './search/search.controller';
@@ -84,7 +86,7 @@ function createTaskRegistry(config: ReturnType<typeof loadConfig>): TaskExecutor
 
 @Module({
   imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }])],
-  controllers: [HealthController, SearchController, MediaController, ManualController, SubmissionController, VqaAnswerController],
+  controllers: [HealthController, SearchController, MediaController, ManualController, SubmissionController, VqaAnswerController, QueryImproverController],
   providers: [
     { provide: APP_CONFIG, useFactory: loadConfig },
     {
@@ -192,6 +194,7 @@ function createTaskRegistry(config: ReturnType<typeof loadConfig>): TaskExecutor
     RetrievalService,
     MediaService,
     VqaAnswerService,
+    QueryImproverService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })

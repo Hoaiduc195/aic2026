@@ -5,6 +5,7 @@ import {
   getVideoFrames,
   getVideoPlayback,
   getVideoStudio,
+  improveQuery,
   parseSearchResponse,
   parseVideoStudioResponse,
   saveSelection,
@@ -44,6 +45,22 @@ afterEach(() => {
 });
 
 describe('search API boundary', () => {
+  it('calls the query improver API and parses its response contract', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      original_query: 'một người đi bộ',
+      improved_query: 'A person walking.',
+      changed: true,
+      producer: 'query-improver-openai-compatible',
+      model_version: 'model-a',
+      warning: null,
+    }), { status: 200 })));
+
+    const result = await improveQuery({ query: 'một người đi bộ', task: 'textual_kis' });
+
+    expect(result).toMatchObject({ improved_query: 'A person walking.', changed: true });
+    expect(fetch).toHaveBeenCalledWith('/api/v1/query/improve', expect.objectContaining({ method: 'POST' }));
+  });
+
   it('accepts signed R2 preview URLs with query parameters', () => {
     const parsed = parseSearchResponse({
       ...validResponse,

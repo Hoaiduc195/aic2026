@@ -16,6 +16,10 @@ interface Props {
   description: string;
   question: string;
   events: readonly QualificationEventInput[];
+  queryImproverEnabled: boolean;
+  improvedQuery: string;
+  queryImproverPending: boolean;
+  queryImproverError: string | null;
   pending: boolean;
   onTaskChange: (task: QualificationTask) => void;
   onDescriptionChange: (value: string) => void;
@@ -23,6 +27,11 @@ interface Props {
   onEventChange: (eventId: string, value: string) => void;
   onAddEvent: () => void;
   onRemoveEvent: (eventId: string) => void;
+  onQueryImproverChange: (enabled: boolean) => void;
+  onImprovedQueryChange: (value: string) => void;
+  onImproveQuery: () => void;
+  onQueryImproverSave: () => void;
+  onQueryImproverReset: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onRrfChange: (settings: RrfSettings) => void;
   onRrfSave: () => void;
@@ -66,6 +75,10 @@ export function SearchSidebar({
   description,
   question,
   events,
+  queryImproverEnabled,
+  improvedQuery,
+  queryImproverPending,
+  queryImproverError,
   pending,
   onTaskChange,
   onDescriptionChange,
@@ -73,6 +86,11 @@ export function SearchSidebar({
   onEventChange,
   onAddEvent,
   onRemoveEvent,
+  onQueryImproverChange,
+  onImprovedQueryChange,
+  onImproveQuery,
+  onQueryImproverSave,
+  onQueryImproverReset,
   onSubmit,
   onRrfChange,
   onRrfSave,
@@ -176,6 +194,58 @@ export function SearchSidebar({
           {pending ? 'Đang tìm…' : 'Tìm frame'}
         </button>
       </form>
+
+      <section className="sidebar-panel query-improver-panel" aria-labelledby="query-improver-title">
+        <div className="sidebar-panel-heading">
+          <div>
+            <p className="section-kicker">Chuẩn hóa truy vấn</p>
+            <h2 id="query-improver-title">Query Improver</h2>
+          </div>
+          <span className="sidebar-panel-badge">1 query</span>
+        </div>
+
+        <label className="settings-toggle">
+          <input
+            type="checkbox"
+            checked={queryImproverEnabled}
+            onChange={(event) => onQueryImproverChange(event.target.checked)}
+          />
+          <span>Bật cải thiện query tiếng Anh</span>
+        </label>
+
+        {queryImproverEnabled && (
+          <>
+            <label className="input-field compact-field" htmlFor="improved-query">
+              <span>Query tiếng Anh</span>
+              <textarea
+                id="improved-query"
+                aria-label="Query tiếng Anh đã cải thiện"
+                value={improvedQuery}
+                rows={4}
+                maxLength={2000}
+                placeholder="Bấm ‘Tạo query tiếng Anh’ để sinh preview…"
+                onChange={(event) => onImprovedQueryChange(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className="secondary-button full-width"
+              disabled={queryImproverPending || !hasQuery}
+              onClick={onImproveQuery}
+            >
+              {queryImproverPending ? 'Đang cải thiện…' : 'Tạo query tiếng Anh'}
+            </button>
+            <p className="sidebar-help">
+              Query tiếng Anh được dùng cho retrieval sau khi bạn kiểm tra hoặc chỉnh sửa preview.
+            </p>
+            {queryImproverError && <p className="settings-error" role="alert">{queryImproverError}</p>}
+            <div className="sidebar-panel-actions">
+              <button type="button" className="secondary-button" onClick={onQueryImproverReset}>Tắt mặc định</button>
+              <button type="button" className="primary-button" onClick={onQueryImproverSave}>Lưu Query Improver</button>
+            </div>
+          </>
+        )}
+      </section>
 
       <section className="sidebar-panel rrf-panel" aria-labelledby="rrf-settings-title">
         <div className="sidebar-panel-heading">

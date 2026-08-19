@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { Workbench } from '@/components/Workbench';
 import type {
+  QueryImprovementResponse,
   SearchResponse,
   SelectionRevision,
   SubmissionPreview,
@@ -142,6 +143,14 @@ function renderWorkbench({
     query_id: 'query_0001', task: 'textual_kis', answer_count: 1, answers: [], csv: '', submittable: false, warnings: [],
   })),
   suggestVqaAnswer = vi.fn(async (): Promise<VqaAnswerSuggestion> => vqaSuggestion),
+  improveQuery = vi.fn(async (): Promise<QueryImprovementResponse> => ({
+    original_query: 'Một cửa hàng trên phố',
+    improved_query: 'A shop on a street.',
+    changed: true,
+    producer: 'test-query-improver',
+    model_version: 'test-model',
+    warning: null,
+  })),
 } = {}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = render(
@@ -153,6 +162,7 @@ function renderWorkbench({
         saveSelection={saveSelection}
         createPreview={createPreview}
         suggestVqaAnswer={suggestVqaAnswer}
+        improveQuery={improveQuery}
       />
     </QueryClientProvider>,
   );
@@ -160,6 +170,32 @@ function renderWorkbench({
 }
 
 describe('qualification frame-first workbench', () => {
+  it('previews one improved English query before using it for retrieval', async () => {
+    const user = userEvent.setup();
+    const improveQuery = vi.fn(async (): Promise<QueryImprovementResponse> => ({
+      original_query: 'Một cửa hàng trên phố',
+      improved_query: 'A shop on a street.',
+      changed: true,
+      producer: 'test-query-improver',
+      model_version: 'test-model',
+      warning: null,
+    }));
+    const { search } = renderWorkbench({ improveQuery });
+
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.click(screen.getByLabelText('Bật cải thiện query tiếng Anh'));
+    await user.click(screen.getByRole('button', { name: 'Tạo query tiếng Anh' }));
+
+    expect(improveQuery).toHaveBeenCalledWith(expect.objectContaining({
+      query: 'Một cửa hàng trên phố',
+      task: 'textual_kis',
+    }));
+    expect(await screen.findByDisplayValue('A shop on a street.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+    expect(search).toHaveBeenCalledWith(expect.objectContaining({ query: 'A shop on a street.' }));
+  });
+
   it('keeps task input in the left sidebar and exposes task-specific fields', async () => {
     const user = userEvent.setup();
     renderWorkbench();

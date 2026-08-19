@@ -6,6 +6,7 @@ import {
   createSubmissionPreview,
   getVideoFrames,
   getVideoStudio,
+  improveQuery,
   saveSelection,
   searchMedia,
   suggestVqaAnswer,
@@ -21,6 +22,7 @@ export default function HomePage() {
         saveSelection={saveSelection}
         createPreview={createSubmissionPreview}
         suggestVqaAnswer={suggestVqaAnswer}
+        improveQuery={improveQuery}
       />
     </Providers>
   );

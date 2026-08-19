@@ -8,6 +8,8 @@ import type {
   SearchResponse,
   SearchResult,
   SearchTask,
+  QueryImprovementRequest,
+  QueryImprovementResponse,
   SelectionRevision,
   SubmissionPreview,
   VqaAnswerRequest,
@@ -51,6 +53,21 @@ export async function searchMedia(
   }
 
   return parseSearchResponse(payload);
+}
+
+export async function improveQuery(
+  request: QueryImprovementRequest,
+  signal?: AbortSignal,
+): Promise<QueryImprovementResponse> {
+  const response = await fetch(`${API_BASE}/v1/query/improve`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(request),
+    signal,
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw apiError(payload, response.status, 'Không thể cải thiện query.');
+  return parseQueryImprovementResponse(payload);
 }
 
 export async function suggestVqaAnswer(
@@ -271,6 +288,19 @@ export function parseSearchResponse(value: unknown): SearchResponse {
   };
 
   return response;
+}
+
+export function parseQueryImprovementResponse(value: unknown): QueryImprovementResponse {
+  if (!isObject(value)) throw new Error('query improvement response phải là object');
+  const warning = value.warning === null ? null : requiredText(value.warning, 'warning');
+  return {
+    original_query: requiredText(value.original_query, 'original_query'),
+    improved_query: requiredText(value.improved_query, 'improved_query'),
+    changed: requiredBoolean(value.changed, 'changed'),
+    producer: requiredText(value.producer, 'producer'),
+    model_version: requiredText(value.model_version, 'model_version'),
+    warning,
+  };
 }
 
 export function parseVqaAnswerSuggestion(value: unknown): VqaAnswerSuggestion {
