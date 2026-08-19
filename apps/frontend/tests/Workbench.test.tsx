@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -146,6 +146,42 @@ function renderWorkbench({
 }
 
 describe('qualification frame-first workbench', () => {
+  it('keeps a separate workspace when switching between tasks', async () => {
+    const user = userEvent.setup();
+    renderWorkbench();
+
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.click(screen.getByRole('tab', { name: 'Hỏi & Đáp' }));
+    expect(screen.getByLabelText('Mô tả sự kiện')).toHaveValue('');
+
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một người đang đi bộ');
+    await user.type(screen.getByLabelText('Câu hỏi'), 'Người đó đang làm gì?');
+    await user.click(screen.getByRole('tab', { name: 'Textual KIS' }));
+    expect(screen.getByLabelText('Mô tả sự kiện')).toHaveValue('Một cửa hàng trên phố');
+
+    await user.click(screen.getByRole('tab', { name: 'Hỏi & Đáp' }));
+    expect(screen.getByLabelText('Mô tả sự kiện')).toHaveValue('Một người đang đi bộ');
+    expect(screen.getByLabelText('Câu hỏi')).toHaveValue('Người đó đang làm gì?');
+  });
+
+  it('shows successful queries in history and restores the selected workspace', async () => {
+    const user = userEvent.setup();
+    const { search } = renderWorkbench();
+
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+    await waitFor(() => expect(search).toHaveBeenCalled());
+
+    await user.click(screen.getByRole('button', { name: 'Lịch Sử' }));
+    const historyDialog = screen.getByRole('dialog', { name: 'Lịch sử query' });
+    expect(historyDialog).toBeInTheDocument();
+    expect(within(historyDialog).getByText('Một cửa hàng trên phố')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Khôi phục.*Một cửa hàng trên phố/ }));
+    expect(screen.getByLabelText('Mô tả sự kiện')).toHaveValue('Một cửa hàng trên phố');
+    expect(screen.getByText('video_01')).toBeInTheDocument();
+  });
+
   it('writes one improved English query into the primary input before retrieval', async () => {
     const user = userEvent.setup();
     const improveQuery = vi.fn(async (): Promise<QueryImprovementResponse> => ({
@@ -808,6 +844,7 @@ describe('qualification frame-first workbench', () => {
     expect(search).toHaveBeenCalledWith({
       query: 'Một cửa hàng trên phố',
       task: 'textual_kis',
+      session_id: expect.any(String),
       top_k: 20,
       retrieval: {
         display_k: 20,
@@ -854,6 +891,7 @@ describe('qualification frame-first workbench', () => {
     expect(search).toHaveBeenCalledWith({
       query: 'Một cửa hàng trên phố',
       task: 'textual_kis',
+      session_id: expect.any(String),
       top_k: 40,
       retrieval: {
         display_k: 40,

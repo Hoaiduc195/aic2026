@@ -64,6 +64,19 @@ const frameContextResponse = {
   ],
 };
 
+const studioResponse = {
+  video: playbackResponse,
+  frames: [{
+    video_id: 'video_01',
+    keyframe_no: 5,
+    original_frame_id: 385,
+    timestamp_ms: 12_800,
+    captions: [],
+    objects: [],
+  }],
+  asr_spans: [],
+};
+
 async function mockFrameFirstApis(page: Page) {
   const requests = {
     playback: 0,
@@ -96,6 +109,14 @@ async function mockFrameFirstApis(page: Page) {
     });
   });
 
+  await page.route('**/api/v1/videos/video_01/studio', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json; charset=utf-8',
+      body: JSON.stringify(studioResponse),
+    });
+  });
+
   await page.route('**/api/v1/media/videos/video_01', async (route) => {
     await route.fulfill({
       status: 200,
@@ -122,7 +143,7 @@ async function mockFrameFirstApis(page: Page) {
         query_id: 'query_0001',
         revision: 1,
         task: 'textual_kis',
-        answers: [{ video_id: 'video_01', frame_id: 351 }],
+        answers: [{ video_id: 'video_01', frame_id: 385 }],
         note: null,
       }),
     });
@@ -136,8 +157,8 @@ async function mockFrameFirstApis(page: Page) {
         query_id: 'query_0001',
         task: 'textual_kis',
         answer_count: 1,
-        answers: [{ video_id: 'video_01', frame_id: 351 }],
-        csv: 'video_id,frame_id\r\nvideo_01,351\r\n',
+        answers: [{ video_id: 'video_01', frame_id: 385 }],
+        csv: 'video_id,frame_id\r\nvideo_01,385\r\n',
         submittable: false,
         warnings: ['preview_only'],
       }),
@@ -180,21 +201,46 @@ test.describe('qualification frame-first workbench', () => {
 
     await page.getByRole('button', { name: 'Xem video' }).click();
     await expect(page.getByLabel('Video video_01')).toHaveAttribute('src', playbackResponse.playback_uri);
-    expect(requests.playback).toBe(1);
+    expect(requests.playback).toBe(0);
 
     await expect(page.getByRole('button', { name: 'Xem các frame cùng video' })).toHaveCount(0);
     expect(requests.frames).toBe(0);
 
+    await page.getByRole('button', { name: 'Đóng video studio' }).click();
     await page.getByRole('button', { name: 'Thêm vào đáp án' }).click();
-    await expect(page.getByText('video_01 · frame 351')).toHaveCount(0);
+    await expect(page.getByText('video_01 · frame 385')).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Đáp án (1)' }).click();
     await expect(page.getByRole('dialog', { name: 'Hàng đợi đáp án' })).toBeVisible();
-    await expect(page.getByText('video_01 · frame 351')).toBeVisible();
+    await expect(page.getByText('video_01 · frame 385')).toBeVisible();
 
     await page.getByRole('button', { name: 'Lưu đáp án' }).click();
     await expect(page.getByText('Đã lưu revision 1')).toBeVisible();
     await page.getByRole('button', { name: 'Tạo preview' }).click();
     await expect(page.getByText('Preview đã tạo cho 1 đáp án')).toBeVisible();
+  });
+
+  test('preserves task workspaces and restores a successful query from history', async ({ page }) => {
+    await mockFrameFirstApis(page);
+    await page.goto('/');
+
+    await page.getByLabel('Mô tả sự kiện').fill('Một cửa hàng trên phố');
+    await page.getByRole('tab', { name: 'Hỏi & Đáp' }).click();
+    await expect(page.getByLabel('Mô tả sự kiện')).toHaveValue('');
+
+    await page.getByLabel('Mô tả sự kiện').fill('Một người đang đi bộ');
+    await page.getByLabel('Câu hỏi').fill('Người đó đang làm gì?');
+    await page.getByRole('tab', { name: 'Textual KIS' }).click();
+    await expect(page.getByLabel('Mô tả sự kiện')).toHaveValue('Một cửa hàng trên phố');
+
+    await page.getByRole('button', { name: 'Tìm frame' }).click();
+    await page.getByRole('button', { name: 'Lịch Sử' }).click();
+    const history = page.getByRole('dialog', { name: 'Lịch sử query' });
+    await expect(history).toBeVisible();
+    await expect(history.getByText('Một cửa hàng trên phố')).toBeVisible();
+
+    await history.getByRole('button', { name: /Khôi phục.*Một cửa hàng trên phố/ }).click();
+    await expect(page.getByLabel('Mô tả sự kiện')).toHaveValue('Một cửa hàng trên phố');
+    await expect(page.getByRole('button', { name: 'Chọn frame video_01 · 385' })).toBeVisible();
   });
 });
