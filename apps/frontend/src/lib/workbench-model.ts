@@ -7,9 +7,12 @@ import type {
   SearchResult,
   SearchEvidence,
   SearchResponse,
+  StudioAsrSpan,
+  StudioFrame,
   TextualKisAnswer,
   TrakeAnswer,
 } from './contracts';
+import { activeAsrSpans, studioFrameThumbnailUri } from './video-studio-model';
 
 export interface NormalizedFrames {
   frames: FrameCandidate[];
@@ -172,6 +175,48 @@ export function toFrameCandidates(response: SearchResponse): NormalizedFrames {
   });
 
   return { frames, skipped: response.results.length - frames.length };
+}
+
+/**
+ * Replaces a retrieval result's sparse keyframe with the frame chosen in Studio.
+ * The result identity and ranking metadata stay stable so reorder/export keep working.
+ */
+export function applyStudioFrameToCandidate(
+  candidate: FrameCandidate,
+  frame: StudioFrame,
+  asrSpans: readonly StudioAsrSpan[],
+): FrameCandidate {
+  const asrEvidence = activeAsrSpans(asrSpans, frame.timestamp_ms).map((span) => ({
+    evidence_id: span.evidence_id,
+    type: 'asr' as const,
+    snippet: span.text,
+    producer: span.producer,
+    start_ms: span.start_ms,
+    end_ms: span.end_ms,
+  }));
+
+  return {
+    ...candidate,
+    keyframe_no: frame.keyframe_no ?? undefined,
+    original_frame_id: frame.original_frame_id,
+    timestamp_ms: frame.timestamp_ms,
+    thumbnail_uri: studioFrameThumbnailUri(frame),
+    evidence: [
+      ...frame.captions.map((caption) => ({
+        evidence_id: caption.evidence_id,
+        type: 'caption' as const,
+        snippet: caption.text,
+        producer: caption.producer,
+      })),
+      ...frame.objects.map((object) => ({
+        evidence_id: object.evidence_id,
+        type: 'object' as const,
+        snippet: object.label,
+        producer: object.producer,
+      })),
+      ...asrEvidence,
+    ],
+  };
 }
 
 export function groupEvidence(evidence: readonly SearchEvidence[], frameTimestampMs?: number): EvidenceGroups {

@@ -49,7 +49,7 @@ describe('VideoStudioModal', () => {
     expect(objectBox.querySelector('text')).toHaveAttribute('font-size', '0.045');
     expect(objectBox.querySelector('text')).toHaveAttribute('font-weight', '400');
 
-    await user.click(screen.getByRole('button', { name: 'Dùng keyframe 1' }));
+    await user.click(screen.getByRole('button', { name: 'Chọn frame đại diện (keyframe 1)' }));
     expect(onSelectFrame).toHaveBeenCalledWith(studio.frames[0]);
     expect(onClose).toHaveBeenCalledOnce();
   });
@@ -106,7 +106,7 @@ describe('VideoStudioModal', () => {
     expect(screen.getByText(/Annotation đang hiển thị lấy từ frame gần nhất.*50/)).toBeInTheDocument();
     expect(screen.getByTestId('studio-selected-frame-image')).toHaveAttribute('src', exactFrame.thumbnail_uri);
 
-    await user.click(screen.getByRole('button', { name: 'Dùng canonical frame 77' }));
+    await user.click(screen.getByRole('button', { name: 'Chọn frame đại diện (canonical frame 77)' }));
     expect(onSelectFrame).toHaveBeenCalledWith(exactFrame);
   });
 });

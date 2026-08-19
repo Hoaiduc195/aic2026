@@ -77,8 +77,8 @@ import {
   type WorkbenchHistoryEntry,
   type WorkbenchSnapshot,
 } from '../lib/workbench-history';
-import { activeAsrSpans, studioFrameThumbnailUri } from '../lib/video-studio-model';
 import {
+  applyStudioFrameToCandidate,
   buildRankedTextualSubmission,
   moveFrameToBoundary,
   reorderFrames,
@@ -668,36 +668,12 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
 
   function selectStudioFrame(frame: StudioFrame) {
     if (!selectedAnchor || !studioQuery.data) return;
-    const asrEvidence = activeAsrSpans(studioQuery.data.asr_spans, frame.timestamp_ms).map((span) => ({
-      evidence_id: span.evidence_id,
-      type: 'asr' as const,
-      snippet: span.text,
-      producer: span.producer,
-      start_ms: span.start_ms,
-      end_ms: span.end_ms,
-    }));
-    setActiveFrame({
-      ...selectedAnchor,
-      keyframe_no: frame.keyframe_no ?? undefined,
-      original_frame_id: frame.original_frame_id,
-      timestamp_ms: frame.timestamp_ms,
-      thumbnail_uri: studioFrameThumbnailUri(frame),
-      evidence: [
-        ...frame.captions.map((caption) => ({
-          evidence_id: caption.evidence_id,
-          type: 'caption' as const,
-          snippet: caption.text,
-          producer: caption.producer,
-        })),
-        ...frame.objects.map((object) => ({
-          evidence_id: object.evidence_id,
-          type: 'object' as const,
-          snippet: object.label,
-          producer: object.producer,
-        })),
-        ...asrEvidence,
-      ],
-    });
+    const representative = applyStudioFrameToCandidate(selectedAnchor, frame, studioQuery.data.asr_spans);
+    setActiveFrame(representative);
+    setSelectedAnchor(representative);
+    setRankedFrames((frames) => frames.map((candidate) => (
+      candidate.result_key === representative.result_key ? representative : candidate
+    )));
     setNotice(frame.is_exact_frame && frame.annotation_source_frame_id !== null && frame.annotation_source_frame_id !== frame.original_frame_id
       ? `Đã chọn canonical frame ${frame.original_frame_id}; annotation lấy từ frame gần nhất ${frame.annotation_source_frame_id}.`
       : `Đã chọn frame ${frame.original_frame_id} làm bằng chứng hiện tại.`);

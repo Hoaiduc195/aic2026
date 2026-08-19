@@ -374,7 +374,7 @@ describe('qualification frame-first workbench', () => {
     await user.click(screen.getByRole('button', { name: 'Thêm vào đáp án' }));
     await user.click(screen.getByRole('button', { name: 'Đáp án (1)' }));
     expect(screen.getByText('video_01 · frame 386')).toBeInTheDocument();
-    expect(loadFrame).toHaveBeenCalledWith('video_01', 386, expect.anything());
+    expect(loadFrame).toHaveBeenCalledWith('video_01', 386, undefined);
   });
 
   it('does not render visual embedding evidence in the frame inspector', async () => {
