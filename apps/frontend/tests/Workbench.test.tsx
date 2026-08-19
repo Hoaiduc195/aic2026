@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { Workbench } from '@/components/Workbench';
 import type {
+  CanonicalFrameResponse,
   QueryImprovementResponse,
   SearchResponse,
   SelectionRevision,
@@ -112,6 +113,17 @@ function renderWorkbench({
   searchResponse = response,
   search = vi.fn(async () => searchResponse),
   loadStudio = vi.fn(async () => studio),
+  loadFrame = vi.fn(async (): Promise<CanonicalFrameResponse> => ({
+    video_id: 'video_01',
+    keyframe_no: null,
+    original_frame_id: 386,
+    timestamp_ms: 12_833,
+    captions: [],
+    objects: [],
+    thumbnail_uri: '/api/v1/media/videos/video_01/frames/386/thumbnail',
+    is_exact_frame: true,
+    annotation_source_frame_id: 385,
+  })),
   saveSelection = vi.fn(async (): Promise<SelectionRevision> => ({
     selection_id: 'selection_01', query_id: 'query_0001', revision: 1, task: 'textual_kis',
     answers: [], note: null,
@@ -134,6 +146,7 @@ function renderWorkbench({
     <QueryClientProvider client={queryClient}>
       <Workbench
         search={search}
+        loadFrame={loadFrame}
         loadStudio={loadStudio}
         saveSelection={saveSelection}
         createPreview={createPreview}
@@ -320,6 +333,48 @@ describe('qualification frame-first workbench', () => {
     await user.click(screen.getByRole('button', { name: 'Xem video studio' }));
     expect(await screen.findByLabelText('Video video_01')).toHaveAttribute('src', playback.playback_uri);
     expect(loadStudio).toHaveBeenCalledWith('video_01', expect.anything());
+  });
+
+  it('persists an exact Studio frame as the representative result frame', async () => {
+    const user = userEvent.setup();
+    const loadFrame = vi.fn(async (_videoId: string, frameId: number): Promise<CanonicalFrameResponse> => ({
+      video_id: 'video_01',
+      keyframe_no: null,
+      original_frame_id: frameId,
+      timestamp_ms: 12_833,
+      captions: [],
+      objects: [],
+      thumbnail_uri: `/api/v1/media/videos/video_01/frames/${frameId}/thumbnail`,
+      is_exact_frame: true,
+      annotation_source_frame_id: 385,
+    }));
+    renderWorkbench({ loadFrame });
+
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+    await user.click(await screen.findByRole('button', { name: 'Chọn frame video_01 · 385' }));
+    await user.click(screen.getByRole('button', { name: 'Xem video studio' }));
+
+    const frameInput = await screen.findByLabelText('Frame ID trong video');
+    await user.clear(frameInput);
+    await user.type(frameInput, '386');
+    await user.click(screen.getByRole('button', { name: 'Tải exact frame' }));
+    expect(await screen.findByRole('heading', { name: 'Canonical frame 386' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Chọn frame đại diện (canonical frame 386)' }));
+
+    expect(screen.queryByRole('dialog', { name: 'Video studio video_01' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Frame 386' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Frame 386 của video_01' })).toHaveAttribute(
+      'src',
+      '/api/v1/media/videos/video_01/frames/386/thumbnail',
+    );
+    expect(screen.getByRole('button', { name: 'Chọn frame video_01 · 386' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Thêm vào đáp án' }));
+    await user.click(screen.getByRole('button', { name: 'Đáp án (1)' }));
+    expect(screen.getByText('video_01 · frame 386')).toBeInTheDocument();
+    expect(loadFrame).toHaveBeenCalledWith('video_01', 386, expect.anything());
   });
 
   it('does not render visual embedding evidence in the frame inspector', async () => {
@@ -975,7 +1030,7 @@ describe('qualification frame-first workbench', () => {
     await user.click(screen.getAllByRole('button', { name: 'Gán frame hiện tại' })[0]);
     await user.click(screen.getByRole('button', { name: 'Xem video studio' }));
     await user.click(await screen.findByRole('button', { name: 'Chọn keyframe 6 · source frame 411' }));
-    await user.click(screen.getByRole('button', { name: 'Dùng keyframe 6' }));
+    await user.click(screen.getByRole('button', { name: 'Chọn frame đại diện (keyframe 6)' }));
     await user.click(screen.getByRole('button', { name: 'Gán frame hiện tại' }));
     await user.click(screen.getByRole('button', { name: 'Thêm chuỗi vào đáp án' }));
 
