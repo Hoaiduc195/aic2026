@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -68,7 +68,7 @@ describe('VideoStudioModal', () => {
     expect(screen.getByRole('button', { name: 'Chọn keyframe 1 · source frame 50' })).toBeInTheDocument();
   });
 
-  it('loads an exact canonical frame and updates its annotations before selection', async () => {
+  it('uses the frame at the current video position without a manual frame ID', async () => {
     const user = userEvent.setup();
     const exactFrame: CanonicalFrameResponse = {
       video_id: 'video-1',
@@ -94,10 +94,12 @@ describe('VideoStudioModal', () => {
       />,
     );
 
-    const input = screen.getByLabelText('Frame ID trong video');
-    await user.clear(input);
-    await user.type(input, '77');
-    await user.click(screen.getByRole('button', { name: 'Tải exact frame' }));
+    const video = screen.getByLabelText('Video video-1');
+    Object.defineProperty(video, 'currentTime', { configurable: true, value: 3.08, writable: true });
+    fireEvent.timeUpdate(video);
+    expect(screen.queryByLabelText('Frame ID trong video')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Tải exact frame' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Chọn frame hiện tại' }));
 
     expect(loadExactFrame).toHaveBeenCalledWith(77);
     expect(await screen.findByText('Canonical frame 77')).toBeInTheDocument();
