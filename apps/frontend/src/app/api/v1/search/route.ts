@@ -10,6 +10,7 @@ import {
   type SearchRrfBranch,
   type VlmRerankConfig,
 } from '../../../../lib/contracts';
+import { MAX_NEAR_FRAME_WINDOW_MS } from '../../../../lib/retrieval-settings';
 import { attachMediaSession } from '../../../../lib/server-media-access';
 
 const SEARCH_TASKS = new Set<SearchRequest['task']>(['textual_kis', 'video_kis', 'avs', 'vqa', 'trake', 'kisc']);
@@ -80,7 +81,7 @@ function normalizeRetrieval(value: unknown): SearchRetrievalConfig | undefined {
   let nearFrameWindowMs: number | undefined;
   if (input.near_frame_window_ms !== undefined) {
     if (!Number.isSafeInteger(input.near_frame_window_ms)
-      || (input.near_frame_window_ms as number) < 0 || (input.near_frame_window_ms as number) > 10_000) {
+      || (input.near_frame_window_ms as number) < 0 || (input.near_frame_window_ms as number) > MAX_NEAR_FRAME_WINDOW_MS) {
       throw new Error('retrieval near_frame_window_ms is invalid');
     }
     nearFrameWindowMs = input.near_frame_window_ms as number;

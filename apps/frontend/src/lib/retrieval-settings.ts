@@ -2,6 +2,8 @@ import type { SearchRetrievalConfig } from './contracts';
 
 export interface RetrievalSettings extends SearchRetrievalConfig {}
 
+export const MAX_NEAR_FRAME_WINDOW_MS = 100_000;
+
 export const DEFAULT_RETRIEVAL_SETTINGS: RetrievalSettings = {
   display_k: 20,
   branch_k: 100,
@@ -63,8 +65,8 @@ export function validateRetrievalSettings(settings: RetrievalSettings): string |
     return 'Fusion candidate pool phải lớn hơn hoặc bằng số frame hiển thị.';
   }
   const nearFrameWindowMs = settings.near_frame_window_ms ?? 1000;
-  if (!Number.isSafeInteger(nearFrameWindowMs) || nearFrameWindowMs < 0 || nearFrameWindowMs > 10000) {
-    return 'Khoảng cách frame gần nhau phải nằm trong khoảng 0–10000 ms.';
+  if (!Number.isSafeInteger(nearFrameWindowMs) || nearFrameWindowMs < 0 || nearFrameWindowMs > MAX_NEAR_FRAME_WINDOW_MS) {
+    return 'Khoảng cách frame gần nhau phải nằm trong khoảng 0–100000 ms.';
   }
   const vlm = settings.vlm_rerank;
   if (vlm && (!Number.isSafeInteger(vlm.top_k) || vlm.top_k < 1 || vlm.top_k > 100)) {

@@ -4,7 +4,7 @@ import type { FormEvent } from 'react';
 
 import type { QualificationEventInput, QualificationTask } from '../../lib/contracts';
 import type { RrfSettings, RrfWeightKey } from '../../lib/rrf-settings';
-import type { RetrievalSettings } from '../../lib/retrieval-settings';
+import { MAX_NEAR_FRAME_WINDOW_MS, type RetrievalSettings } from '../../lib/retrieval-settings';
 
 interface Props {
   task: QualificationTask;
@@ -356,7 +356,7 @@ export function SearchSidebar({
             aria-label="Lọc frame gần nhau (ms)"
             type="number"
             min="0"
-            max="10000"
+            max={MAX_NEAR_FRAME_WINDOW_MS}
             step="100"
             value={displayNumberInput(retrievalSettings.near_frame_window_ms ?? 1000)}
             onChange={(event) => onRetrievalChange({
