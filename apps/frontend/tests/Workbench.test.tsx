@@ -774,7 +774,7 @@ describe('qualification frame-first workbench', () => {
     await user.type(screen.getByLabelText('Số frame batch VQA'), '1');
     await user.click(screen.getByRole('button', { name: 'LLM trả lời Top-K' }));
 
-    expect(await screen.findByText('Đã xử lý 1 frame: 1 answered.')).toBeInTheDocument();
+    expect(await screen.findByText('Đã xử lý 1 frame: 1 answered; chưa thêm vào hàng đợi.')).toBeInTheDocument();
     expect(suggestVqaAnswer).toHaveBeenCalledWith(expect.objectContaining({
       query_id: 'query_0001',
       question: 'Người phụ nữ đang cầm gì?',

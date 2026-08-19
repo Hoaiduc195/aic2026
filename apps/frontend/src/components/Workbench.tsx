@@ -767,25 +767,11 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
         }),
       });
 
-      results.forEach((result) => {
-        if (result.status === 'skipped') return;
-        const key = queueKey(result.frame);
-        setVqaQueue((current) => {
-          const withFrame = addVqaFrame(current, result.frame);
-          if (result.status === 'answered' && result.answer) {
-            return updateVqaQueueItem(withFrame, key, { status: 'answered', answer: result.answer });
-          }
-          const reason = result.error
-            ?? (result.status === 'needs_more_evidence' ? 'LLM cần thêm bằng chứng.' : 'LLM không đưa ra answer an toàn.');
-          return updateVqaQueueItem(withFrame, key, { status: 'error', error: reason });
-        });
-      });
-
       const answeredCount = results.filter((item) => item.status === 'answered').length;
       const failedCount = results.filter((item) => item.status === 'error' || item.status === 'needs_more_evidence' || item.status === 'abstained').length;
       setNotice(controller.signal.aborted
-        ? `Đã dừng batch VQA sau ${results.length}/${Math.min(limit, rankedFrames.length)} frame.`
-        : `Đã xử lý ${results.length} frame: ${answeredCount} answered${failedCount ? `, ${failedCount} cần kiểm tra` : ''}.`);
+        ? `Đã dừng batch VQA sau ${results.length}/${Math.min(limit, rankedFrames.length)} frame; chưa thêm vào hàng đợi.`
+        : `Đã xử lý ${results.length} frame: ${answeredCount} answered${failedCount ? `, ${failedCount} cần kiểm tra` : ''}; chưa thêm vào hàng đợi.`);
     } catch (reason) {
       if (!controller.signal.aborted) setError(readError(reason, 'Batch VQA thất bại.'));
     } finally {
