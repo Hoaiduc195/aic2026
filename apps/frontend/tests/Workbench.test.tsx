@@ -861,6 +861,22 @@ describe('qualification frame-first workbench', () => {
     expect(screen.queryByText('Đáp án (1)')).not.toBeInTheDocument();
   });
 
+  it('keeps the VQA suggestion and add-answer actions in a spaced action group', async () => {
+    const user = userEvent.setup();
+    renderWorkbench({ searchResponse: vqaResponse });
+
+    await user.click(screen.getByRole('tab', { name: 'Hỏi & Đáp' }));
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.type(screen.getByLabelText('Câu hỏi'), 'Người phụ nữ đang cầm gì?');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+    await user.click(await screen.findByRole('button', { name: 'Chọn frame video_01 · 385' }));
+
+    const suggestionButton = screen.getByRole('button', { name: 'Gợi ý answer bằng LLM' });
+    const addAnswerButton = screen.getByRole('button', { name: 'Thêm vào đáp án' });
+    expect(suggestionButton.parentElement).toHaveClass('answer-builder-actions');
+    expect(addAnswerButton.parentElement).toBe(suggestionButton.parentElement);
+  });
+
   it('shows a readable error when single-frame VQA fails', async () => {
     const user = userEvent.setup();
     const suggestVqaAnswer = vi.fn(async () => {
@@ -1011,6 +1027,19 @@ describe('qualification frame-first workbench', () => {
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: 'Cài đặt LLM' })).not.toBeInTheDocument();
     expect(settingsTrigger).toHaveFocus();
+  });
+
+  it('groups VLM settings into a dedicated spaced section', async () => {
+    const user = userEvent.setup();
+    renderWorkbench();
+
+    await user.click(screen.getByRole('button', { name: 'Cài đặt' }));
+
+    const vlmSection = document.querySelector('[aria-labelledby="vlm-settings-title"]');
+    expect(vlmSection).toHaveClass('settings-section');
+    expect(vlmSection?.querySelector('.settings-section-heading')).toContainElement(
+      screen.getByRole('heading', { name: 'Cài đặt VLM' }),
+    );
   });
 
   it('builds an ordered TRAKE sequence from the selected frame and video studio', async () => {
