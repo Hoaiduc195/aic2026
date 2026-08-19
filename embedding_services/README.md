@@ -8,7 +8,21 @@ This service exposes text embeddings from the same CLIPA checkpoint used for the
 - endpoint: `POST /embed` with `{ "text": "..." }`
 - response: `{ "embedding": [ ...1024 numbers... ] }`
 
-The model weights are downloaded on first startup and should be kept in a Docker volume. The API token is supplied at runtime and is never copied into the image:
+The model weights are downloaded on first startup and should be kept in a Docker volume. The API token is supplied at runtime and is never copied into the image.
+
+For the normal setup, use the included Compose file. It creates the container with the fixed host mapping `8001:8001`, so starting the `aic-embedding` container from Docker Desktop keeps the same port:
+
+```powershell
+docker compose -f embedding_services/docker-compose.yml up -d --build
+```
+
+After the first creation, use **Start** for `aic-embedding` in Docker Desktop, or run:
+
+```powershell
+docker compose -f embedding_services/docker-compose.yml start
+```
+
+The direct Docker equivalent is:
 
 ```powershell
 docker build -f embedding_services/Dockerfile -t aic-embedding:local .
