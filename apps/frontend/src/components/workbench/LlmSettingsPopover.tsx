@@ -192,9 +192,11 @@ export function LlmSettingsPopover({
       </div>
 
       <div className="settings-divider" />
-      <div aria-labelledby="vlm-settings-title">
-        <p className="section-kicker">MoreVQA · trả lời dựa trên ảnh keyframe</p>
-        <h3 id="vlm-settings-title">Cài đặt VLM</h3>
+      <section className="settings-section" aria-labelledby="vlm-settings-title">
+        <div className="settings-section-heading">
+          <p className="section-kicker">MoreVQA · trả lời dựa trên ảnh keyframe</p>
+          <h3 id="vlm-settings-title">Cài đặt VLM</h3>
+        </div>
         <label className="settings-toggle">
           <input
             type="checkbox"
@@ -280,12 +282,14 @@ export function LlmSettingsPopover({
           <button type="button" className="quiet-button" onClick={onVlmReset}>Khôi phục VLM mặc định</button>
           <button type="button" className="primary-button" onClick={onVlmSave}>Lưu cài đặt VLM</button>
         </div>
-      </div>
+      </section>
 
       <div className="settings-divider" />
-      <div aria-labelledby="embedding-settings-title">
-        <p className="section-kicker">Truy hồi CLIPA độc lập với branch context</p>
-        <h3 id="embedding-settings-title">Cài đặt embedding</h3>
+      <section className="settings-section" aria-labelledby="embedding-settings-title">
+        <div className="settings-section-heading">
+          <p className="section-kicker">Truy hồi CLIPA độc lập với branch context</p>
+          <h3 id="embedding-settings-title">Cài đặt embedding</h3>
+        </div>
         <label className="settings-toggle">
           <input
             type="checkbox"
@@ -336,7 +340,7 @@ export function LlmSettingsPopover({
           <button type="button" className="quiet-button" onClick={onEmbeddingReset}>Khôi phục embedding mặc định</button>
           <button type="button" className="primary-button" onClick={onEmbeddingSave}>Lưu cài đặt embedding</button>
         </div>
-      </div>
+      </section>
       </section>
     </div>
   );

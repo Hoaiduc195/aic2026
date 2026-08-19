@@ -171,17 +171,21 @@ export function FrameInspector({
             />
           </label>
         )}
-        {task === 'qa' && (
-          <button
-            type="button"
-            className="secondary-button full-width"
-            disabled={!onSuggestVqaAnswer || vqaAnswerLoading}
-            onClick={() => onSuggestVqaAnswer?.()}
-          >
-            {vqaAnswerLoading ? 'Đang hỏi LLM…' : 'Gợi ý answer bằng LLM'}
-          </button>
-        )}
-        {task === 'trake' ? (
+        {task === 'qa' ? (
+          <div className="answer-builder-actions">
+            <button
+              type="button"
+              className="secondary-button full-width"
+              disabled={!onSuggestVqaAnswer || vqaAnswerLoading}
+              onClick={() => onSuggestVqaAnswer?.()}
+            >
+              {vqaAnswerLoading ? 'Đang hỏi LLM…' : 'Gợi ý answer bằng LLM'}
+            </button>
+            <button type="button" className="primary-button full-width" onClick={onAddAnswer}>
+              Thêm vào đáp án
+            </button>
+          </div>
+        ) : task === 'trake' ? (
           <div className="event-assignments">
             {events.map((event, index) => (
               <div key={event.event_id}>

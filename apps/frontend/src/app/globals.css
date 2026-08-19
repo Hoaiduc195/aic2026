@@ -403,6 +403,26 @@ textarea:focus-visible,
   gap: 8px;
 }
 
+.settings-section {
+  display: grid;
+  gap: 14px;
+}
+
+.settings-section-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-section-heading h3,
+.settings-section-heading .section-kicker {
+  margin: 0;
+}
+
+.settings-section-heading h3 {
+  font-size: 15px;
+  letter-spacing: -0.015em;
+}
+
 .settings-actions {
   display: flex;
   justify-content: flex-end;
@@ -1212,6 +1232,11 @@ textarea:focus-visible,
 
 .answer-builder .input-field {
   margin-bottom: 10px;
+}
+
+.answer-builder-actions {
+  display: grid;
+  gap: 10px;
 }
 
 .event-assignments {
