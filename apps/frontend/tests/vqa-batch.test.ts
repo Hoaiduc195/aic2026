@@ -36,6 +36,28 @@ function answered(frameIndex: number): VqaAnswerSuggestion {
 }
 
 describe('VQA batch runner', () => {
+  it('runs requests concurrently within the configured worker limit and preserves frame order', async () => {
+    let activeRequests = 0;
+    let maxActiveRequests = 0;
+    const answer = vi.fn(async (candidate: FrameCandidate) => {
+      activeRequests += 1;
+      maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
+      await new Promise((resolve) => setTimeout(resolve, candidate.original_frame_id === 1 ? 10 : 0));
+      activeRequests -= 1;
+      return answered(candidate.original_frame_id);
+    });
+
+    const result = await runVqaBatch({
+      frames: [frame(1), frame(2), frame(3), frame(4)],
+      limit: 4,
+      concurrency: 2,
+      answer,
+    });
+
+    expect(maxActiveRequests).toBe(2);
+    expect(result.map((item) => item.frame.original_frame_id)).toEqual([1, 2, 3, 4]);
+  });
+
   it('uses only the top K frames in the supplied order', async () => {
     const answer = vi.fn(async (candidate: FrameCandidate) => answered(candidate.original_frame_id));
 
