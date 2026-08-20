@@ -102,6 +102,21 @@ interface OpenAIChatResponse {
 }
 
 const JSON_MODE_FALLBACK_STATUSES = new Set([400, 404, 422, 501]);
+const LLM_MAX_RETRIES = 5;
+const LLM_RETRY_BASE_DELAY_MS = 250;
+
+function isRetryableStatus(status: number): boolean {
+  if (JSON_MODE_FALLBACK_STATUSES.has(status)) return false;
+  return status === 408 || status === 425 || status === 429 || (status >= 500 && status <= 599);
+}
+
+function retryDelayMs(retryCount: number): number {
+  return LLM_RETRY_BASE_DELAY_MS * (2 ** Math.min(retryCount, 4));
+}
+
+function waitForRetry(retryCount: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, retryDelayMs(retryCount)));
+}
 
 function contentText(value: unknown): string | undefined {
   if (typeof value === 'string' && value.trim()) return value;
@@ -138,9 +153,9 @@ export class OpenAICompatibleLanguageModel implements LanguageModel {
     readonly prompt: string;
     readonly imageDataUrl?: string;
   }): Promise<string> {
-    let response = await this.requestCompletion(input, true);
+    let response = await this.requestCompletionWithRetry(input, true);
     if (!response.ok && JSON_MODE_FALLBACK_STATUSES.has(response.status)) {
-      response = await this.requestCompletion(input, false);
+      response = await this.requestCompletionWithRetry(input, false);
     }
 
     if (!response.ok) throw new Error(`language model returned HTTP ${response.status}`);
@@ -148,6 +163,27 @@ export class OpenAICompatibleLanguageModel implements LanguageModel {
     const text = contentText(payload.choices?.[0]?.message?.content);
     if (!text) throw new Error('language model response has no content');
     return text;
+  }
+
+  private async requestCompletionWithRetry(
+    input: {
+      readonly system: string;
+      readonly prompt: string;
+      readonly imageDataUrl?: string;
+    },
+    includeJsonMode: boolean,
+  ): Promise<Response> {
+    let retryCount = 0;
+    while (true) {
+      try {
+        const response = await this.requestCompletion(input, includeJsonMode);
+        if (!isRetryableStatus(response.status) || retryCount >= LLM_MAX_RETRIES) return response;
+      } catch (error) {
+        if (retryCount >= LLM_MAX_RETRIES) throw error;
+      }
+      await waitForRetry(retryCount);
+      retryCount += 1;
+    }
   }
 
   private requestCompletion(

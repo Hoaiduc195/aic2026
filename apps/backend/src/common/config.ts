@@ -140,7 +140,7 @@ export function loadConfig(): BackendConfig {
     vlmBaseUrl,
     vlmApiKey: optionalEnv('VLM_API_KEY') ?? optionalEnv('LLM_API_KEY'),
     vlmModel: vlmModel ?? (vlmEnabled ? 'Qwen/Qwen2.5-VL-7B-Instruct' : undefined),
-    vlmTimeoutMs: positiveInteger(process.env.VLM_TIMEOUT_MS, 4_000),
+    vlmTimeoutMs: positiveInteger(process.env.VLM_TIMEOUT_MS, 15_000),
     vlmTopK: positiveInteger(process.env.VLM_TOP_K, 15),
     vlmWeight: boundedNumber(process.env.VLM_WEIGHT, 0.6, 0, 1),
     vlmConcurrency: positiveInteger(process.env.VLM_CONCURRENCY, 5),

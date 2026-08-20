@@ -8,6 +8,7 @@ import {
 } from '../src/compute/model-ports';
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -83,6 +84,47 @@ describe('query embedding providers', () => {
       response_format: { type: 'json_object' },
     });
     expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).not.toHaveProperty('response_format');
+  });
+
+  it('retries transient LLM failures before returning a response', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(AbortSignal, 'timeout').mockReturnValue(new AbortController().signal);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'busy' }), { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [{ message: { content: 'recovered response' } }],
+      }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = new OpenAICompatibleLanguageModel({ baseUrl: 'https://llm.test/v1', model: 'aic-qa' });
+
+    const result = expect(provider.complete({ system: 's', prompt: 'p' })).resolves.toBe('recovered response');
+    await vi.runAllTimersAsync();
+
+    await result;
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops after five retries for a persistent transient failure', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(AbortSignal, 'timeout').mockReturnValue(new AbortController().signal);
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: 'busy' }), { status: 503 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = new OpenAICompatibleLanguageModel({ baseUrl: 'https://llm.test/v1', model: 'aic-qa' });
+
+    const result = expect(provider.complete({ system: 's', prompt: 'p' })).rejects.toThrow('HTTP 503');
+    await vi.runAllTimersAsync();
+
+    await result;
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+  });
+
+  it('does not retry non-transient client errors', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = new OpenAICompatibleLanguageModel({ baseUrl: 'https://llm.test/v1', model: 'aic-qa' });
+
+    await expect(provider.complete({ system: 's', prompt: 'p' })).rejects.toThrow('HTTP 401');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('supports OpenAI content blocks and rejects malformed responses', async () => {

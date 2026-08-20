@@ -93,7 +93,7 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
     this.endpoint = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
     this.modelName = options.model.trim();
     this.apiKey = options.apiKey?.trim() || undefined;
-    this.timeoutMs = options.timeoutMs ?? 4_000;
+    this.timeoutMs = options.timeoutMs ?? 15_000;
     this.maxTokens = options.maxTokens ?? 256;
     this.temperature = options.temperature ?? 0;
   }

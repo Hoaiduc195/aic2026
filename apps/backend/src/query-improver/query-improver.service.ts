@@ -18,6 +18,8 @@ export interface QueryImprovementResponse {
 interface QueryImprovementModelOutput {
   readonly improved_query?: unknown;
   readonly improved_question?: unknown;
+  readonly query?: unknown;
+  readonly question?: unknown;
 }
 
 const MAX_QUERY_LENGTH = 2000;
@@ -81,6 +83,41 @@ function plainTextImprovedQuery(
   return candidate;
 }
 
+interface VqaPlainTextOutput {
+  readonly improvedQuery: string;
+  readonly improvedQuestion: string;
+}
+
+type VqaOutputField = 'improvedQuery' | 'improvedQuestion';
+
+function vqaOutputField(line: string): { readonly field: VqaOutputField; readonly value: string } | null {
+  const label = line.match(/^\s*(?:\*\*\s*)?(?:improved\s+)?(query|description|truy\s*vấn|question|câu\s*hỏi)(?:\s*\*\*)?\s*[:\-]?\s*(.*)$/i);
+  if (!label) return null;
+  const field = /^(query|description|truy\s*vấn)$/i.test(label[1])
+    ? 'improvedQuery'
+    : 'improvedQuestion';
+  return { field, value: label[2].trim() };
+}
+
+function parseVqaPlainTextOutput(value: string): VqaPlainTextOutput | null {
+  const values: Partial<Record<VqaOutputField, string[]>> = {};
+  let currentField: VqaOutputField | null = null;
+
+  for (const line of stripCodeFence(value).split(/\r?\n/)) {
+    const labeled = vqaOutputField(line);
+    if (labeled) {
+      currentField = labeled.field;
+      values[currentField] = labeled.value ? [labeled.value] : [];
+    } else if (currentField && line.trim()) {
+      values[currentField] = [...(values[currentField] ?? []), line.trim()];
+    }
+  }
+
+  const improvedQuery = values.improvedQuery?.join('\n').trim();
+  const improvedQuestion = values.improvedQuestion?.join('\n').trim();
+  return improvedQuery && improvedQuestion ? { improvedQuery, improvedQuestion } : null;
+}
+
 function normalizeTrakeQuery(original: string, improved: string): string | null {
   const originalParts = parseTrakeQuery(original);
   const improvedParts = parseTrakeQuery(improved);
@@ -98,7 +135,7 @@ function systemPrompt(task: QueryImprovementRequest['task']): string {
     ? 'For TRAKE, preserve the overall query before the numbered lines, then preserve the number and order of event lines. Return one improved English overall query first and one improved English event per numbered line. If JSON mode is unavailable, return exactly that structured text without markdown or commentary.'
     : 'Return one improved query, not a list of alternatives.';
   const outputInstruction = task === 'vqa'
-    ? 'For VQA, improve the event query and the question independently. Return JSON only with exactly two fields: {"improved_query":"...","improved_question":"..."}.'
+    ? 'For VQA, improve the event query and the question independently. Prefer JSON with exactly two fields: {"improved_query":"...","improved_question":"..."}. If JSON mode is unavailable, return exactly two labeled lines: Improved query: ... and Improved question: ... . Do not add commentary.'
     : 'Prefer JSON with exactly one field: {"improved_query":"..."}. If JSON mode is unavailable, return only the improved query text in the required structure, without JSON or commentary.';
   return [
     'You are a video retrieval query improver.',
@@ -165,11 +202,13 @@ export class QueryImproverService {
     }
 
     const parsed = parseModelOutput(rawOutput);
+    const plainVqaOutput = request.task === 'vqa' ? parseVqaPlainTextOutput(rawOutput) : null;
     const rawImprovedValue = typeof parsed?.improved_query === 'string'
       ? parsed.improved_query
-      : request.task === 'vqa'
-        ? null
-        : plainTextImprovedQuery(rawOutput, request.task);
+      : request.task === 'vqa' && typeof parsed?.query === 'string'
+        ? parsed.query
+        : plainVqaOutput?.improvedQuery
+          ?? (request.task === 'vqa' ? null : plainTextImprovedQuery(rawOutput, request.task));
     if (rawImprovedValue === null) {
       return fallback(request, model.modelName, 'query_improver_invalid_output');
     }
@@ -181,7 +220,11 @@ export class QueryImproverService {
 
     let improvedQuestion: string | undefined;
     if (request.task === 'vqa') {
-      const rawImprovedQuestionValue = parsed?.improved_question;
+      const rawImprovedQuestionValue = typeof parsed?.improved_question === 'string'
+        ? parsed.improved_question
+        : typeof parsed?.question === 'string'
+          ? parsed.question
+          : plainVqaOutput?.improvedQuestion;
       if (!request.question || typeof rawImprovedQuestionValue !== 'string') {
         return fallback(request, model.modelName, 'query_improver_invalid_output');
       }

@@ -14,6 +14,19 @@ afterEach(() => {
 });
 
 describe('frontend MoreVQA settings', () => {
+  it('uses a 15-second timeout by default', () => {
+    expect(DEFAULT_VLM_SETTINGS.timeout_ms).toBe(15_000);
+  });
+
+  it('migrates the previous 4-second default for existing saved settings', () => {
+    localStorage.setItem('aic.vlm.settings', JSON.stringify({
+      ...DEFAULT_VLM_SETTINGS,
+      timeout_ms: 4_000,
+    }));
+
+    expect(loadVlmSettings().timeout_ms).toBe(15_000);
+  });
+
   it('persists the VLM API key and restores it for VQA requests', () => {
     const settings: VlmSettings = {
       ...DEFAULT_VLM_SETTINGS,

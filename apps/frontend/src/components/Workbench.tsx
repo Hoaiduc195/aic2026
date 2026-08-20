@@ -146,7 +146,7 @@ function queryImproverWarningMessage(warning: string | null): string {
     case 'query_improver_failed':
       return 'LLM Query Improver không phản hồi. Hãy kiểm tra endpoint, API key và trạng thái model.';
     case 'query_improver_invalid_output':
-      return 'LLM Query Improver trả về định dạng không hợp lệ. Hãy kiểm tra model có hỗ trợ JSON.';
+      return 'LLM Query Improver không trả về kết quả theo định dạng có thể dùng được. Vui lòng thử lại.';
     default:
       return 'Query Improver không tạo được bản cải thiện; các ô nhập vẫn giữ nguyên.';
   }

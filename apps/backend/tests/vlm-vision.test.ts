@@ -47,6 +47,23 @@ function config(overrides: Partial<BackendConfig> = {}): BackendConfig {
 }
 
 describe('OpenAI-compatible vision model', () => {
+  it('uses a 15-second timeout when no timeout is configured', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({
+        answer_status: 'answered', answer: 'một cái chai', normalized_answer: 'một cái chai',
+        confidence: { level: 'high', score: 0.9 },
+      }) } }],
+    }), { status: 200 })));
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(new AbortController().signal);
+
+    await new OpenAICompatibleVisionClient({
+      baseUrl: 'https://vision.test/v1',
+      model: 'vision-v1',
+    }).answerVisualQuestion({ question: 'Có gì trong ảnh?', imageUrl: 'https://signed.test/frame.jpg' });
+
+    expect(timeoutSpy).toHaveBeenCalledWith(15_000);
+  });
+
   it('sends text and image_url content with bearer authentication', async () => {
     vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => new Response(JSON.stringify({
       choices: [{ message: { content: JSON.stringify({

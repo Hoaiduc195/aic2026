@@ -103,6 +103,51 @@ describe('QueryImproverService', () => {
     }));
   });
 
+  it('accepts a labeled VQA response when the provider ignores JSON mode', async () => {
+    const languageModel = model([
+      'Improved query: A shop on a street.',
+      'Improved question: What is the woman holding?',
+    ].join('\n'));
+    const service = new QueryImproverService(languageModel);
+
+    const result = await service.improve({
+      query: 'Một cửa hàng trên phố',
+      question: 'Người phụ nữ đang cầm gì?',
+      task: 'vqa',
+    });
+
+    expect(result).toMatchObject({
+      improved_query: 'A shop on a street.',
+      improved_question: 'What is the woman holding?',
+      changed: true,
+      warning: null,
+    });
+    expect(languageModel.complete).toHaveBeenCalledWith(expect.objectContaining({
+      system: expect.stringContaining('Improved question:'),
+    }));
+  });
+
+  it('accepts common query and question JSON aliases for VQA', async () => {
+    const languageModel = model(JSON.stringify({
+      query: 'A shop on a street.',
+      question: 'What is the woman holding?',
+    }));
+    const service = new QueryImproverService(languageModel);
+
+    const result = await service.improve({
+      query: 'Một cửa hàng trên phố',
+      question: 'Người phụ nữ đang cầm gì?',
+      task: 'vqa',
+    });
+
+    expect(result).toMatchObject({
+      improved_query: 'A shop on a street.',
+      improved_question: 'What is the woman holding?',
+      changed: true,
+      warning: null,
+    });
+  });
+
   it('falls back to the original query when the model is unavailable', async () => {
     const languageModel: LanguageModel = {
       isConfigured: false,
