@@ -59,6 +59,15 @@ export function aggregateBranchCandidates(
         end_ms: Math.max(ends.length > 0 ? Math.max(...ends) : startMs + 1, startMs + 1),
         evidence_ids: [...new Set(hits.flatMap((hit) => hit.evidence_ids))],
         matched_terms: [...new Set(hits.flatMap((hit) => hit.matched_terms ?? []))],
+        variant_scores: hits.reduce((acc, hit) => {
+          if (hit.variant_scores) {
+            for (const [vId, vScore] of Object.entries(hit.variant_scores)) {
+              const vIdx = Number(vId);
+              acc[vIdx] = Math.max(acc[vIdx] ?? 0, vScore);
+            }
+          }
+          return acc;
+        }, {} as Record<number, number>),
         occurrence_count: hits.length,
       };
     })
@@ -85,6 +94,7 @@ export function fuseBranchResults(
     score: number;
     evidence_ids: Set<string>;
     matched_modalities: Set<string>;
+    variant_scores: Record<number, number>;
     fusion_trace: FusionTraceEntry[];
   }>();
   const rrfK = Number.isFinite(plan.rrf_k) ? plan.rrf_k : DEFAULT_RRF_K;
@@ -108,6 +118,7 @@ export function fuseBranchResults(
         score: 0,
         evidence_ids: new Set<string>(),
         matched_modalities: new Set<string>(),
+        variant_scores: {},
         fusion_trace: [],
       };
       current.video_object_key ??= candidate.video_object_key;
@@ -119,6 +130,15 @@ export function fuseBranchResults(
       current.end_ms = Math.max(current.end_ms, candidate.end_ms ?? current.end_ms);
       candidate.evidence_ids.forEach((id) => current.evidence_ids.add(id));
       current.matched_modalities.add(modalityForBranch(branchResult.branch));
+      
+      if (candidate.variant_scores) {
+        for (const [vId, vScore] of Object.entries(candidate.variant_scores)) {
+          const vIdx = Number(vId);
+          // RRF contribution per variant
+          current.variant_scores[vIdx] = (current.variant_scores[vIdx] ?? 0) + (weight / (rrfK + candidate.rank));
+        }
+      }
+
       current.fusion_trace.push({
         branch: branchResult.branch,
         channel_rank: candidate.rank,

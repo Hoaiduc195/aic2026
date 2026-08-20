@@ -9,7 +9,7 @@ import { VqaExecutor } from '../src/tasks/vqa/vqa.executor';
 
 const input = {
   request: { query: 'q', task: 'textual_kis' },
-  plan: { query_id: 'q', display_k: 1, index_version: 'v1' },
+  plan: { query_id: 'q', display_k: 1, index_version: 'v1', query_variants: ['q'] },
   branchResults: [], candidates: [], elapsedMs: 1, config: loadConfig(),
 } as unknown as TaskExecutorInput;
 
@@ -23,12 +23,12 @@ describe('task executor registry', () => {
     expect(registry.names()).toEqual([
       'textual-kis-retrieval-v1',
       'vqa-retrieval-manual-ready-v1',
-      'trake-retrieval-temporal-ready-v1',
+      'trake-retrieval-temporal-viterbi-v1',
     ]);
     expect(registry.resolve('textual_kis')).toBe(textual);
     expect(() => registry.register(textual)).toThrow('already registered');
-    await expect(new TrakeExecutor().execute({ ...input, request: { ...input.request, task: 'trake' } }))
-      .resolves.toMatchObject({ task: 'trake', warnings: [expect.stringContaining('temporal_aligner')] });
+    await expect(new TrakeExecutor().execute({ ...input, request: { ...input.request, task: 'trake' }, candidates: [] }))
+      .resolves.toMatchObject({ task: 'trake', warnings: [] });
   });
 
   it('rejects missing task executors', () => {

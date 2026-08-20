@@ -122,6 +122,7 @@ export interface BranchCandidate {
   readonly preview_uri?: string;
   readonly evidence_ids: string[];
   readonly matched_terms?: string[];
+  readonly variant_scores?: Readonly<Record<number, number>>;
 }
 
 export interface BranchDiagnostics {
@@ -154,6 +155,7 @@ export interface FusionTraceEntry {
   readonly occurrence_count: number;
   readonly evidence_ids: string[];
   readonly matched_terms: string[];
+  readonly variant_scores?: Readonly<Record<number, number>>;
   readonly vlm_score?: number;
   readonly vlm_reason?: string;
 }
@@ -170,6 +172,7 @@ export interface FusedCandidate {
   readonly score: number;
   readonly evidence_ids: string[];
   readonly matched_modalities: string[];
+  readonly variant_scores?: Readonly<Record<number, number>>;
   readonly fusion_trace: FusionTraceEntry[];
 }
 
