@@ -20,8 +20,8 @@ from pipelines.ingestion.import_refined import (
     local_file_uri,
     run_import,
     to_pgvector_literal,
-    validate_refined,
     validate_embedding_rows,
+    validate_refined,
 )
 
 
@@ -103,6 +103,9 @@ def test_validate_refined_includes_ocr_and_uses_frame_alias_identity(tmp_path: P
 
     assert summary["counts"]["ocr"] == 1
     assert bundle.primary_artifacts["ocr"].target_table == "text_evidence"
+    ocr_spec = next(spec for spec in bundle.feature_specs if spec.modality == "ocr")
+    assert ocr_spec.model_name == "PaddleOCR"
+    assert ocr_spec.model_version == "ocr-model"
 
 
 class _FakeCursor:
@@ -230,6 +233,32 @@ def _write_minimal_refined_dataset(root: Path) -> None:
             }
         ],
     )
+    _write_parquet(
+        root / "ocr.parquet",
+        [
+            {
+                "video_id": "L01_V001",
+                "keyframe_no": 1,
+                "text_content": "Bảng hiệu",
+                "normalized_text": "bảng hiệu",
+                "language": "vi",
+                "confidence": 0.95,
+                "detection_confidence": 0.9,
+                "bbox": [[1.0, 1.0], [2.0, 1.0], [2.0, 2.0], [1.0, 2.0]],
+                "image_width": 1280,
+                "image_height": 720,
+                "source_frame_path": "L01_V001/001.jpg",
+                "source_frame_id": 0,
+                "source_record_index": 0,
+                "source_detection_index": 0,
+                "source": "paddle",
+                "model_version": "ocr-model",
+                "pipeline_version": "ocr-pipeline",
+                "schema_version": "1.0.0",
+                "producer": "paddleocr",
+            }
+        ],
+    )
     object_row = {
         "object_row_id": "L01_V001:kf:1:det:0",
         "video_id": "L01_V001",
@@ -308,6 +337,7 @@ def test_full_import_flow_is_idempotent_and_preserves_legacy_ordinal(tmp_path: P
 
     assert result["status"] == "imported"
     assert result["counts"]["videos"] == 1
+    assert result["counts"]["ocr"] == 1
     assert result["counts"]["embeddings"] == 1
     assert result["embedding_upload_to_r2_required"] is False
     assert len(connection.statements) > 10
