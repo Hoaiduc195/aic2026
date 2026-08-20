@@ -54,6 +54,7 @@ export interface QueryImprovementRequest {
   query: string;
   task: QueryImproverTask;
   question?: string;
+  events?: readonly string[];
   llm?: VqaLlmConfig;
 }
 
@@ -62,6 +63,8 @@ export interface QueryImprovementResponse {
   improved_query: string;
   original_question?: string;
   improved_question?: string;
+  original_events?: readonly string[];
+  improved_events?: readonly string[];
   changed: boolean;
   producer: string;
   model_version: string;

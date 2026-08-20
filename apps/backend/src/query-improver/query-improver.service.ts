@@ -9,6 +9,8 @@ export interface QueryImprovementResponse {
   readonly improved_query: string;
   readonly original_question?: string;
   readonly improved_question?: string;
+  readonly original_events?: readonly string[];
+  readonly improved_events?: readonly string[];
   readonly changed: boolean;
   readonly producer: string;
   readonly model_version: string;
@@ -18,8 +20,10 @@ export interface QueryImprovementResponse {
 interface QueryImprovementModelOutput {
   readonly improved_query?: unknown;
   readonly improved_question?: unknown;
+  readonly improved_events?: unknown;
   readonly query?: unknown;
   readonly question?: unknown;
+  readonly events?: unknown;
 }
 
 const MAX_QUERY_LENGTH = 2000;
@@ -54,9 +58,66 @@ function normalizeQuery(value: string): string {
   return value.trim().replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ');
 }
 
+function stringList(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || !item.trim())) return null;
+  return value.map((item) => (item as string).trim());
+}
+
 interface TrakeQueryParts {
   readonly overview: string | null;
   readonly events: string[];
+}
+
+interface TrakeSeparateOutput {
+  readonly improvedQuery: string;
+  readonly improvedEvents: string[];
+}
+
+function parseTrakePlainTextOutput(value: string): TrakeSeparateOutput | null {
+  let currentField: 'query' | 'events' | null = null;
+  let queryLines: string[] = [];
+  const events: string[] = [];
+
+  for (const line of stripCodeFence(value).split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const queryLabel = trimmed.match(/^(?:\*\*\s*)?(?:improved\s+)?query\s*(?:\*\*)?\s*[:\-]\s*(.*)$/i);
+    if (queryLabel) {
+      currentField = 'query';
+      queryLines = queryLabel[1] ? [queryLabel[1].trim()] : [];
+      continue;
+    }
+    const eventsLabel = trimmed.match(/^(?:\*\*\s*)?(?:improved\s+)?events?\s*(?:\*\*)?\s*[:\-]?\s*(.*)$/i);
+    if (eventsLabel) {
+      currentField = 'events';
+      if (eventsLabel[1]) {
+        const inlineEvent = eventsLabel[1].replace(/^\d+[.)]\s*/, '').trim();
+        if (inlineEvent) events.push(inlineEvent);
+      }
+      continue;
+    }
+    if (currentField === 'query') {
+      queryLines = [...queryLines, trimmed];
+    } else if (currentField === 'events') {
+      const event = trimmed.replace(/^\d+[.)]\s*/, '').trim();
+      if (event) events.push(event);
+    }
+  }
+
+  const improvedQuery = queryLines.join('\n').trim();
+  return improvedQuery && events.length > 0 ? { improvedQuery, improvedEvents: events } : null;
+}
+
+function parseTrakeSeparateOutput(value: string): TrakeSeparateOutput | null {
+  const parsed = parseModelOutput(value);
+  const improvedQuery = typeof parsed?.improved_query === 'string'
+    ? parsed.improved_query
+    : typeof parsed?.query === 'string'
+      ? parsed.query
+      : null;
+  const improvedEvents = stringList(parsed?.improved_events ?? parsed?.events);
+  if (improvedQuery && improvedEvents) return { improvedQuery, improvedEvents };
+  return parseTrakePlainTextOutput(value);
 }
 
 function parseTrakeQuery(value: string): TrakeQueryParts | null {
@@ -130,13 +191,17 @@ function normalizeTrakeQuery(original: string, improved: string): string | null 
   ].join('\n');
 }
 
-function systemPrompt(task: QueryImprovementRequest['task']): string {
+function systemPrompt(task: QueryImprovementRequest['task'], hasSeparateTrakeEvents: boolean): string {
   const trakeInstruction = task === 'trake'
-    ? 'For TRAKE, preserve the overall query before the numbered lines, then preserve the number and order of event lines. Return one improved English overall query first and one improved English event per numbered line. If JSON mode is unavailable, return exactly that structured text without markdown or commentary.'
+    ? hasSeparateTrakeEvents
+      ? 'For TRAKE, improve the overall query and each event independently. Preserve the number and order of events. Prefer JSON with exactly two fields: {"improved_query":"...","improved_events":["...", "..."]}. If JSON mode is unavailable, return exactly the labels Improved query: ... and Improved events:, followed by one numbered event per input event. Do not add commentary.'
+      : 'For TRAKE, preserve the overall query before the numbered lines, then preserve the number and order of event lines. Return one improved English overall query first and one improved English event per numbered line. If JSON mode is unavailable, return exactly that structured text without markdown or commentary.'
     : 'Return one improved query, not a list of alternatives.';
   const outputInstruction = task === 'vqa'
     ? 'For VQA, improve the event query and the question independently. Prefer JSON with exactly two fields: {"improved_query":"...","improved_question":"..."}. If JSON mode is unavailable, return exactly two labeled lines: Improved query: ... and Improved question: ... . Do not add commentary.'
-    : 'Prefer JSON with exactly one field: {"improved_query":"..."}. If JSON mode is unavailable, return only the improved query text in the required structure, without JSON or commentary.';
+    : task === 'trake' && hasSeparateTrakeEvents
+      ? 'The improved_events array must contain exactly one item for each input event.'
+      : 'Prefer JSON with exactly one field: {"improved_query":"..."}. If JSON mode is unavailable, return only the improved query text in the required structure, without JSON or commentary.';
   return [
     'You are a video retrieval query improver.',
     'Read the Vietnamese query and rewrite it into precise, natural English for video keyframe retrieval.',
@@ -158,6 +223,10 @@ function fallback(
     ...(request.question === undefined ? {} : {
       original_question: request.question,
       improved_question: request.question,
+    }),
+    ...(request.events === undefined ? {} : {
+      original_events: [...request.events],
+      improved_events: [...request.events],
     }),
     changed: false,
     producer: 'query-improver-fallback',
@@ -189,16 +258,42 @@ export class QueryImproverService {
     let rawOutput: string;
     try {
       rawOutput = await model.complete({
-        system: systemPrompt(request.task),
+        system: systemPrompt(request.task, request.events !== undefined),
         prompt: [
           `Task: ${request.task}`,
           `Original Vietnamese query:\n${request.query}`,
           ...(request.task === 'vqa' ? [`Original Vietnamese question:\n${request.question ?? ''}`] : []),
+          ...(request.task === 'trake' && request.events !== undefined
+            ? [`Original Vietnamese events:\n${request.events.map((event, index) => `${index + 1}. ${event}`).join('\n')}`]
+            : []),
         ].join('\n'),
       });
     } catch (error) {
       this.logger.warn(`query improvement failed: ${error instanceof Error ? error.message : 'unknown error'}`);
       return fallback(request, model.modelName, 'query_improver_failed');
+    }
+
+    if (request.task === 'trake' && request.events !== undefined) {
+      const separateOutput = parseTrakeSeparateOutput(rawOutput);
+      const improvedQuery = separateOutput ? normalizeQuery(separateOutput.improvedQuery) : null;
+      const improvedEvents = separateOutput?.improvedEvents.map(normalizeQuery) ?? null;
+      if (!improvedQuery || !improvedEvents || improvedEvents.length !== request.events.length
+        || improvedQuery.length > MAX_QUERY_LENGTH
+        || improvedEvents.some((event) => !event || event.length > MAX_QUERY_LENGTH)) {
+        return fallback(request, model.modelName, 'query_improver_invalid_output');
+      }
+
+      return {
+        original_query: request.query,
+        improved_query: improvedQuery,
+        original_events: [...request.events],
+        improved_events: improvedEvents,
+        changed: improvedQuery !== request.query
+          || improvedEvents.some((event, index) => event !== request.events?.[index]),
+        producer: 'query-improver-openai-compatible',
+        model_version: model.modelName,
+        warning: null,
+      };
     }
 
     const parsed = parseModelOutput(rawOutput);

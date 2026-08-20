@@ -67,7 +67,7 @@ describe('query improver proxy route', () => {
 
   it('forwards the TRAKE overview and events as separate fields', async () => {
     process.env.BACKEND_API_URL = 'http://backend.internal';
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
       original_query: 'Một người đi qua cửa hàng rồi rời đi',
       improved_query: 'A person crosses a shop and then leaves',
       original_events: ['Người bước vào cửa hàng', 'Người rời khỏi cửa hàng'],

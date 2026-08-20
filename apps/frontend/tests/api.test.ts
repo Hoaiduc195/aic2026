@@ -7,6 +7,7 @@ import {
   getVideoPlayback,
   getVideoStudio,
   improveQuery,
+  parseQueryImprovementResponse,
   parseSearchResponse,
   parseVideoStudioResponse,
   saveSelection,
@@ -60,6 +61,23 @@ describe('search API boundary', () => {
 
     expect(result).toMatchObject({ improved_query: 'A person walking.', changed: true });
     expect(fetch).toHaveBeenCalledWith('/api/v1/query/improve', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('parses separate ordered TRAKE improvement fields', () => {
+    expect(parseQueryImprovementResponse({
+      original_query: 'Một người đi qua cửa hàng',
+      improved_query: 'A person crosses a shop',
+      original_events: ['Người bước vào'],
+      improved_events: ['The person enters'],
+      changed: true,
+      producer: 'query-improver-openai-compatible',
+      model_version: 'model-a',
+      warning: null,
+    })).toMatchObject({
+      improved_query: 'A person crosses a shop',
+      original_events: ['Người bước vào'],
+      improved_events: ['The person enters'],
+    });
   });
 
   it('accepts signed R2 preview URLs with query parameters', () => {

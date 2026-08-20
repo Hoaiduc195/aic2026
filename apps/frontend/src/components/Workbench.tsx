@@ -195,6 +195,24 @@ function buildWorkbenchQuery(
   };
 }
 
+function buildQueryImprovementRequest(
+  task: QualificationTask,
+  description: string,
+  question: string,
+  events: readonly QualificationEventInput[],
+): QueryImprovementRequest {
+  const cleanDescription = description.trim();
+  const cleanQuestion = question.trim();
+  const eventDescriptions = events.map((item) => item.description.trim());
+  const backendTask = task === 'qa' ? 'vqa' : task;
+  return {
+    query: cleanDescription,
+    task: backendTask,
+    ...(task === 'qa' ? { question: cleanQuestion } : {}),
+    ...(task === 'trake' ? { events: eventDescriptions } : {}),
+  };
+}
+
 const VQA_BATCH_CONCURRENCY = 4;
 
 type TaskWorkspaceSnapshot = WorkbenchSnapshot & { readonly history_id: string | null };
@@ -640,12 +658,11 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
     const cleanDescription = description.trim();
     const cleanQuestion = question.trim();
     if (task === 'trake'
-      ? !cleanDescription || eventDescriptions.length !== events.length
+      ? !cleanDescription || eventDescriptions.length !== events.length || eventDescriptions.some((item) => !item)
       : !cleanDescription) return;
     if (task === 'qa' && !cleanQuestion) return;
 
-    const { improvementQuery, backendTask } = buildWorkbenchQuery(task, description, question, events);
-    const queryToImprove = task === 'qa' ? cleanDescription : improvementQuery;
+    const improvementRequest = buildQueryImprovementRequest(task, description, question, events);
     setQueryImproverError(null);
     setNotice(null);
     try {
@@ -653,9 +670,7 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
         ? buildVqaLlmConfig(llmSettings)
         : undefined;
       const result = await queryImproverMutation.mutateAsync({
-        query: queryToImprove,
-        task: backendTask,
-        ...(task === 'qa' ? { question: cleanQuestion } : {}),
+        ...improvementRequest,
         ...(frontendLlm ? { llm: frontendLlm } : {}),
       });
       if (result.warning) {
@@ -673,16 +688,25 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
         setQuestion(result.improved_question);
         setNotice('Đã cải thiện query và câu hỏi tiếng Anh trực tiếp trong ô nhập.');
       } else if (task === 'trake') {
-        const improvedTrakeQuery = parseTrakeQuery(result.improved_query);
-        if (!improvedTrakeQuery || improvedTrakeQuery.events.length !== events.length) {
-          setQueryImproverError('Query Improver không giữ đúng query chính và số lượng event TRAKE.');
-          return;
+        const improvedEvents = result.improved_events?.map((item) => item.trim()).filter(Boolean);
+        if (improvedEvents && improvedEvents.length === events.length) {
+          setDescription(result.improved_query);
+          setEvents((current) => current.map((item, index) => ({
+            ...item,
+            description: improvedEvents[index] ?? item.description,
+          })));
+        } else {
+          const improvedTrakeQuery = parseTrakeQuery(result.improved_query);
+          if (!improvedTrakeQuery || improvedTrakeQuery.events.length !== events.length) {
+            setQueryImproverError('Query Improver không giữ đúng query chính và số lượng event TRAKE.');
+            return;
+          }
+          setDescription(improvedTrakeQuery.overview);
+          setEvents((current) => current.map((item, index) => ({
+            ...item,
+            description: improvedTrakeQuery.events[index] ?? item.description,
+          })));
         }
-        setDescription(improvedTrakeQuery.overview);
-        setEvents((current) => current.map((item, index) => ({
-          ...item,
-          description: improvedTrakeQuery.events[index] ?? item.description,
-        })));
         setNotice('Đã cải thiện query chính và các event TRAKE trực tiếp trong ô nhập.');
       } else {
         setDescription(result.improved_query);

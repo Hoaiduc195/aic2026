@@ -376,8 +376,10 @@ describe('qualification frame-first workbench', () => {
   it('improves the TRAKE overview and ordered events together', async () => {
     const user = userEvent.setup();
     const improveQuery = vi.fn(async (): Promise<QueryImprovementResponse> => ({
-      original_query: 'Một người đi qua cửa hàng rồi rời đi\n1. Người bước vào cửa hàng\n2. Người rời khỏi cửa hàng',
-      improved_query: 'A person crosses a shop and then leaves\n1. The person enters the shop\n2. The person leaves the shop',
+      original_query: 'Một người đi qua cửa hàng rồi rời đi',
+      improved_query: 'A person crosses a shop and then leaves',
+      original_events: ['Người bước vào cửa hàng', 'Người rời khỏi cửa hàng'],
+      improved_events: ['The person enters the shop', 'The person leaves the shop'],
       changed: true,
       producer: 'test-query-improver',
       model_version: 'test-model',
@@ -395,7 +397,8 @@ describe('qualification frame-first workbench', () => {
 
     expect(improveQuery).toHaveBeenCalledWith(expect.objectContaining({
       task: 'trake',
-      query: 'Một người đi qua cửa hàng rồi rời đi\n1. Người bước vào cửa hàng\n2. Người rời khỏi cửa hàng',
+      query: 'Một người đi qua cửa hàng rồi rời đi',
+      events: ['Người bước vào cửa hàng', 'Người rời khỏi cửa hàng'],
     }));
     expect(screen.getByLabelText('Truy vấn chính')).toHaveValue('A person crosses a shop and then leaves');
     expect(screen.getByLabelText('Mô tả sự kiện 1')).toHaveValue('The person enters the shop');

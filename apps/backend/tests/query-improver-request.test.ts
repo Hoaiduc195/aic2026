@@ -35,6 +35,27 @@ describe('parseQueryImprovementRequest', () => {
     });
   });
 
+  it('accepts separate ordered events for TRAKE', () => {
+    expect(parseQueryImprovementRequest({
+      query: 'Một người đi qua cửa hàng rồi rời đi',
+      events: ['Người bước vào cửa hàng', 'Người rời khỏi cửa hàng'],
+      task: 'trake',
+    })).toMatchObject({
+      query: 'Một người đi qua cửa hàng rồi rời đi',
+      events: ['Người bước vào cửa hàng', 'Người rời khỏi cửa hàng'],
+      task: 'trake',
+    });
+  });
+
+  it('rejects events on tasks that do not support an event list', () => {
+    expect(() => parseQueryImprovementRequest({
+      query: 'Một cửa hàng trên phố',
+      events: ['Một người bước vào'],
+      task: 'vqa',
+      question: 'Người đó đang làm gì?',
+    })).toThrow(BadRequestException);
+  });
+
   it('requires a question for VQA improvement', () => {
     expect(() => parseQueryImprovementRequest({ query: 'query', task: 'vqa' })).toThrow(BadRequestException);
   });

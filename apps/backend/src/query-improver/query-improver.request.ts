@@ -14,6 +14,7 @@ export interface QueryImproverModelConfig {
 export interface QueryImprovementRequest {
   readonly query: string;
   readonly question?: string;
+  readonly events?: readonly string[];
   readonly task: Extract<TaskType, 'textual_kis' | 'vqa' | 'trake'>;
   readonly llm?: QueryImproverModelConfig;
 }
@@ -70,6 +71,14 @@ function modelConfig(value: unknown): QueryImproverModelConfig {
   };
 }
 
+function eventDescriptions(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 100
+    || value.some((item) => typeof item !== 'string' || !item.trim() || item.trim().length > 2000)) {
+    throw new BadRequestException('events must contain 1 to 100 non-empty descriptions');
+  }
+  return value.map((item) => (item as string).trim());
+}
+
 export function parseQueryImprovementRequest(value: unknown): QueryImprovementRequest {
   if (!isRecord(value)) throw new BadRequestException('query improvement request must be an object');
   if (typeof value.query !== 'string' || !value.query.trim() || value.query.trim().length > 2000) {
@@ -86,9 +95,13 @@ export function parseQueryImprovementRequest(value: unknown): QueryImprovementRe
   if (value.task === 'vqa' && value.question === undefined) {
     throw new BadRequestException('question is required for vqa query improvement');
   }
+  if (value.events !== undefined && value.task !== 'trake') {
+    throw new BadRequestException('events is only supported for trake query improvement');
+  }
   return {
     query: value.query.trim(),
     ...(typeof value.question === 'string' ? { question: value.question.trim() } : {}),
+    ...(value.events === undefined ? {} : { events: eventDescriptions(value.events) }),
     task: value.task as QueryImprovementRequest['task'],
     ...(value.llm === undefined ? {} : { llm: modelConfig(value.llm) }),
   };

@@ -326,6 +326,12 @@ export function parseQueryImprovementResponse(value: unknown): QueryImprovementR
     ...(value.improved_question === undefined ? {} : {
       improved_question: requiredText(value.improved_question, 'improved_question'),
     }),
+    ...(value.original_events === undefined ? {} : {
+      original_events: textArray(value.original_events, 'original_events'),
+    }),
+    ...(value.improved_events === undefined ? {} : {
+      improved_events: textArray(value.improved_events, 'improved_events'),
+    }),
     changed: requiredBoolean(value.changed, 'changed'),
     producer: requiredText(value.producer, 'producer'),
     model_version: requiredText(value.model_version, 'model_version'),
@@ -703,6 +709,13 @@ function stringArray(value: unknown, field: string): string[] {
     throw new Error(`${field} phải là array text`);
   }
   return [...new Set(value as string[])];
+}
+
+function textArray(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || !item.trim())) {
+    throw new Error(`${field} phải là array text`);
+  }
+  return (value as string[]).map((item) => item.trim());
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
