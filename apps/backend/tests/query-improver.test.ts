@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { LanguageModel } from '../src/compute/model-ports';
+import type { QueryImprovementRequest } from '../src/query-improver/query-improver.request';
 import { QueryImproverService } from '../src/query-improver/query-improver.service';
 
 function model(output: string): LanguageModel {
@@ -59,6 +60,33 @@ describe('QueryImproverService', () => {
     expect(result.improved_query).toBe(
       'A person crosses a shop and then leaves\n1. The person enters the shop\n2. The person leaves the shop',
     );
+  });
+
+  it('improves a TRAKE overview and events sent as separate fields', async () => {
+    const languageModel = model(JSON.stringify({
+      improved_query: 'A person crosses a shop and then leaves',
+      improved_events: ['The person enters the shop', 'The person leaves the shop'],
+    }));
+    const service = new QueryImproverService(languageModel);
+    const request = {
+      query: 'Một người đi qua cửa hàng rồi rời đi',
+      events: ['Người bước vào cửa hàng', 'Người rời khỏi cửa hàng'],
+      task: 'trake',
+    } as QueryImprovementRequest;
+
+    const result = await service.improve(request);
+
+    expect(result).toMatchObject({
+      original_query: 'Một người đi qua cửa hàng rồi rời đi',
+      improved_query: 'A person crosses a shop and then leaves',
+      original_events: ['Người bước vào cửa hàng', 'Người rời khỏi cửa hàng'],
+      improved_events: ['The person enters the shop', 'The person leaves the shop'],
+      changed: true,
+      warning: null,
+    });
+    expect(languageModel.complete).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining('Original Vietnamese events'),
+    }));
   });
 
   it('accepts a plain structured TRAKE response when JSON mode is ignored', async () => {
