@@ -19,11 +19,16 @@ const repository: MediaRepository = {
   findNearestStudioFrame: vi.fn(async () => ({
     video_id: 'video-1', keyframe_no: 2, original_frame_id: 50, timestamp_ms: 2000,
     captions: [{ evidence_id: 'caption-1', text: 'a person', language: 'en', producer: 'caption:v1' }],
+    ocr: [{ evidence_id: 'ocr-1', text: 'SALE 50%', language: 'vi', producer: 'ocr:v1' }],
     objects: [{
       evidence_id: 'object-1', label: 'person', confidence: 0.9,
       normalized_bbox: [0.1, 0.2, 0.3, 0.4] as [number, number, number, number], producer: 'object:v1',
     }],
   })),
+  findAsrSpansAt: vi.fn(async () => [{
+    evidence_id: 'asr-1', start_ms: 1000, end_ms: 3000,
+    text: 'Xin chào', language: 'vi', producer: 'asr:v1',
+  }]),
   findStudio: vi.fn(async () => ({
     video: {
       video_id: 'video-1', object_key: 'videos/video-1.mp4', duration_ms: 60000,
@@ -31,7 +36,7 @@ const repository: MediaRepository = {
     },
     frames: [{
       video_id: 'video-1', keyframe_no: 2, original_frame_id: 50, timestamp_ms: 2000,
-      captions: [], objects: [],
+      captions: [], ocr: [], objects: [],
     }],
     asr_spans: [{
       evidence_id: 'asr-1', start_ms: 1000, end_ms: 3000,
@@ -95,6 +100,7 @@ describe('MediaService', () => {
       captions: [{ text: 'a person' }],
       objects: [{ label: 'person' }],
       ocr: [{ text: 'SALE 50%' }],
+      asr_spans: [{ text: 'Xin chào', start_ms: 1000, end_ms: 3000 }],
     });
   });
 

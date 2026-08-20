@@ -467,6 +467,7 @@ function parseStudioFrame(value: unknown, index: number): import('./contracts').
     original_frame_id: nonNegativeInteger(value.original_frame_id, `studio.frames[${index}].original_frame_id`),
     timestamp_ms: nonNegativeInteger(value.timestamp_ms, `studio.frames[${index}].timestamp_ms`),
     captions: value.captions.map((caption, captionIndex) => parseStudioCaption(caption, index, captionIndex)),
+    ocr: Array.isArray(value.ocr) ? value.ocr.map((item, ocrIndex) => parseStudioOcr(item, index, ocrIndex)) : [],
     objects: value.objects.map((object, objectIndex) => parseStudioObject(object, index, objectIndex)),
   };
 }
@@ -486,6 +487,9 @@ function parseCanonicalFrameResponse(value: unknown): CanonicalFrameResponse {
     thumbnail_uri: thumbnailUri,
     is_exact_frame: true,
     annotation_source_frame_id: annotationSource,
+    asr_spans: Array.isArray(value.asr_spans)
+      ? value.asr_spans.map((span, spanIndex) => parseStudioAsrSpan(span, spanIndex))
+      : [],
   };
 }
 
@@ -496,6 +500,16 @@ function parseStudioCaption(value: unknown, frameIndex: number, captionIndex: nu
     text: requiredText(value.text, 'studio caption text'),
     language: requiredText(value.language, 'studio caption language'),
     producer: requiredText(value.producer, 'studio caption producer'),
+  };
+}
+
+function parseStudioOcr(value: unknown, frameIndex: number, ocrIndex: number): import('./contracts').StudioOcr {
+  if (!isObject(value)) throw new Error(`studio.frames[${frameIndex}].ocr[${ocrIndex}] phải là object`);
+  return {
+    evidence_id: requiredText(value.evidence_id, 'studio OCR evidence_id'),
+    text: requiredText(value.text, 'studio OCR text'),
+    language: requiredText(value.language, 'studio OCR language'),
+    producer: requiredText(value.producer, 'studio OCR producer'),
   };
 }
 

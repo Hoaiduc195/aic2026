@@ -8,6 +8,7 @@ import {
   formatMs,
   groupEvidence,
   applyStudioFrameToCandidate,
+  applyCanonicalFrameToCandidate,
   moveFrameToBoundary,
   parseFrame,
   reorderFrames,
@@ -171,6 +172,34 @@ describe('workbench answer model', () => {
 
     expect(groupEvidence(selected.evidence, selected.timestamp_ms).ocr.map((item) => item.snippet)).toEqual(['GIẢM GIÁ']);
     expect(groupEvidence(selected.evidence, selected.timestamp_ms).asr.map((item) => item.snippet)).toEqual(['Khuyến mãi hôm nay']);
+  });
+
+  it('keeps OCR and ASR returned with a canonical frame', () => {
+    const candidate = toFrameCandidates({
+      query_id: 'query_01',
+      degraded: false,
+      unavailable_branches: [],
+      results: [result],
+    }).frames[0];
+    const selected = applyCanonicalFrameToCandidate(candidate, {
+      video_id: 'video_01',
+      original_frame_id: 421,
+      timestamp_ms: 16_500,
+      captions: [],
+      ocr: [{ evidence_id: 'ocr-3', text: 'MỞ CỬA', language: 'vi', producer: 'ocr:v1' }],
+      objects: [],
+      thumbnail_uri: '/frame/421',
+      is_exact_frame: true,
+      annotation_source_frame_id: 420,
+      asr_spans: [{
+        evidence_id: 'asr-3', start_ms: 16_000, end_ms: 17_000,
+        text: 'Cửa hàng mở cửa', language: 'vi', producer: 'asr:v1',
+      }],
+    });
+
+    const evidence = groupEvidence(selected.evidence, selected.timestamp_ms);
+    expect(evidence.ocr.map((item) => item.snippet)).toEqual(['MỞ CỬA']);
+    expect(evidence.asr.map((item) => item.snippet)).toEqual(['Cửa hàng mở cửa']);
   });
 
   it('reorders ranked frames immutably and exports only the first 100 textual answers', () => {

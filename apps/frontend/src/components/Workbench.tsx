@@ -78,6 +78,7 @@ import {
   type WorkbenchSnapshot,
 } from '../lib/workbench-history';
 import {
+  applyCanonicalFrameToCandidate,
   applyStudioFrameToCandidate,
   buildRankedTextualSubmission,
   emptyTrakeFrameSlots,
@@ -713,6 +714,22 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
       : '';
     setQaAnswer(existingAnswer);
     setError(null);
+    void enrichSelectedSearchFrame(frame);
+  }
+
+  async function enrichSelectedSearchFrame(frame: FrameCandidate) {
+    if (!loadFrame) return;
+    try {
+      const canonical = await loadFrame(frame.video_id, frame.original_frame_id);
+      const enriched = applyCanonicalFrameToCandidate(frame, canonical);
+      setActiveFrame((current) => current?.result_key === frame.result_key ? enriched : current);
+      setSelectedAnchor((current) => current?.result_key === frame.result_key ? enriched : current);
+      setRankedFrames((current) => current.map((candidate) => (
+        candidate.result_key === frame.result_key ? enriched : candidate
+      )));
+    } catch {
+      setNotice('Không thể tải thêm bằng chứng OCR/ASR; vẫn giữ bằng chứng từ kết quả tìm kiếm.');
+    }
   }
 
   function exportRankedTextualFrames() {

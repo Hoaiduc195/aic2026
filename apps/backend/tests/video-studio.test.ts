@@ -39,6 +39,11 @@ function database(): DatabaseClient {
             text_content: null, language: null, producer: 'object:v1',
             label: 'person', confidence: 0.91, normalized_bbox: [0.1, 0.2, 0.3, 0.4],
           },
+          {
+            evidence_id: 'ocr-1', evidence_type: 'ocr', original_frame_id: 50,
+            text_content: 'GIẢM GIÁ 50%', language: 'vi', producer: 'ocr:v1',
+            label: null, confidence: null, normalized_bbox: null,
+          },
         ],
         rowCount: 2,
       })
@@ -53,7 +58,7 @@ function database(): DatabaseClient {
 }
 
 describe('video studio media repository', () => {
-  it('assembles frame metadata, active caption/object annotations and ASR spans', async () => {
+  it('assembles frame metadata, OCR/caption/object annotations and ASR spans', async () => {
     const databaseClient = database();
     const studio = await new PostgresMediaRepository(databaseClient).findStudio('video-1');
 
@@ -62,6 +67,7 @@ describe('video studio media repository', () => {
     expect(studio.frames[1]).toMatchObject({
       original_frame_id: 50,
       captions: [{ evidence_id: 'caption-1', text: 'Two presenters stand behind a desk.', language: 'en' }],
+      ocr: [{ evidence_id: 'ocr-1', text: 'GIẢM GIÁ 50%', language: 'vi', producer: 'ocr:v1' }],
       objects: [{
         evidence_id: 'object-1', label: 'person', confidence: 0.91,
         normalized_bbox: [0.1, 0.2, 0.3, 0.4],
@@ -74,7 +80,7 @@ describe('video studio media repository', () => {
 
     const calls = vi.mocked(databaseClient.query).mock.calls;
     expect(calls).toHaveLength(4);
-    expect(calls[2][0]).toContain("e.evidence_type IN ('caption', 'object')");
+    expect(calls[2][0]).toContain("e.evidence_type IN ('caption', 'object', 'ocr')");
     expect(calls[2][0]).toContain("t.language = 'en'");
     expect(calls[2][0]).toContain("ir.status = 'active'");
     expect(calls[3][0]).toContain("e.evidence_type = 'asr'");

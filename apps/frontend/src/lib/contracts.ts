@@ -246,6 +246,13 @@ export interface StudioCaption {
   producer: string;
 }
 
+export interface StudioOcr {
+  evidence_id: string;
+  text: string;
+  language: string;
+  producer: string;
+}
+
 export interface StudioObject {
   evidence_id: string;
   label: string;
@@ -260,6 +267,7 @@ export interface StudioFrame {
   original_frame_id: number;
   timestamp_ms: number;
   captions: StudioCaption[];
+  ocr?: StudioOcr[];
   objects: StudioObject[];
   thumbnail_uri?: string;
   is_exact_frame?: boolean;
@@ -294,6 +302,7 @@ export interface CanonicalFrameResponse extends StudioFrame {
   thumbnail_uri: string;
   is_exact_frame: true;
   annotation_source_frame_id: number | null;
+  asr_spans?: StudioAsrSpan[];
 }
 
 export interface QualificationEventInput {

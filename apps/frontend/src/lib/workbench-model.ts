@@ -204,6 +204,12 @@ export function applyStudioFrameToCandidate(
     timestamp_ms: frame.timestamp_ms,
     thumbnail_uri: studioFrameThumbnailUri(frame),
     evidence: [
+      ...(frame.ocr ?? []).map((ocr) => ({
+        evidence_id: ocr.evidence_id,
+        type: 'ocr' as const,
+        snippet: ocr.text,
+        producer: ocr.producer,
+      })),
       ...frame.captions.map((caption) => ({
         evidence_id: caption.evidence_id,
         type: 'caption' as const,
@@ -219,6 +225,13 @@ export function applyStudioFrameToCandidate(
       ...asrEvidence,
     ],
   };
+}
+
+export function applyCanonicalFrameToCandidate(
+  candidate: FrameCandidate,
+  frame: import('./contracts').CanonicalFrameResponse,
+): FrameCandidate {
+  return applyStudioFrameToCandidate(candidate, frame, frame.asr_spans ?? []);
 }
 
 export function groupEvidence(evidence: readonly SearchEvidence[], frameTimestampMs?: number): EvidenceGroups {

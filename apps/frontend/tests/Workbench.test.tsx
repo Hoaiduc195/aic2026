@@ -138,14 +138,19 @@ function renderWorkbench({
   searchResponse = response,
   search = vi.fn(async () => searchResponse),
   loadStudio = vi.fn(async () => studio),
-  loadFrame = vi.fn(async (): Promise<CanonicalFrameResponse> => ({
+  loadFrame = vi.fn(async (_videoId: string, frameId: number): Promise<CanonicalFrameResponse> => ({
     video_id: 'video_01',
     keyframe_no: null,
-    original_frame_id: 386,
+    original_frame_id: frameId,
     timestamp_ms: 12_833,
     captions: [],
+    ocr: [{ evidence_id: 'ocr_386', text: 'MỞ CỬA', language: 'vi', producer: 'ocr:v1' }],
     objects: [],
-    thumbnail_uri: '/api/v1/media/videos/video_01/frames/386/thumbnail',
+    asr_spans: [{
+      evidence_id: 'asr_386', start_ms: 12_000, end_ms: 14_000,
+      text: 'rẽ phải rồi đi thẳng', language: 'vi', producer: 'asr:v1',
+    }],
+    thumbnail_uri: `/api/v1/media/videos/video_01/frames/${frameId}/thumbnail`,
     is_exact_frame: true,
     annotation_source_frame_id: 385,
   })),
@@ -180,7 +185,7 @@ function renderWorkbench({
       />
     </QueryClientProvider>,
   );
-  return { ...view, search, loadStudio, saveSelection, createPreview };
+  return { ...view, search, loadFrame, loadStudio, saveSelection, createPreview };
 }
 
 describe('qualification frame-first workbench', () => {
@@ -450,6 +455,19 @@ describe('qualification frame-first workbench', () => {
     await user.click(screen.getByRole('button', { name: 'Xem video studio' }));
     expect(await screen.findByLabelText('Video video_01')).toHaveAttribute('src', playback.playback_uri);
     expect(loadStudio).toHaveBeenCalledWith('video_01', expect.anything());
+  });
+
+  it('hydrates Inspector with OCR and ASR context for a selected search frame', async () => {
+    const user = userEvent.setup();
+    const { loadFrame } = renderWorkbench();
+
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+    await user.click(await screen.findByRole('button', { name: 'Chọn frame video_01 · 385' }));
+
+    await waitFor(() => expect(loadFrame).toHaveBeenCalledWith('video_01', 385));
+    expect(await screen.findByText('MỞ CỬA')).toBeInTheDocument();
+    expect(screen.getByText('rẽ phải rồi đi thẳng')).toBeInTheDocument();
   });
 
   it('persists an exact Studio frame as the representative result frame', async () => {

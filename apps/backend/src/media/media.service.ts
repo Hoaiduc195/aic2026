@@ -4,7 +4,7 @@ import { FRAME_DECODER, IMAGE_COMPRESSOR, MEDIA_REPOSITORY, OBJECT_STORAGE } fro
 import type { ObjectStorage } from '../storage/object-storage';
 import type { FrameDecoder } from './frame-decoder';
 import type { ImageCompressor } from './image-compressor';
-import type { MediaRepository, StudioFrameRecord } from './media.repository';
+import type { MediaRepository, StudioAsrSpanRecord, StudioFrameRecord } from './media.repository';
 
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const COMPRESSED_IMAGE_TARGET_BYTES = 8 * 1024 * 1024;
@@ -15,6 +15,7 @@ export interface ExactFrameResponse extends Omit<StudioFrameRecord, 'keyframe_no
   readonly thumbnail_uri: string | null;
   readonly is_exact_frame: true;
   readonly annotation_source_frame_id: number | null;
+  readonly asr_spans: readonly StudioAsrSpanRecord[];
 }
 
 export interface FrameThumbnail {
@@ -143,15 +144,21 @@ export class MediaService {
       throw new BadRequestException('frame_id is outside the video frame range');
     }
     const exact = await this.repository.findFrame(videoId, originalFrameId);
-    const annotation = await this.repository.findNearestStudioFrame(videoId, originalFrameId);
+    const timestampMs = exact?.timestamp_ms ?? Math.round((originalFrameId / video.fps) * 1000);
+    const [annotation, asrSpans] = await Promise.all([
+      this.repository.findNearestStudioFrame(videoId, originalFrameId),
+      this.repository.findAsrSpansAt(videoId, timestampMs),
+    ]);
     const thumbnailUri = exact ? await this.storage.signReadUrl(exact.thumbnail_object_key) : null;
     return {
       video_id: videoId,
       keyframe_no: exact?.keyframe_no ?? null,
       original_frame_id: originalFrameId,
-      timestamp_ms: exact?.timestamp_ms ?? Math.round((originalFrameId / video.fps) * 1000),
+      timestamp_ms: timestampMs,
       captions: annotation?.captions ?? [],
+      ocr: annotation?.ocr ?? [],
       objects: annotation?.objects ?? [],
+      asr_spans: asrSpans,
       thumbnail_uri: thumbnailUri,
       is_exact_frame: true,
       annotation_source_frame_id: annotation?.original_frame_id ?? null,
