@@ -28,7 +28,7 @@ export class TrakeExecutor implements TaskExecutor {
       return buildSearchResponse(input, this.name, []);
     }
     if (numVariants <= 1) {
-      return buildSearchResponse(input, this.name, input.candidates);
+      return buildSearchResponse(input, this.name, []);
     }
 
     const byVideo = new Map<string, FusedCandidate[]>();
@@ -120,6 +120,6 @@ export class TrakeExecutor implements TaskExecutor {
       );
     }
 
-    return buildSearchResponse(input, this.name, input.candidates);
+    return buildSearchResponse(input, this.name, []);
   }
 }
