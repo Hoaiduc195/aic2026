@@ -31,6 +31,29 @@ describe('task executor registry', () => {
       .resolves.toMatchObject({ task: 'trake', warnings: [] });
   });
 
+  it('always returns text warnings for TRAKE when candidates are present', async () => {
+    const candidate = {
+      video_id: 'video-1',
+      original_frame_id: 10,
+      timestamp_ms: 1_000,
+      start_ms: 1_000,
+      end_ms: 1_001,
+      score: 0.9,
+      evidence_ids: [],
+      matched_modalities: ['caption'],
+      fusion_trace: [],
+    };
+
+    const result = await new TrakeExecutor().execute({
+      ...input,
+      request: { ...input.request, task: 'trake' },
+      candidates: [candidate],
+    });
+
+    expect(result.warnings).toEqual([]);
+    expect(result.warnings.every((warning) => typeof warning === 'string')).toBe(true);
+  });
+
   it('rejects missing task executors', () => {
     expect(() => new TaskExecutorRegistry().resolve('vqa')).toThrow('no executor');
   });
