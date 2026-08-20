@@ -174,7 +174,7 @@ function buildWorkbenchQuery(
   };
 }
 
-const VQA_BATCH_INTERVAL_MS = 3_300;
+const VQA_BATCH_CONCURRENCY = 4;
 
 type TaskWorkspaceSnapshot = WorkbenchSnapshot & { readonly history_id: string | null };
 
@@ -770,7 +770,7 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
         frames: rankedFrames,
         limit,
         signal: controller.signal,
-        intervalMs: VQA_BATCH_INTERVAL_MS,
+        concurrency: VQA_BATCH_CONCURRENCY,
         shouldSkip: (frame) => alreadyAnswered.has(queueKey(frame)),
         onProgress: setBatchVqaProgress,
         answer: (frame) => vqaAnswerMutation.mutateAsync({
