@@ -20,6 +20,13 @@ export function normalizeRetrievalText(query: string): string {
   return query.normalize('NFKC').trim().replace(/\s+/g, ' ');
 }
 
+function normalizeTrakeMainQuery(query: string): string {
+  const lines = query.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const firstEventIndex = lines.findIndex((line) => /^\d+[.)]\s*/.test(line));
+  const mainQuery = firstEventIndex > 0 ? lines.slice(0, firstEventIndex).join(' ') : query;
+  return normalizeRetrievalText(mainQuery);
+}
+
 export function detectQueryLanguage(query: string): RetrievalExecutionPlan['language'] {
   const hasVietnamese = VIETNAMESE_PATTERN.test(query);
   const hasLatin = /[a-z]/i.test(query);
@@ -32,11 +39,7 @@ export function detectQueryLanguage(query: string): RetrievalExecutionPlan['lang
 export function buildQueryVariants(request: SearchRequest): string[] {
   if (request.frame_query) return [FRAME_IMAGE_QUERY];
   if (request.task === 'trake') {
-    const events = request.query.split(/\r?\n/)
-      .map((line) => line.replace(/^\s*\d+[.)]\s*/, '').trim())
-      .filter(Boolean)
-      .slice(0, 20);
-    return events.length > 1 ? events : [normalizeRetrievalText(request.query)];
+    return [normalizeTrakeMainQuery(request.query)];
   }
   if (request.task === 'vqa') {
     const parts = request.query.split(/\r?\n(?:câu hỏi|question)\s*:\s*/i).map(normalizeRetrievalText).filter(Boolean);
@@ -165,7 +168,9 @@ export function buildDeterministicPlan(
   registeredBranches: readonly RegisteredBranch[],
   limits: PlannerLimits,
 ): RetrievalExecutionPlan {
-  const normalized = request.frame_query ? FRAME_IMAGE_QUERY : normalizeRetrievalText(request.query);
+  const normalized = request.frame_query
+    ? FRAME_IMAGE_QUERY
+    : request.task === 'trake' ? normalizeTrakeMainQuery(request.query) : normalizeRetrievalText(request.query);
   const analysisQuery = request.frame_query ? '' : normalized;
   const quoted = quotedPhrases(analysisQuery);
   const hasOcr = OCR_SIGNAL.test(analysisQuery) || quoted.length > 0;
@@ -173,9 +178,7 @@ export function buildDeterministicPlan(
   const object = extractObjectQuery(analysisQuery);
   const negativeObjects = extractNegatedObjects(analysisQuery, object.terms);
   const positiveObjectTerms = object.terms.filter((term) => !negativeObjects.includes(term));
-  const temporal = request.frame_query
-    ? []
-    : request.task === 'trake' ? ['sequence'] as RetrievalExecutionPlan['temporal_relations'] : temporalRelations(analysisQuery);
+  const temporal = request.frame_query ? [] : temporalRelations(analysisQuery);
   const ocrQuoted = signaledQuotedPhrases(analysisQuery, /(chữ|ghi|biển|bảng|logo|written|text|sign)/i);
   const asrQuoted = signaledQuotedPhrases(analysisQuery, /(nói|phát biểu|said|says|speech|announce)/i);
   const textConstraints = hasOcr ? ocrQuoted.length > 0 ? ocrQuoted : quoted.length > 0 ? quoted : [analysisQuery] : [];

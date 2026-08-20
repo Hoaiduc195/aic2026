@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import type { EmbeddingSettings } from '../../lib/embedding-settings';
 import type { LlmSettings } from '../../lib/llm-settings';
 import type { VlmSettings } from '../../lib/vlm-settings';
+import type { VqaBatchSettings } from '../../lib/vqa-batch-settings';
 
 function parseNumberInput(value: string): number {
   return value === '' ? Number.NaN : Number(value);
@@ -26,6 +27,11 @@ interface Props {
   onVlmChange: (settings: VlmSettings) => void;
   onVlmSave: () => void;
   onVlmReset: () => void;
+  vqaBatchSettings: VqaBatchSettings;
+  vqaBatchError: string | null;
+  onVqaBatchChange: (settings: VqaBatchSettings) => void;
+  onVqaBatchSave: () => void;
+  onVqaBatchReset: () => void;
   embeddingSettings: EmbeddingSettings;
   embeddingError: string | null;
   onEmbeddingChange: (settings: EmbeddingSettings) => void;
@@ -45,6 +51,11 @@ export function LlmSettingsPopover({
   onVlmChange,
   onVlmSave,
   onVlmReset,
+  vqaBatchSettings,
+  vqaBatchError,
+  onVqaBatchChange,
+  onVqaBatchSave,
+  onVqaBatchReset,
   embeddingSettings,
   embeddingError,
   onEmbeddingChange,
@@ -81,6 +92,10 @@ export function LlmSettingsPopover({
 
   function updateVlm<K extends keyof VlmSettings>(key: K, value: VlmSettings[K]) {
     onVlmChange({ ...vlmSettings, [key]: value });
+  }
+
+  function updateVqaBatch<K extends keyof VqaBatchSettings>(key: K, value: VqaBatchSettings[K]) {
+    onVqaBatchChange({ ...vqaBatchSettings, [key]: value });
   }
 
   const modal = (
@@ -281,6 +296,32 @@ export function LlmSettingsPopover({
         <div className="settings-actions">
           <button type="button" className="quiet-button" onClick={onVlmReset}>Khôi phục VLM mặc định</button>
           <button type="button" className="primary-button" onClick={onVlmSave}>Lưu cài đặt VLM</button>
+        </div>
+      </section>
+
+      <div className="settings-divider" />
+      <section className="settings-section" aria-labelledby="vqa-batch-settings-title">
+        <div className="settings-section-heading">
+          <p className="section-kicker">Điều phối request VQA</p>
+          <h3 id="vqa-batch-settings-title">Cài đặt batch VQA</h3>
+        </div>
+        <label htmlFor="vqa-batch-request-delay">
+          <span>Khoảng chờ giữa request (ms)</span>
+          <input
+            id="vqa-batch-request-delay"
+            type="number"
+            min={0}
+            max={5000}
+            step={25}
+            value={displayNumberInput(vqaBatchSettings.request_delay_ms)}
+            onChange={(event) => updateVqaBatch('request_delay_ms', parseNumberInput(event.target.value))}
+          />
+        </label>
+        <p className="settings-help">Mặc định 100 ms. Đặt 0 để gửi request liên tiếp; khoảng chờ chỉ áp dụng cho batch VQA.</p>
+        {vqaBatchError && <p className="settings-error" role="alert">{vqaBatchError}</p>}
+        <div className="settings-actions">
+          <button type="button" className="quiet-button" onClick={onVqaBatchReset}>Khôi phục batch VQA mặc định</button>
+          <button type="button" className="primary-button" onClick={onVqaBatchSave}>Lưu cài đặt batch VQA</button>
         </div>
       </section>
 

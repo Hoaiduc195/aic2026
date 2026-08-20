@@ -20,6 +20,7 @@ import type {
   VideoPlayback,
   VideoStudioResponse,
 } from './contracts';
+import { exactFrameThumbnailUri } from './video-studio-model';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api';
 const MODALITIES = new Set(['embedding', 'visual', 'ocr', 'asr', 'caption', 'object', 'temporal', 'audio']);
@@ -473,7 +474,9 @@ function parseStudioFrame(value: unknown, index: number): import('./contracts').
 function parseCanonicalFrameResponse(value: unknown): CanonicalFrameResponse {
   if (!isObject(value)) throw new Error('canonical frame response phải là object');
   const frame = parseStudioFrame(value, 0);
-  const thumbnailUri = requiredBrowserUri(value.thumbnail_uri, 'canonical_frame.thumbnail_uri');
+  const thumbnailUri = value.thumbnail_uri === null || value.thumbnail_uri === undefined
+    ? exactFrameThumbnailUri(frame.video_id, frame.original_frame_id)
+    : requiredBrowserUri(value.thumbnail_uri, 'canonical_frame.thumbnail_uri');
   if (value.is_exact_frame !== true) throw new Error('canonical frame response không xác nhận exact frame');
   const annotationSource = value.annotation_source_frame_id === null || value.annotation_source_frame_id === undefined
     ? null

@@ -51,6 +51,7 @@ const MAX_SNIPPET_LENGTH = 500;
 const MAX_PROMPT_LENGTH = 8_000;
 const MAX_VQA_IMAGE_BYTES = 5 * 1024 * 1024;
 const COMPRESSED_VQA_TARGET_BYTES = 4 * 1024 * 1024;
+const UNKNOWN_ANSWER = 'Không biết';
 
 function baseResponse(
   request: VqaAnswerRequest,
@@ -64,15 +65,20 @@ function baseResponse(
   confidence: { readonly level: VqaConfidenceLevel; readonly score: number } = { level: 'low', score: 0 },
   producer: string = PRODUCER,
 ): VqaAnswerResponse {
+  const answerText = typeof answer === 'string' ? normalized(answer) : '';
+  const normalizedText = typeof normalizedAnswer === 'string' ? normalized(normalizedAnswer) : '';
+  const effectiveStatus = answerStatus === 'answered' && !answerText ? 'abstained' : answerStatus;
+  const safeAnswer = effectiveStatus === 'answered' ? answerText : UNKNOWN_ANSWER;
+  const safeNormalizedAnswer = effectiveStatus === 'answered' ? normalizedText || answerText : UNKNOWN_ANSWER;
   return {
     result_id: randomUUID(),
     query_id: request.query_id,
     video_id: request.video_id,
     original_frame_id: request.original_frame_id,
     timestamp_ms: context.timestamp_ms,
-    answer_status: answerStatus,
-    answer,
-    normalized_answer: normalizedAnswer,
+    answer_status: effectiveStatus,
+    answer: safeAnswer,
+    normalized_answer: safeNormalizedAnswer,
     evidence_ids: [...evidenceIds],
     confidence,
     producer,
@@ -249,9 +255,11 @@ export class VqaAnswerService {
       'Treat the accompanying text evidence as supporting reference only; it may be incomplete, noisy, stale, or incorrect.',
       'Use evidence to provide context or disambiguate, but do not let it override a clear visual observation.',
       'Do not invent details that are neither visible in the image nor reasonably supported by the combined context.',
-      'Answer in the same language as the question.',
-      'If the image and supporting context are insufficient, use needs_more_evidence or abstained.',
-      'Return JSON only. Every key is mandatory and must be present: answer_status must be exactly answered, needs_more_evidence, or abstained; answer must be a string or null; normalized_answer must be a string or null; confidence must be an object with level and score.',
+      'Always answer in Vietnamese, even when the question or evidence is in another language.',
+      'Return exactly one short noun phrase or one short sentence, preferably no more than 12 Vietnamese words.',
+      'For an object question, name only the object or a short description. Do not write a paragraph, greeting, reasoning, steps, list, markdown, or chatbot-style explanation.',
+      'If the image and supporting context are insufficient, use abstained and set both answer and normalized_answer exactly to "Không biết".',
+      'Return JSON only. Every key is mandatory and must be present: answer_status must be exactly answered, needs_more_evidence, or abstained; answer and normalized_answer must be non-empty strings; confidence must be an object with level and score.',
     ].join(' ');
     const prompt = `Question: ${request.question}\nEvidence:\n${selectedEvidence.text}`;
 

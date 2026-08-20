@@ -68,6 +68,23 @@ describe('query embedding providers', () => {
     });
   });
 
+  it('retries without JSON mode when the provider rejects response_format', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'response_format is not supported' }), { status: 400 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [{ message: { content: 'plain response' } }],
+      }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = new OpenAICompatibleLanguageModel({ baseUrl: 'https://llm.test/v1', model: 'local-model' });
+
+    await expect(provider.complete({ system: 's', prompt: 'p' })).resolves.toBe('plain response');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({
+      response_format: { type: 'json_object' },
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).not.toHaveProperty('response_format');
+  });
+
   it('supports OpenAI content blocks and rejects malformed responses', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
       choices: [{ message: { content: [{ type: 'text', text: 'hello' }] } }],

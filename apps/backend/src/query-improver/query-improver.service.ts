@@ -63,10 +63,22 @@ function parseTrakeQuery(value: string): TrakeQueryParts | null {
   if (firstEventIndex < 0) return null;
 
   const overview = firstEventIndex === 0 ? null : lines.slice(0, firstEventIndex).join('\n').trim();
-  const events = lines.slice(firstEventIndex)
+  const eventLines = lines.slice(firstEventIndex);
+  if (eventLines.some((line) => !/^\d+[.)]\s*/.test(line))) return null;
+  const events = eventLines
     .map((line) => line.replace(/^\d+[.)]\s*/, '').trim())
     .filter(Boolean);
   return events.length > 0 ? { overview, events } : null;
+}
+
+function plainTextImprovedQuery(
+  value: string,
+  task: QueryImprovementRequest['task'],
+): string | null {
+  const candidate = stripCodeFence(value);
+  if (!candidate || candidate.startsWith('{') || candidate.startsWith('[')) return null;
+  if (task === 'trake' && !parseTrakeQuery(candidate)) return null;
+  return candidate;
 }
 
 function normalizeTrakeQuery(original: string, improved: string): string | null {
@@ -83,11 +95,11 @@ function normalizeTrakeQuery(original: string, improved: string): string | null 
 
 function systemPrompt(task: QueryImprovementRequest['task']): string {
   const trakeInstruction = task === 'trake'
-    ? 'For TRAKE, preserve the overall query before the numbered lines, then preserve the number and order of event lines. Return one improved English overall query first and one improved English event per numbered line.'
+    ? 'For TRAKE, preserve the overall query before the numbered lines, then preserve the number and order of event lines. Return one improved English overall query first and one improved English event per numbered line. If JSON mode is unavailable, return exactly that structured text without markdown or commentary.'
     : 'Return one improved query, not a list of alternatives.';
   const outputInstruction = task === 'vqa'
     ? 'For VQA, improve the event query and the question independently. Return JSON only with exactly two fields: {"improved_query":"...","improved_question":"..."}.'
-    : 'Return JSON only with exactly one field: {"improved_query":"..."}.';
+    : 'Prefer JSON with exactly one field: {"improved_query":"..."}. If JSON mode is unavailable, return only the improved query text in the required structure, without JSON or commentary.';
   return [
     'You are a video retrieval query improver.',
     'Read the Vietnamese query and rewrite it into precise, natural English for video keyframe retrieval.',
@@ -153,21 +165,27 @@ export class QueryImproverService {
     }
 
     const parsed = parseModelOutput(rawOutput);
-    if (typeof parsed?.improved_query !== 'string') {
+    const rawImprovedValue = typeof parsed?.improved_query === 'string'
+      ? parsed.improved_query
+      : request.task === 'vqa'
+        ? null
+        : plainTextImprovedQuery(rawOutput, request.task);
+    if (rawImprovedValue === null) {
       return fallback(request, model.modelName, 'query_improver_invalid_output');
     }
 
-    const rawImproved = parsed.improved_query.trim();
+    const rawImproved = stripCodeFence(rawImprovedValue);
     if (!rawImproved || rawImproved.length > MAX_QUERY_LENGTH) {
       return fallback(request, model.modelName, 'query_improver_invalid_output');
     }
 
     let improvedQuestion: string | undefined;
     if (request.task === 'vqa') {
-      if (!request.question || typeof parsed.improved_question !== 'string') {
+      const rawImprovedQuestionValue = parsed?.improved_question;
+      if (!request.question || typeof rawImprovedQuestionValue !== 'string') {
         return fallback(request, model.modelName, 'query_improver_invalid_output');
       }
-      const rawImprovedQuestion = parsed.improved_question.trim();
+      const rawImprovedQuestion = rawImprovedQuestionValue.trim();
       improvedQuestion = normalizeQuery(rawImprovedQuestion);
       if (!improvedQuestion || improvedQuestion.length > MAX_QUERY_LENGTH) {
         return fallback(request, model.modelName, 'query_improver_invalid_output');

@@ -101,6 +101,20 @@ describe('workbench answer model', () => {
     });
   });
 
+  it('rewrites signed preview URLs to a stable media proxy', () => {
+    const normalized = toFrameCandidates({
+      query_id: 'query_01',
+      degraded: false,
+      unavailable_branches: [],
+      results: [{
+        ...result,
+        preview_uri: 'https://r2.example/frame.webp?X-Amz-Signature=expired',
+      }],
+    });
+
+    expect(normalized.frames[0].thumbnail_uri).toBe('/api/v1/media/keyframes/video_01/by-frame/385');
+  });
+
   it('groups evidence and validates a same-video increasing TRAKE sequence', () => {
     const candidate = toFrameCandidates({
       query_id: 'query_01',
@@ -109,12 +123,15 @@ describe('workbench answer model', () => {
       results: [result],
     }).frames[0];
     const next: FrameCandidate = { ...candidate, original_frame_id: 430, timestamp_ms: 17_000 };
+    const third: FrameCandidate = { ...candidate, original_frame_id: 475, timestamp_ms: 22_000 };
+    const fourth: FrameCandidate = { ...candidate, original_frame_id: 520, timestamp_ms: 28_000 };
 
     expect(groupEvidence(candidate.evidence).ocr).toHaveLength(1);
     expect(groupEvidence(candidate.evidence).asr).toHaveLength(0);
-    expect(validateTrakeSequence([candidate, next])).toBe(true);
-    expect(validateTrakeSequence([next, candidate])).toBe(false);
-    expect(validateTrakeSequence([candidate, { ...next, video_id: 'video_02' }])).toBe(false);
+    expect(validateTrakeSequence([candidate, next, third, fourth])).toBe(true);
+    expect(validateTrakeSequence([next, candidate, third, fourth])).toBe(false);
+    expect(validateTrakeSequence([candidate, next, third])).toBe(false);
+    expect(validateTrakeSequence([candidate, next, third, { ...fourth, video_id: 'video_02' }])).toBe(false);
   });
 
   it('keeps object evidence visible and filters bounded ASR to the frame timestamp', () => {

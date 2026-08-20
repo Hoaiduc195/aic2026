@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Workbench } from '@/components/Workbench';
 import type {
   CanonicalFrameResponse,
+  FrameCandidate,
   QueryImprovementResponse,
   SearchResponse,
   SelectionRevision,
@@ -14,6 +15,7 @@ import type {
   VideoPlayback,
   VideoStudioResponse,
 } from '@/lib/contracts';
+import { createWorkbenchHistoryEntry, saveWorkbenchHistoryEntry } from '@/lib/workbench-history';
 
 afterEach(() => {
   localStorage.clear();
@@ -109,6 +111,29 @@ const studio: VideoStudioResponse = {
   }],
 };
 
+const trakeStudio: VideoStudioResponse = {
+  ...studio,
+  frames: [
+    ...studio.frames,
+    {
+      video_id: 'video_01',
+      keyframe_no: 7,
+      original_frame_id: 450,
+      timestamp_ms: 15_100,
+      captions: [],
+      objects: [{ evidence_id: 'obj_450', label: 'xe máy', confidence: 0.88, normalized_bbox: [0.2, 0.2, 0.5, 0.6], producer: 'object:v1' }],
+    },
+    {
+      video_id: 'video_01',
+      keyframe_no: 8,
+      original_frame_id: 500,
+      timestamp_ms: 17_400,
+      captions: [],
+      objects: [{ evidence_id: 'obj_500', label: 'biển hiệu', confidence: 0.84, normalized_bbox: [0.4, 0.1, 0.8, 0.3], producer: 'object:v1' }],
+    },
+  ],
+};
+
 function renderWorkbench({
   searchResponse = response,
   search = vi.fn(async () => searchResponse),
@@ -193,6 +218,51 @@ describe('qualification frame-first workbench', () => {
     await user.click(screen.getByRole('button', { name: /Khôi phục.*Một cửa hàng trên phố/ }));
     expect(screen.getByLabelText('Mô tả sự kiện')).toHaveValue('Một cửa hàng trên phố');
     expect(screen.getByText('video_01')).toBeInTheDocument();
+  });
+
+  it('refreshes an expired signed thumbnail when restoring a query from history', async () => {
+    const user = userEvent.setup();
+    const staleFrame: FrameCandidate = {
+      result_key: 'video_01\u0000385',
+      video_id: 'video_01',
+      original_frame_id: 385,
+      timestamp_ms: 12_800,
+      thumbnail_uri: 'https://r2.example/frame.webp?X-Amz-Signature=expired',
+      start_ms: 10_000,
+      end_ms: 16_000,
+      score: 0.91,
+      evidence: [...response.results[0].evidence],
+      matched_modalities: [...response.results[0].matched_modalities],
+    };
+    saveWorkbenchHistoryEntry(createWorkbenchHistoryEntry({
+      task: 'textual_kis',
+      description: 'Một cửa hàng trên phố',
+      question: '',
+      events: [{ event_id: 'event-1', event_ordinal: 1, description: '' }],
+      response: {
+        ...response,
+        results: [{
+          ...response.results[0],
+          preview_uri: 'https://r2.example/frame.webp?X-Amz-Signature=expired',
+        }],
+      },
+      rankedFrames: [staleFrame],
+      selectedAnchor: null,
+      assignedFrames: [null],
+      answers: [],
+      qaAnswer: '',
+      vqaQueue: [],
+    }, new Date('2026-08-19T10:00:00.000Z'), 'history-expired'));
+
+    renderWorkbench();
+    await user.click(screen.getByRole('button', { name: 'Lịch Sử' }));
+    await user.click(screen.getByRole('button', { name: /Khôi phục.*Một cửa hàng trên phố/ }));
+
+    const frameCard = screen.getByRole('button', { name: 'Chọn frame video_01 · 385' });
+    expect(frameCard.querySelector('img')).toHaveAttribute(
+      'src',
+      '/api/v1/media/keyframes/video_01/by-frame/385',
+    );
   });
 
   it('writes one improved English query into the primary input before retrieval', async () => {
@@ -345,7 +415,7 @@ describe('qualification frame-first workbench', () => {
     expect(screen.getByLabelText('Mô tả sự kiện 2')).toBeInTheDocument();
   });
 
-  it('submits the TRAKE overview query before its ordered sub-events', async () => {
+  it('submits only the TRAKE overview query for retrieval', async () => {
     const user = userEvent.setup();
     const { search } = renderWorkbench();
 
@@ -358,7 +428,7 @@ describe('qualification frame-first workbench', () => {
 
     await waitFor(() => expect(search).toHaveBeenCalledWith(expect.objectContaining({
       task: 'trake',
-      query: 'Một người đi qua cửa hàng rồi rời đi\n1. Người bước vào cửa hàng\n2. Người rời khỏi cửa hàng',
+      query: 'Một người đi qua cửa hàng rồi rời đi',
     })));
   });
 
@@ -806,9 +876,30 @@ describe('qualification frame-first workbench', () => {
     expect(screen.getByText(/3\/100 item · 3 đã trả lời/)).toBeInTheDocument();
     expect(screen.getAllByText('một chiếc chai')).toHaveLength(3);
     expect(screen.getByRole('button', { name: 'Export JSON' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeEnabled();
+
+    const createObjectURL = vi.fn((_blob: Blob) => 'blob:vqa-csv');
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    await user.click(screen.getByRole('button', { name: 'Export CSV' }));
+
+    const blob = createObjectURL.mock.calls[0][0] as Blob;
+    const blobText = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(blob);
+    });
+    expect(blob.type).toBe('text/csv;charset=utf-8');
+    expect(blobText).toBe('video_01,385,một chiếc chai\r\nvideo_02,411,một chiếc chai\r\nvideo_03,530,một chiếc chai\r\n');
+    expect(click).toHaveBeenCalledOnce();
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:vqa-csv');
+    click.mockRestore();
   });
 
-  it('runs batch VQA for the configured top-k frames without adding answers to the queue', async () => {
+  it('writes batch VQA answers into the answer queue', async () => {
     const user = userEvent.setup();
     const suggestVqaAnswer = vi.fn(async () => vqaSuggestion);
     renderWorkbench({ searchResponse: vqaResponse, suggestVqaAnswer });
@@ -821,16 +912,16 @@ describe('qualification frame-first workbench', () => {
     await user.type(screen.getByLabelText('Số frame batch VQA'), '1');
     await user.click(screen.getByRole('button', { name: 'LLM trả lời Top-K' }));
 
-    expect(await screen.findByText('Đã xử lý 1 frame: 1 answered; chưa thêm vào hàng đợi.')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Đáp án (1)' })).toBeInTheDocument();
     expect(suggestVqaAnswer).toHaveBeenCalledWith(expect.objectContaining({
       query_id: 'query_0001',
       question: 'Người phụ nữ đang cầm gì?',
       video_id: 'video_01',
       original_frame_id: 385,
     }));
-    expect(screen.getByRole('button', { name: 'Đáp án (0)' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Đáp án (0)' }));
-    expect(screen.getByText('Chưa có đáp án.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Đáp án (1)' }));
+    expect(screen.getByText('video_01 · frame 385')).toBeInTheDocument();
+    expect(screen.getByText('Rẽ phải')).toBeInTheDocument();
   });
 
   it('stops a running VQA batch before sending the next rate-limited request', async () => {
@@ -1077,6 +1168,22 @@ describe('qualification frame-first workbench', () => {
     expect(settingsTrigger).toHaveFocus();
   });
 
+  it('allows configuring the delay between batch VQA requests in settings', async () => {
+    const user = userEvent.setup();
+    renderWorkbench();
+
+    await user.click(screen.getByRole('button', { name: 'Cài đặt' }));
+    const delay = screen.getByLabelText('Khoảng chờ giữa request (ms)');
+    expect(delay).toHaveValue(100);
+
+    await user.clear(delay);
+    await user.type(delay, '25');
+    await user.click(screen.getByRole('button', { name: 'Lưu cài đặt batch VQA' }));
+
+    expect(JSON.parse(localStorage.getItem('aic.vqa.batch.settings') ?? '{}')).toEqual({ request_delay_ms: 25 });
+    expect(screen.getByRole('status')).toHaveTextContent('Đã lưu khoảng chờ batch VQA.');
+  });
+
   it('groups VLM settings into a dedicated spaced section', async () => {
     const user = userEvent.setup();
     renderWorkbench();
@@ -1090,9 +1197,9 @@ describe('qualification frame-first workbench', () => {
     );
   });
 
-  it('builds an ordered TRAKE sequence from the selected frame and video studio', async () => {
+  it('builds a four-frame TRAKE sequence from the video studio and shows each object list', async () => {
     const user = userEvent.setup();
-    renderWorkbench();
+    renderWorkbench({ loadStudio: vi.fn(async () => trakeStudio) });
 
     await user.click(screen.getByRole('tab', { name: 'TRAKE' }));
     await user.type(screen.getByLabelText('Truy vấn chính'), 'Một người đi qua cửa hàng rồi rời đi');
@@ -1102,15 +1209,71 @@ describe('qualification frame-first workbench', () => {
     await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
     await user.click(await screen.findByRole('button', { name: 'Chọn frame video_01 · 385' }));
 
-    await user.click(screen.getAllByRole('button', { name: 'Gán frame hiện tại' })[0]);
     await user.click(screen.getByRole('button', { name: 'Xem video studio' }));
+    await user.click(screen.getByRole('button', { name: 'Thêm frame đang xem vào bộ 4' }));
     await user.click(await screen.findByRole('button', { name: 'Chọn keyframe 6 · source frame 411' }));
-    await user.click(screen.getByRole('button', { name: 'Chọn frame đại diện (keyframe 6)' }));
-    await user.click(screen.getByRole('button', { name: 'Gán frame hiện tại' }));
+    await user.click(screen.getByRole('button', { name: 'Thêm frame đang xem vào bộ 4' }));
+    await user.click(screen.getByRole('button', { name: 'Chọn keyframe 7 · source frame 450' }));
+    await user.click(screen.getByRole('button', { name: 'Thêm frame đang xem vào bộ 4' }));
+    await user.click(screen.getByRole('button', { name: 'Chọn keyframe 8 · source frame 500' }));
+    await user.click(screen.getByRole('button', { name: 'Thêm frame đang xem vào bộ 4' }));
+    expect(screen.getByText('4/4 frame đã chọn')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Xác nhận bộ 4 frame' }));
+
+    expect(screen.getByText('xe máy')).toBeInTheDocument();
+    expect(screen.getByText('biển hiệu')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Thêm chuỗi vào đáp án' }));
 
     await user.click(screen.getByRole('button', { name: 'Đáp án (1)' }));
-    expect(screen.getByText('video_01 · frame 385 → 411')).toBeInTheDocument();
+    expect(screen.getByText('video_01 · frame 385 → 411 → 450 → 500')).toBeInTheDocument();
+  });
+
+  it('keeps the TRAKE four-frame selection isolated per object result', async () => {
+    const user = userEvent.setup();
+    const secondResult = {
+      ...response.results[0],
+      video_id: 'video_02',
+      original_frame_id: 420,
+      representative_frame: {
+        ...response.results[0].representative_frame!,
+        original_frame_id: 420,
+        timestamp_ms: 14_000,
+      },
+      evidence_ids: ['obj_420'],
+      evidence: [{ evidence_id: 'obj_420', type: 'object' as const, snippet: 'người thứ hai', producer: 'object:v1' }],
+      matched_modalities: ['object'],
+    };
+    renderWorkbench({
+      searchResponse: { ...response, task: 'trake', results: [response.results[0], secondResult] },
+      loadStudio: vi.fn(async () => trakeStudio),
+    });
+
+    await user.click(screen.getByRole('tab', { name: 'TRAKE' }));
+    await user.type(screen.getByLabelText('Truy vấn chính'), 'Một người đi qua cửa hàng');
+    await user.type(screen.getByLabelText('Mô tả sự kiện 1'), 'Người đi qua cửa hàng');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+    await user.click(await screen.findByRole('button', { name: 'Chọn frame video_01 · 385' }));
+    await user.click(screen.getByRole('button', { name: 'Xem video studio' }));
+
+    for (const frameLabel of [
+      'Thêm frame đang xem vào bộ 4',
+      'Chọn keyframe 6 · source frame 411',
+      'Thêm frame đang xem vào bộ 4',
+      'Chọn keyframe 7 · source frame 450',
+      'Thêm frame đang xem vào bộ 4',
+      'Chọn keyframe 8 · source frame 500',
+      'Thêm frame đang xem vào bộ 4',
+    ]) {
+      await user.click(await screen.findByRole('button', { name: frameLabel }));
+    }
+    await user.click(screen.getByRole('button', { name: 'Xác nhận bộ 4 frame' }));
+
+    expect(screen.getByText('4/4 frame đã chọn')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Chọn frame video_02 · 420' }));
+
+    expect(screen.getByText('0/4 frame đã chọn')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Chọn (?:keyframe )?video_01/ }));
+    expect(screen.getByText('4/4 frame đã chọn')).toBeInTheDocument();
   });
 
   it('moves both selection and focus when navigating frame results with arrow keys', async () => {

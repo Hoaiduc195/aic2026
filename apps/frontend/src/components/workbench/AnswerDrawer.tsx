@@ -8,6 +8,7 @@ import type {
   SelectionRevision,
   SubmissionPreview,
 } from '../../lib/contracts';
+import { buildSubmissionCsv } from '../../lib/submission-csv';
 import { buildSubmission } from '../../lib/workbench-model';
 import type { VqaQueueItem } from '../../lib/vqa-queue-model';
 
@@ -44,6 +45,7 @@ export function AnswerDrawer({
 }: Props) {
   const [copied, setCopied] = useState(false);
   const [exported, setExported] = useState(false);
+  const [csvExported, setCsvExported] = useState(false);
   const [bulkAnswer, setBulkAnswer] = useState('');
   const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
@@ -117,6 +119,27 @@ export function AnswerDrawer({
     window.setTimeout(() => setExported(false), 1500);
   }
 
+  function exportCsv() {
+    if (!answers.length) return;
+    try {
+      const csv = buildSubmissionCsv(task, answers);
+      const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `aic-${safeFilenamePart(queryId)}-${task}.csv`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setActionError(null);
+      setCsvExported(true);
+      window.setTimeout(() => setCsvExported(false), 1500);
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : 'Không thể export CSV.');
+    }
+  }
+
   function applyBulkAnswer() {
     const normalized = bulkAnswer.trim();
     if (!normalized || !onApplyAnswerToPending || pendingCount === 0) return;
@@ -176,7 +199,9 @@ export function AnswerDrawer({
               <div>
                 <strong>{item.video_id} · frame {item.frame_id}</strong>
                 <small>
-                  {item.status === 'answered' ? item.answer : item.status === 'error' ? `Lỗi: ${item.error}` : 'Đang chờ answer'}
+                  {item.status === 'answered' || item.status === 'abstained' || item.status === 'needs_more_evidence'
+                    ? item.answer ?? 'Không biết'
+                    : item.status === 'error' ? `Lỗi: ${item.error}` : 'Đang chờ answer'}
                 </small>
               </div>
               <div className="answer-actions">
@@ -229,6 +254,9 @@ export function AnswerDrawer({
           </div>
           <button type="button" className="secondary-button" disabled={!answers.length} onClick={copyPayload}>
             {copied ? 'Đã sao chép' : 'Sao chép JSON'}
+          </button>
+          <button type="button" className="secondary-button" disabled={!answers.length} onClick={exportCsv}>
+            {csvExported ? 'Đã export CSV' : 'Export CSV'}
           </button>
           <button type="button" className="primary-button" disabled={!answers.length} onClick={exportPayload}>
             {exported ? 'Đã export' : 'Export JSON'}

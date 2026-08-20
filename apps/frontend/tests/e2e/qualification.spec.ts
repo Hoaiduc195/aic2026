@@ -66,14 +66,20 @@ const frameContextResponse = {
 
 const studioResponse = {
   video: playbackResponse,
-  frames: [{
+  frames: [385, 411, 450, 500].map((original_frame_id, index) => ({
     video_id: 'video_01',
-    keyframe_no: 5,
-    original_frame_id: 385,
-    timestamp_ms: 12_800,
+    keyframe_no: index + 5,
+    original_frame_id,
+    timestamp_ms: 12_800 + index * 1_000,
     captions: [],
-    objects: [],
-  }],
+    objects: index === 2 ? [{
+      evidence_id: 'object-450',
+      label: 'xe máy',
+      confidence: 0.88,
+      normalized_bbox: [0.2, 0.2, 0.5, 0.6],
+      producer: 'object:v1',
+    }] : [],
+  })),
   asr_spans: [],
 };
 
@@ -158,7 +164,7 @@ async function mockFrameFirstApis(page: Page) {
         task: 'textual_kis',
         answer_count: 1,
         answers: [{ video_id: 'video_01', frame_id: 385 }],
-        csv: 'video_id,frame_id\r\nvideo_01,385\r\n',
+        csv: 'video_01,385\r\n',
         submittable: false,
         warnings: ['preview_only'],
       }),
@@ -242,5 +248,29 @@ test.describe('qualification frame-first workbench', () => {
     await history.getByRole('button', { name: /Khôi phục.*Một cửa hàng trên phố/ }).click();
     await expect(page.getByLabel('Mô tả sự kiện')).toHaveValue('Một cửa hàng trên phố');
     await expect(page.getByRole('button', { name: 'Chọn frame video_01 · 385' })).toBeVisible();
+  });
+
+  test('selects exactly four TRAKE frames and exposes their object evidence', async ({ page }) => {
+    await mockFrameFirstApis(page);
+    await page.goto('/');
+
+    await page.getByRole('tab', { name: 'TRAKE' }).click();
+    await page.getByLabel('Truy vấn chính').fill('Một người đi qua cửa hàng');
+    await page.getByLabel('Mô tả sự kiện 1').fill('Người đi vào cửa hàng');
+    await page.getByRole('button', { name: 'Tìm frame' }).click();
+    await page.getByRole('button', { name: 'Chọn frame video_01 · 385' }).click();
+    await page.getByRole('button', { name: 'Xem video studio' }).click();
+
+    for (const keyframe of [5, 6, 7, 8]) {
+      await page.getByRole('button', { name: 'Chọn keyframe ' + keyframe + ' · source frame ' + [385, 411, 450, 500][keyframe - 5] }).click();
+      await page.getByRole('button', { name: 'Thêm frame đang xem vào bộ 4' }).click();
+    }
+
+    await expect(page.getByText('4/4 frame đã chọn')).toBeVisible();
+    await page.getByRole('button', { name: 'Xác nhận bộ 4 frame' }).click();
+    await expect(page.getByText('xe máy')).toBeVisible();
+    await page.getByRole('button', { name: 'Thêm chuỗi vào đáp án' }).click();
+    await page.getByRole('button', { name: 'Đáp án (1)' }).click();
+    await expect(page.getByText('video_01 · frame 385 → 411 → 450 → 500')).toBeVisible();
   });
 });

@@ -259,15 +259,14 @@ export class RetrievalService {
       this.runBranch(branch, queryForBranch(plan, branch.name, variant), plan)
     )));
     if (results.length === 1) return results[0];
-    const completedWithIndex = results.map((result, index) => ({ result, index })).filter(({ result }) => result.status === 'completed');
-    if (completedWithIndex.length === 0) return { ...results[0], query_variant: null };
+    const completed = results.filter((result) => result.status === 'completed');
+    if (completed.length === 0) return { ...results[0], query_variant: null };
 
     const candidates = new Map<string, BranchResult['candidates'][number]>();
-    for (const { result, index: variantIndex } of completedWithIndex) {
+    for (const result of completed) {
       for (const candidate of result.candidates) {
         const key = candidateKey(candidate.video_id, candidate.original_frame_id, candidate.start_ms, candidate.end_ms);
         const current = candidates.get(key);
-        const newVariantScores = { ...(current?.variant_scores ?? {}), ...(candidate.variant_scores ?? {}), [variantIndex]: Math.max(current?.variant_scores?.[variantIndex] ?? 0, candidate.raw_score) };
         candidates.set(key, current
           ? {
               ...current,
@@ -276,9 +275,8 @@ export class RetrievalService {
               keyframe_no: current.keyframe_no ?? candidate.keyframe_no,
               evidence_ids: [...new Set([...current.evidence_ids, ...candidate.evidence_ids])],
               matched_terms: [...new Set([...(current.matched_terms ?? []), ...(candidate.matched_terms ?? [])])],
-              variant_scores: newVariantScores,
             }
-          : { ...candidate, variant_scores: newVariantScores });
+          : candidate);
       }
     }
     const ranked = [...candidates.values()]

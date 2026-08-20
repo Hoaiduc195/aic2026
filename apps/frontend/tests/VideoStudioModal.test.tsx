@@ -21,6 +21,16 @@ const studio: VideoStudioResponse = {
   asr_spans: [{ evidence_id: 'asr-1', start_ms: 1_000, end_ms: 3_000, text: 'Xin chào', language: 'vi', producer: 'asr:v1' }],
 };
 
+const multiStudio: VideoStudioResponse = {
+  ...studio,
+  frames: [50, 100, 150, 200].map((originalFrameId, index) => ({
+    ...studio.frames[0],
+    keyframe_no: index + 1,
+    original_frame_id: originalFrameId,
+    timestamp_ms: (index + 1) * 2_000,
+  })),
+};
+
 describe('VideoStudioModal', () => {
   it('shows selected frame annotations and supports selecting the frame for the workbench', async () => {
     const user = userEvent.setup();
@@ -66,6 +76,99 @@ describe('VideoStudioModal', () => {
 
     expect(screen.getByTestId('studio-selected-frame-image')).toHaveAttribute('loading', 'eager');
     expect(screen.getByRole('button', { name: 'Chọn keyframe 1 · source frame 50' })).toBeInTheDocument();
+  });
+
+  it('selects four distinct frames in TRAKE mode and returns them chronologically', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const onSelectFrames = vi.fn();
+
+    render(
+      <VideoStudioModal
+        studio={multiStudio}
+        initialFrameId={50}
+        selectionMode="multiple"
+        onClose={onClose}
+        onSelectFrames={onSelectFrames}
+      />,
+    );
+
+    expect(screen.getByText('0/4 frame đã chọn')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Thêm frame đang xem vào bộ 4' }));
+    await user.click(screen.getByRole('button', { name: 'Chọn keyframe 2 · source frame 100' }));
+    await user.click(screen.getByRole('button', { name: 'Thêm frame đang xem vào bộ 4' }));
+    await user.click(screen.getByRole('button', { name: 'Chọn keyframe 3 · source frame 150' }));
+    await user.click(screen.getByRole('button', { name: 'Thêm frame đang xem vào bộ 4' }));
+    await user.click(screen.getByRole('button', { name: 'Chọn keyframe 4 · source frame 200' }));
+    await user.click(screen.getByRole('button', { name: 'Thêm frame đang xem vào bộ 4' }));
+
+    expect(screen.getByText('4/4 frame đã chọn')).toBeInTheDocument();
+    const confirm = screen.getByRole('button', { name: 'Xác nhận bộ 4 frame' });
+    expect(confirm).toBeEnabled();
+    await user.click(confirm);
+
+    expect(onSelectFrames).toHaveBeenCalledWith(multiStudio.frames);
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('rejects duplicate TRAKE frames and keeps confirmation disabled until four exist', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <VideoStudioModal
+        studio={multiStudio}
+        initialFrameId={50}
+        selectionMode="multiple"
+        onClose={vi.fn()}
+        onSelectFrames={vi.fn()}
+      />,
+    );
+
+    const addButton = screen.getByRole('button', { name: 'Thêm frame đang xem vào bộ 4' });
+    await user.click(addButton);
+    await user.click(addButton);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Frame 50 đã có trong bộ 4');
+    expect(screen.getByText('1/4 frame đã chọn')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Xác nhận bộ 4 frame' })).toBeDisabled();
+  });
+
+  it('adds a downloaded arbitrary original frame to the TRAKE set', async () => {
+    const user = userEvent.setup();
+    const exactFrame: CanonicalFrameResponse = {
+      video_id: 'video-1',
+      keyframe_no: null,
+      original_frame_id: 77,
+      timestamp_ms: 3_080,
+      thumbnail_uri: '/api/v1/media/videos/video-1/frames/77/thumbnail',
+      is_exact_frame: true,
+      annotation_source_frame_id: 50,
+      captions: [],
+      objects: [],
+    };
+    const loadExactFrame = vi.fn(async () => exactFrame);
+
+    render(
+      <VideoStudioModal
+        studio={studio}
+        initialFrameId={50}
+        selectionMode="multiple"
+        onClose={vi.fn()}
+        onSelectFrames={vi.fn()}
+        loadExactFrame={loadExactFrame}
+      />,
+    );
+
+    const video = screen.getByLabelText('Video video-1');
+    Object.defineProperty(video, 'currentTime', { configurable: true, value: 3.08, writable: true });
+    fireEvent.timeUpdate(video);
+    await user.click(screen.getByRole('button', { name: 'Tải frame hiện tại' }));
+
+    await waitFor(() => {
+      expect(loadExactFrame).toHaveBeenCalledWith(77);
+      expect(screen.getByText('1/4 frame đã chọn')).toBeInTheDocument();
+      expect(screen.getByText('Slot 1 · frame 77')).toBeInTheDocument();
+    });
   });
 
   it('uses the frame at the current video position without a manual frame ID', async () => {

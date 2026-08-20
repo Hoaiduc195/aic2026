@@ -35,6 +35,16 @@ function answered(frameIndex: number): VqaAnswerSuggestion {
   };
 }
 
+function unknown(frameIndex: number): VqaAnswerSuggestion {
+  return {
+    ...answered(frameIndex),
+    answer_status: 'abstained',
+    answer: 'Không biết',
+    normalized_answer: 'Không biết',
+    confidence: { level: 'low', score: 0 },
+  };
+}
+
 describe('VQA batch runner', () => {
   it('runs requests concurrently within the configured worker limit and preserves frame order', async () => {
     let activeRequests = 0;
@@ -67,6 +77,26 @@ describe('VQA batch runner', () => {
     expect(result.map((item) => item.frame.original_frame_id)).toEqual([3, 1]);
   });
 
+  it('spaces request starts by the configured delay while retaining the worker pool', async () => {
+    const starts: number[] = [];
+    const answer = vi.fn(async (candidate: FrameCandidate) => {
+      starts.push(Date.now());
+      return answered(candidate.original_frame_id);
+    });
+
+    await runVqaBatch({
+      frames: [frame(1), frame(2), frame(3)],
+      limit: 3,
+      concurrency: 2,
+      requestDelayMs: 25,
+      answer,
+    });
+
+    expect(starts).toHaveLength(3);
+    expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(20);
+    expect(starts[2] - starts[1]).toBeGreaterThanOrEqual(20);
+  });
+
   it('continues processing after a failed frame request', async () => {
     const answer = vi.fn(async (candidate: FrameCandidate) => {
       if (candidate.original_frame_id === 1) throw new Error('timeout');
@@ -77,6 +107,16 @@ describe('VQA batch runner', () => {
 
     expect(result.map((item) => item.status)).toEqual(['error', 'answered']);
     expect(result[0].error).toBe('timeout');
+  });
+
+  it('keeps the explicit Vietnamese unknown answer for an abstained frame', async () => {
+    const result = await runVqaBatch({
+      frames: [frame(1)],
+      limit: 1,
+      answer: vi.fn(async () => unknown(1)),
+    });
+
+    expect(result[0]).toMatchObject({ status: 'abstained', answer: 'Không biết' });
   });
 
   it('reports progress and skips targets selected by the caller', async () => {

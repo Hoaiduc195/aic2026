@@ -1,5 +1,6 @@
 export type VlmAnswerStatus = 'answered' | 'needs_more_evidence' | 'abstained';
 export type VlmConfidenceLevel = 'high' | 'medium' | 'low';
+const UNKNOWN_ANSWER = 'Không biết';
 
 export interface VlmRelevanceResult {
   readonly score: number;
@@ -129,9 +130,12 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
         'Answer one question about the provided video keyframe image with the supplied image as the primary source and the optional evidence as supporting context.',
         'Use evidence to add context or disambiguate, but do not let it override a clear visual observation.',
         'The evidence may be incomplete, noisy, stale, or incorrect.',
-        'Answer concisely in the same language as the question.',
+        'Always answer in Vietnamese, even when the question or evidence is in another language.',
+        'Return exactly one short noun phrase or one short sentence, preferably no more than 12 Vietnamese words.',
+        'For an object question, name only the object or a short description. Do not write a paragraph, greeting, reasoning, steps, list, markdown, or chatbot-style explanation.',
         'Do not invent details that are neither visible in the image nor reasonably supported by the combined context.',
-        'Return only JSON with answer_status, answer, normalized_answer, confidence with level and score, and optional reason.',
+        'If the image is insufficient, use abstained and set both answer and normalized_answer exactly to "Không biết".',
+        'Return only JSON with answer_status, non-empty string answer, non-empty string normalized_answer, confidence with level and score, and optional reason.',
       ].join(' '),
       prompt: input.evidenceText
         ? `Question: ${input.question}\nSupporting Text Evidence:\n${input.evidenceText}`
@@ -147,7 +151,7 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
     }>(rawResponse);
     if (!parsed) {
       return {
-        answer_status: 'abstained', answer: null, normalized_answer: null,
+        answer_status: 'abstained', answer: UNKNOWN_ANSWER, normalized_answer: UNKNOWN_ANSWER,
         confidence: { level: 'low', score: 0 }, reason: 'Failed to parse VLM output',
       };
     }
@@ -157,11 +161,12 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
     const normalizedAnswer = typeof parsed.normalized_answer === 'string' && parsed.normalized_answer.trim()
       ? parsed.normalized_answer.trim()
       : answer;
+    const effectiveStatus = status === 'answered' && !answer ? 'abstained' : status;
     return {
-      answer_status: status,
-      answer,
-      normalized_answer: normalizedAnswer,
-      confidence: confidence(parsed.confidence, status),
+      answer_status: effectiveStatus,
+      answer: effectiveStatus === 'answered' ? answer : UNKNOWN_ANSWER,
+      normalized_answer: effectiveStatus === 'answered' ? normalizedAnswer : UNKNOWN_ANSWER,
+      confidence: confidence(parsed.confidence, effectiveStatus),
       ...(typeof parsed.reason === 'string' && parsed.reason.trim() ? { reason: parsed.reason.trim() } : {}),
     };
   }

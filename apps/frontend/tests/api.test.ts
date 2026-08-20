@@ -310,7 +310,7 @@ describe('search API boundary', () => {
         task: 'textual_kis',
         answer_count: 1,
         answers: [{ video_id: 'video_01', frame_id: 385 }],
-        csv: 'video_id,frame_id\r\nvideo_01,385\r\n',
+        csv: 'video_01,385\r\n',
         submittable: false,
         warnings: ['preview_only'],
       }), { status: 200 }),
@@ -436,6 +436,26 @@ describe('search API boundary', () => {
       annotation_source_frame_id: 385,
     });
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/media/videos/video_01/frames/386', { signal: undefined });
+  });
+
+  it('falls back to the exact-frame thumbnail endpoint when an original frame is not a keyframe', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      video_id: 'video_01',
+      keyframe_no: null,
+      original_frame_id: 386,
+      timestamp_ms: 12_867,
+      thumbnail_uri: null,
+      is_exact_frame: true,
+      annotation_source_frame_id: 385,
+      captions: [],
+      objects: [],
+    }), { status: 200 }));
+
+    await expect(getVideoFrame('video_01', 386)).resolves.toMatchObject({
+      original_frame_id: 386,
+      thumbnail_uri: '/api/v1/media/videos/video_01/frames/386/thumbnail',
+      is_exact_frame: true,
+    });
   });
 
   it('rejects malformed playback and frame-context responses', async () => {

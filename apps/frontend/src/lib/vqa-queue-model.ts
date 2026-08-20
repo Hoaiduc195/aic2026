@@ -1,8 +1,9 @@
 import type { FrameCandidate, QaAnswer } from './contracts';
+import type { VqaBatchResult } from './vqa-batch';
 
 export const VQA_QUEUE_LIMIT = 100;
 
-export type VqaQueueStatus = 'pending' | 'answered' | 'error';
+export type VqaQueueStatus = 'pending' | 'answered' | 'abstained' | 'needs_more_evidence' | 'error';
 
 export interface VqaQueueItem {
   readonly key: string;
@@ -80,9 +81,36 @@ export function applyAnswerToPending(
 ): VqaQueueItem[] {
   const normalized = answer.trim();
   if (!normalized) return existing.map((item) => ({ ...item }));
-  return existing.map((item) => item.status === 'pending' || item.status === 'error'
+  return existing.map((item) => item.status !== 'answered'
     ? { ...item, status: 'answered', answer: normalized, error: undefined }
     : { ...item });
+}
+
+export function applyVqaBatchResults(
+  existing: readonly VqaQueueItem[],
+  results: readonly VqaBatchResult[],
+): VqaQueueItem[] {
+  return results.reduce((current, result) => {
+    if (result.status === 'skipped') return current.map((item) => ({ ...item }));
+
+    const withFrame = addVqaFrame(current, result.frame);
+    const answer = result.answer?.trim();
+    if (result.status === 'answered' && answer) {
+      return updateVqaQueueItem(withFrame, queueKey(result.frame), { status: 'answered', answer });
+    }
+
+    if (result.status === 'needs_more_evidence' || result.status === 'abstained' || result.status === 'answered') {
+      return updateVqaQueueItem(withFrame, queueKey(result.frame), {
+        status: result.status === 'needs_more_evidence' ? 'needs_more_evidence' : 'abstained',
+        answer: answer || 'Không biết',
+      });
+    }
+
+    return updateVqaQueueItem(withFrame, queueKey(result.frame), {
+      status: 'error',
+      error: result.error?.trim() || 'Không thể trả lời frame này.',
+    });
+  }, existing.map((item) => ({ ...item })));
 }
 
 export function updateVqaQueueItem(

@@ -13,7 +13,7 @@ describe('submission preview', () => {
 
     expect(preview.submittable).toBe(false);
     expect(preview.answer_count).toBe(1);
-    expect(preview.csv).toBe('video_id,frame_id,answer\r\nvideo-1,42,màu đỏ\r\n');
+    expect(preview.csv).toBe('video-1,42,màu đỏ\r\n');
   });
 
   it('quotes CSV values and preserves TRAKE frame order', () => {
@@ -44,5 +44,10 @@ describe('submission preview', () => {
       query_id: 'q-4', task: 'vqa',
       answers: Array.from({ length: 101 }, (_, index) => ({ video_id: 'v', frame_id: index, answer: 'a' })),
     })).toThrow('at most 100');
+
+    expect(() => buildSubmissionPreview({
+      query_id: 'q-5', task: 'vqa',
+      answers: [{ video_id: 'video-1', frame_id: 1, answer: 'a'.repeat(101) }],
+    })).toThrow('100');
   });
 });

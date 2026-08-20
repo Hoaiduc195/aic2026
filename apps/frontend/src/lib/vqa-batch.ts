@@ -21,6 +21,7 @@ export interface RunVqaBatchOptions {
   readonly limit: number;
   readonly answer: (frame: FrameCandidate) => Promise<VqaAnswerSuggestion>;
   readonly concurrency?: number;
+  readonly requestDelayMs?: number;
   readonly shouldSkip?: (frame: FrameCandidate) => boolean;
   readonly signal?: AbortSignal;
   readonly onProgress?: (progress: VqaBatchProgress) => void;
@@ -40,6 +41,11 @@ function boundedConcurrency(concurrency: number | undefined): number {
   return Math.max(1, Math.min(MAX_CONCURRENCY, Math.floor(concurrency as number)));
 }
 
+function boundedRequestDelay(delayMs: number | undefined): number {
+  if (!Number.isFinite(delayMs)) return 0;
+  return Math.max(0, Math.min(5_000, Math.floor(delayMs as number)));
+}
+
 function errorMessage(value: unknown): string {
   return value instanceof Error && value.message ? value.message : 'Không thể trả lời frame này.';
 }
@@ -47,6 +53,7 @@ function errorMessage(value: unknown): string {
 export async function runVqaBatch(options: RunVqaBatchOptions): Promise<VqaBatchResult[]> {
   const frames = options.frames.slice(0, boundedLimit(options.limit));
   const concurrency = boundedConcurrency(options.concurrency);
+  const requestDelayMs = boundedRequestDelay(options.requestDelayMs);
   const skipped: { readonly index: number; readonly result: VqaBatchResult }[] = [];
   const pending: { readonly frame: FrameCandidate; readonly index: number }[] = [];
   for (const [index, frame] of frames.entries()) {
@@ -68,12 +75,36 @@ export async function runVqaBatch(options: RunVqaBatchOptions): Promise<VqaBatch
   }
 
   let nextPendingIndex = 0;
+  let nextRequestAt = 0;
+  let requestSlotQueue = Promise.resolve();
+
+  async function acquireRequestSlot(): Promise<boolean> {
+    let release!: () => void;
+    const previous = requestSlotQueue;
+    requestSlotQueue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    await previous;
+    try {
+      if (options.signal?.aborted) return false;
+      const waitMs = Math.max(0, nextRequestAt - Date.now());
+      if (waitMs > 0 && !(await waitForRequestDelay(waitMs, options.signal))) return false;
+      if (options.signal?.aborted) return false;
+      nextRequestAt = Date.now() + requestDelayMs;
+      return true;
+    } finally {
+      release();
+    }
+  }
+
   async function worker(): Promise<void> {
     while (!options.signal?.aborted) {
       const pendingIndex = nextPendingIndex;
       nextPendingIndex += 1;
       const item = pending[pendingIndex];
       if (!item) return;
+      if (!(await acquireRequestSlot())) return;
 
       let result: VqaBatchResult;
       try {
@@ -102,4 +133,21 @@ export async function runVqaBatch(options: RunVqaBatchOptions): Promise<VqaBatch
   return completedResults
     .sort((left, right) => left.index - right.index)
     .map(({ result }) => result);
+}
+
+function waitForRequestDelay(delayMs: number, signal: AbortSignal | undefined): Promise<boolean> {
+  if (delayMs <= 0) return Promise.resolve(!signal?.aborted);
+
+  return new Promise((resolve) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (result: boolean) => {
+      if (timer !== undefined) clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      resolve(result);
+    };
+    const onAbort = () => finish(false);
+    timer = setTimeout(() => finish(true), delayMs);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+  });
 }

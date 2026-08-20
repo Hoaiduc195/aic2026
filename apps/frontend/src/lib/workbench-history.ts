@@ -20,6 +20,8 @@ export interface WorkbenchSnapshot {
   readonly rankedFrames: readonly FrameCandidate[];
   readonly selectedAnchor: FrameCandidate | null;
   readonly assignedFrames: readonly (FrameCandidate | null)[];
+  /** TRAKE selections keyed by the result/object list they belong to. */
+  readonly assignedFramesByResult?: Readonly<Record<string, readonly (FrameCandidate | null)[]>>;
   readonly answers: readonly QualificationAnswer[];
   readonly qaAnswer: string;
   readonly vqaQueue: readonly VqaQueueItem[];
@@ -59,6 +61,15 @@ function isTask(value: unknown): value is QualificationTask {
   return value === 'textual_kis' || value === 'qa' || value === 'trake';
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isAssignedFramesByResult(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return Object.values(value).every((frames) => Array.isArray(frames));
+}
+
 function isHistoryEntry(value: unknown): value is WorkbenchHistoryEntry {
   if (!value || typeof value !== 'object') return false;
   const entry = value as Partial<WorkbenchHistoryEntry>;
@@ -73,6 +84,7 @@ function isHistoryEntry(value: unknown): value is WorkbenchHistoryEntry {
     && Array.isArray(entry.rankedFrames)
     && (entry.selectedAnchor === null || typeof entry.selectedAnchor === 'object')
     && Array.isArray(entry.assignedFrames)
+    && (entry.assignedFramesByResult === undefined || isAssignedFramesByResult(entry.assignedFramesByResult))
     && Array.isArray(entry.answers)
     && typeof entry.qaAnswer === 'string'
     && Array.isArray(entry.vqaQueue);
@@ -103,6 +115,13 @@ export function createWorkbenchHistoryEntry(
     events: snapshot.events.map((event) => ({ ...event })),
     rankedFrames: [...snapshot.rankedFrames],
     assignedFrames: [...snapshot.assignedFrames],
+    ...(snapshot.assignedFramesByResult
+      ? {
+        assignedFramesByResult: Object.fromEntries(
+          Object.entries(snapshot.assignedFramesByResult).map(([resultKey, frames]) => [resultKey, [...frames]]),
+        ),
+      }
+      : {}),
     answers: snapshot.answers.map((answer) => ({ ...answer })),
     vqaQueue: snapshot.vqaQueue.map((item) => ({ ...item })),
     history_id: historyId,

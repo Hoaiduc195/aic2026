@@ -12,7 +12,7 @@ import type {
   TextualKisAnswer,
   TrakeAnswer,
 } from './contracts';
-import { activeAsrSpans, studioFrameThumbnailUri } from './video-studio-model';
+import { activeAsrSpans, frameThumbnailUri, studioFrameThumbnailUri } from './video-studio-model';
 
 export interface NormalizedFrames {
   frames: FrameCandidate[];
@@ -154,18 +154,13 @@ export function toFrameCandidates(response: SearchResponse): NormalizedFrames {
     const frame = result.representative_frame;
     if (!frame) return [];
 
-    const preferredPreview = frame.preview_uri ?? result.preview_uri;
-    const thumbnailUri = isBrowserUri(preferredPreview)
-      ? preferredPreview
-      : `/api/v1/media/keyframes/${encodeURIComponent(result.video_id)}/by-frame/${frame.original_frame_id}`;
-
     return [{
       result_key: resultKey(result),
       video_id: result.video_id,
       ...(frame.keyframe_no === undefined ? {} : { keyframe_no: frame.keyframe_no }),
       original_frame_id: frame.original_frame_id,
       timestamp_ms: frame.timestamp_ms,
-      thumbnail_uri: thumbnailUri,
+      thumbnail_uri: frameThumbnailUri(result.video_id, frame.original_frame_id),
       start_ms: result.start_ms,
       end_ms: result.end_ms,
       score: result.score,
@@ -175,6 +170,13 @@ export function toFrameCandidates(response: SearchResponse): NormalizedFrames {
   });
 
   return { frames, skipped: response.results.length - frames.length };
+}
+
+export function normalizeFrameCandidate(frame: FrameCandidate): FrameCandidate {
+  return {
+    ...frame,
+    thumbnail_uri: frameThumbnailUri(frame.video_id, frame.original_frame_id),
+  };
 }
 
 /**
@@ -247,16 +249,30 @@ export function groupEvidence(evidence: readonly SearchEvidence[], frameTimestam
   }, { ocr: [], asr: [], caption: [], object: [], visual: [], other: [] });
 }
 
+export const TRAKE_FRAME_COUNT = 4;
+
 export function validateTrakeSequence(frames: readonly FrameCandidate[]): boolean {
-  if (frames.length === 0) return false;
+  if (frames.length !== TRAKE_FRAME_COUNT) return false;
   const videoId = frames[0].video_id;
   return frames.every((frame, index) => (
     frame.video_id === videoId && (index === 0 || frames[index - 1].timestamp_ms < frame.timestamp_ms)
   ));
 }
 
-function isBrowserUri(value: string): boolean {
-  return value.startsWith('/') || /^https?:\/\//i.test(value);
+export function emptyTrakeFrameSlots(): Array<FrameCandidate | null> {
+  return Array.from({ length: TRAKE_FRAME_COUNT }, () => null);
+}
+
+export function normalizeTrakeFrameSlots(
+  frames: readonly (FrameCandidate | null)[],
+): Array<FrameCandidate | null> {
+  return Array.from({ length: TRAKE_FRAME_COUNT }, (_, index) => frames[index] ?? null);
+}
+
+export function sortTrakeFrames(frames: readonly FrameCandidate[]): FrameCandidate[] {
+  return [...frames].sort((left, right) => (
+    left.timestamp_ms - right.timestamp_ms || left.original_frame_id - right.original_frame_id
+  ));
 }
 
 function isKeyframeOrdinal(value: number | undefined): value is number {

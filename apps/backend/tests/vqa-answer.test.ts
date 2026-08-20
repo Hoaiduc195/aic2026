@@ -70,6 +70,10 @@ describe('VQA answer grounding', () => {
     expect(systemPrompt).toContain('supporting reference only');
     expect(systemPrompt).toContain('do not let it override');
     expect(systemPrompt).not.toContain('only the supplied evidence');
+    expect(systemPrompt).toContain('always answer in vietnamese');
+    expect(systemPrompt).toContain('one short noun phrase or one short sentence');
+    expect(systemPrompt).toContain('không biết');
+    expect(systemPrompt).toContain('answer and normalized_answer must be non-empty strings');
     expect(vi.mocked(languageModel.complete).mock.calls[0][0].system).toContain('Every key is mandatory');
     expect(vi.mocked(languageModel.complete).mock.calls[0][0].prompt).toContain('A woman is holding a bottle.');
     expect(vi.mocked(languageModel.complete).mock.calls[0][0].prompt).toContain('bottle');
@@ -80,7 +84,7 @@ describe('VQA answer grounding', () => {
     const service = new VqaAnswerService({ find: vi.fn(async () => context([])) }, languageModel);
 
     await expect(service.answer(input)).resolves.toMatchObject({
-      answer_status: 'abstained', answer: null, normalized_answer: null, evidence_ids: [],
+      answer_status: 'abstained', answer: 'Không biết', normalized_answer: 'Không biết', evidence_ids: [],
     });
     expect(languageModel.complete).not.toHaveBeenCalled();
   });
@@ -89,7 +93,7 @@ describe('VQA answer grounding', () => {
     const service = new VqaAnswerService({ find: vi.fn(async () => context()) }, model('not-json'));
 
     await expect(service.answer(input)).resolves.toMatchObject({
-      answer_status: 'abstained', answer: null, normalized_answer: null,
+      answer_status: 'abstained', answer: 'Không biết', normalized_answer: 'Không biết',
     });
   });
 

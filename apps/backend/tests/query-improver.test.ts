@@ -61,6 +61,24 @@ describe('QueryImproverService', () => {
     );
   });
 
+  it('accepts a plain structured TRAKE response when JSON mode is ignored', async () => {
+    const languageModel = model(
+      'A person crosses a shop and then leaves\n1. The person enters the shop\n2. The person leaves the shop',
+    );
+    const service = new QueryImproverService(languageModel);
+
+    const result = await service.improve({
+      query: 'Một người đi qua cửa hàng rồi rời đi\n1. Người bước vào cửa hàng\n2. Người rời khỏi cửa hàng',
+      task: 'trake',
+    });
+
+    expect(result).toMatchObject({
+      improved_query: 'A person crosses a shop and then leaves\n1. The person enters the shop\n2. The person leaves the shop',
+      changed: true,
+      warning: null,
+    });
+  });
+
   it('improves the event query and question separately for VQA', async () => {
     const languageModel = model(JSON.stringify({
       improved_query: 'A shop on a street.',

@@ -11,7 +11,7 @@ export class TrakeExecutor implements TaskExecutor {
 
   async execute(input: TaskExecutorInput) {
     const numVariants = input.plan.query_variants.length;
-    if (numVariants === 0 || input.candidates.length === 0) {
+    if (numVariants <= 1 || input.candidates.length === 0) {
       return buildSearchResponse(input, this.name, []);
     }
 

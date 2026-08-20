@@ -101,6 +101,8 @@ interface OpenAIChatResponse {
   }[];
 }
 
+const JSON_MODE_FALLBACK_STATUSES = new Set([400, 404, 422, 501]);
+
 function contentText(value: unknown): string | undefined {
   if (typeof value === 'string' && value.trim()) return value;
   if (!Array.isArray(value)) return undefined;
@@ -136,8 +138,28 @@ export class OpenAICompatibleLanguageModel implements LanguageModel {
     readonly prompt: string;
     readonly imageDataUrl?: string;
   }): Promise<string> {
+    let response = await this.requestCompletion(input, true);
+    if (!response.ok && JSON_MODE_FALLBACK_STATUSES.has(response.status)) {
+      response = await this.requestCompletion(input, false);
+    }
+
+    if (!response.ok) throw new Error(`language model returned HTTP ${response.status}`);
+    const payload = await response.json() as OpenAIChatResponse;
+    const text = contentText(payload.choices?.[0]?.message?.content);
+    if (!text) throw new Error('language model response has no content');
+    return text;
+  }
+
+  private requestCompletion(
+    input: {
+      readonly system: string;
+      readonly prompt: string;
+      readonly imageDataUrl?: string;
+    },
+    includeJsonMode: boolean,
+  ): Promise<Response> {
     const imageDataUrl = input.imageDataUrl?.trim();
-    const response = await fetch(this.endpoint, {
+    return fetch(this.endpoint, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -159,16 +181,11 @@ export class OpenAICompatibleLanguageModel implements LanguageModel {
         ],
         temperature: this.temperature,
         max_tokens: this.maxTokens,
-        response_format: { type: 'json_object' },
+        ...(includeJsonMode ? { response_format: { type: 'json_object' } } : {}),
         stream: false,
       }),
       signal: AbortSignal.timeout(this.timeoutMs),
     });
-    if (!response.ok) throw new Error(`language model returned HTTP ${response.status}`);
-    const payload = await response.json() as OpenAIChatResponse;
-    const text = contentText(payload.choices?.[0]?.message?.content);
-    if (!text) throw new Error('language model response has no content');
-    return text;
   }
 }
 

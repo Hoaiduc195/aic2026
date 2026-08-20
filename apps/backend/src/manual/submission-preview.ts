@@ -42,7 +42,7 @@ function validateAnswer(task: TaskType, answer: Answer, index: number): Record<s
     return {
       video_id: text(answer.video_id, `${prefix}.video_id`, 200),
       frame_id: frame(answer.frame_id, `${prefix}.frame_id`),
-      answer: text(answer.answer, `${prefix}.answer`),
+      answer: text(answer.answer, `${prefix}.answer`, 100),
     };
   }
   exactKeys(answer, ['video_id', 'frame_ids']);
@@ -64,14 +64,12 @@ function csvCell(value: unknown): string {
 
 function csv(task: TaskType, answers: readonly Record<string, unknown>[]): string {
   if (task === 'textual_kis') {
-    return `video_id,frame_id\r\n${answers.map((answer) => `${csvCell(answer.video_id)},${answer.frame_id}`).join('\r\n')}\r\n`;
+    return `${answers.map((answer) => `${csvCell(answer.video_id)},${csvCell(answer.frame_id)}`).join('\r\n')}\r\n`;
   }
   if (task === 'vqa') {
-    return `video_id,frame_id,answer\r\n${answers.map((answer) => `${csvCell(answer.video_id)},${answer.frame_id},${csvCell(answer.answer)}`).join('\r\n')}\r\n`;
+    return `${answers.map((answer) => `${csvCell(answer.video_id)},${csvCell(answer.frame_id)},${csvCell(answer.answer)}`).join('\r\n')}\r\n`;
   }
-  const maxFrames = Math.max(...answers.map((answer) => (answer.frame_ids as number[]).length));
-  const header = ['video_id', ...Array.from({ length: maxFrames }, (_, index) => `frame_id_${index + 1}`)].join(',');
-  return `${header}\r\n${answers.map((answer) => [answer.video_id, ...(answer.frame_ids as number[])].map(csvCell).join(',')).join('\r\n')}\r\n`;
+  return `${answers.map((answer) => [answer.video_id, ...(answer.frame_ids as number[])].map(csvCell).join(',')).join('\r\n')}\r\n`;
 }
 
 export function parseSubmissionInput(value: unknown): SubmissionInput {

@@ -36,7 +36,7 @@ interface Props {
   onSuggestVqaAnswer?: () => void;
   vqaAnswerLoading?: boolean;
   onAddAnswer: () => void;
-  onAssignEvent: (index: number) => void;
+  onSelectAssignedFrame: (index: number) => void;
 }
 
 const EVIDENCE_LABELS: ReadonlyArray<{
@@ -65,7 +65,7 @@ export function FrameInspector({
   onSuggestVqaAnswer,
   vqaAnswerLoading = false,
   onAddAnswer,
-  onAssignEvent,
+  onSelectAssignedFrame,
 }: Props) {
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartRef = useRef<{ clientX: number; width: number } | null>(null);
@@ -186,15 +186,29 @@ export function FrameInspector({
             </button>
           </div>
         ) : task === 'trake' ? (
-          <div className="event-assignments">
-            {events.map((event, index) => (
-              <div key={event.event_id}>
-                <span><b>{index + 1}</b>{event.description}</span>
-                <button type="button" onClick={() => onAssignEvent(index)}>
-                  {assignedFrames[index] ? `Frame ${assignedFrames[index]?.original_frame_id}` : 'Gán frame hiện tại'}
-                </button>
-              </div>
-            ))}
+          <div className="trake-frame-selection">
+            <p className="muted-copy">Chọn đủ 4 frame trong Video Studio. Object list của từng frame được hiển thị ngay bên dưới.</p>
+            <div className="trake-frame-slots" aria-label="Bốn frame TRAKE đã chọn">
+              {assignedFrames.map((frame, index) => {
+                const objects = frame ? groupEvidence(frame.evidence, frame.timestamp_ms).object : [];
+                return frame ? (
+                  <article className="trake-frame-slot is-filled" key={`${index}-${frame.original_frame_id}`}>
+                    <button type="button" className="trake-frame-slot-main" onClick={() => onSelectAssignedFrame(index)} aria-label={`Xem frame TRAKE ${index + 1}, frame ${frame.original_frame_id}`}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={frame.thumbnail_uri} alt={`Frame ${frame.original_frame_id} của ${frame.video_id}`} loading="lazy" decoding="async" />
+                      <span><b>Frame {index + 1}</b> · {frame.original_frame_id} · {formatMs(frame.timestamp_ms)}</span>
+                      <small>{objects.length > 0 ? objects.map((object) => object.snippet).join(', ') : 'Không có object detection'}</small>
+                    </button>
+                  </article>
+                ) : (
+                  <div className="trake-frame-slot is-empty" key={`empty-${index}`}>
+                    <b>Frame {index + 1}</b>
+                    <small>Chưa chọn</small>
+                  </div>
+                );
+              })}
+            </div>
+            <span className="trake-frame-count">{assignedFrames.filter(Boolean).length}/4 frame đã chọn</span>
             <button type="button" className="primary-button full-width" onClick={onAddAnswer}>
               Thêm chuỗi vào đáp án
             </button>

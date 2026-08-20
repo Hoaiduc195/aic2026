@@ -71,6 +71,10 @@ describe('OpenAI-compatible vision model', () => {
     expect(body.messages[0].content).toContain('primary source');
     expect(body.messages[0].content).toContain('supporting context');
     expect(body.messages[0].content).toContain('do not let it override');
+    expect(body.messages[0].content).toContain('Always answer in Vietnamese');
+    expect(body.messages[0].content).toContain('one short noun phrase or one short sentence');
+    expect(body.messages[0].content).toContain('Không biết');
+    expect(body.messages[0].content).toContain('non-empty string answer');
     expect(body.messages[1].content).toEqual([
       expect.objectContaining({ type: 'text' }),
       { type: 'image_url', image_url: { url: 'https://signed.test/frame.jpg' } },
@@ -84,7 +88,9 @@ describe('OpenAI-compatible vision model', () => {
 
     await expect(new OpenAICompatibleVisionClient(clientOptions).answerVisualQuestion({
       question: 'What is shown?', imageUrl: 'https://signed.test/frame.jpg',
-    })).resolves.toMatchObject({ answer_status: 'abstained', confidence: { level: 'low' } });
+    })).resolves.toMatchObject({
+      answer_status: 'abstained', answer: 'Không biết', normalized_answer: 'Không biết', confidence: { level: 'low' },
+    });
   });
 
   it('returns an unavailable implementation without making a request', async () => {

@@ -129,10 +129,39 @@ describe('RetrievalService', () => {
     expect(embeddingService.embedImage).toHaveBeenCalledWith(Buffer.from('frame'), 'image/jpeg', expect.anything());
   });
 
-  it('splits TRAKE event lines into independent retrieval variants', () => {
+  it('uses only the TRAKE main query as the retrieval variant', () => {
     const service = new RetrievalService(loadConfig(), [completedBranch('caption', [])], createRegistry());
-    const plan = service.createPlan({ query: '1. mở cửa\n2) bước vào phòng\n3. ngồi xuống', task: 'trake' });
-    expect(plan.query_variants).toEqual(['mở cửa', 'bước vào phòng', 'ngồi xuống']);
+    const plan = service.createPlan({
+      query: 'Một người đi qua cửa hàng\n1. Người bước vào cửa hàng\n2. Người rời khỏi cửa hàng',
+      task: 'trake',
+    });
+    expect(plan.original_query).toBe('Một người đi qua cửa hàng');
+    expect(plan.query_variants).toEqual(['Một người đi qua cửa hàng']);
+    expect(plan.temporal_relations).toEqual([]);
+  });
+
+  it('returns main-query TRAKE candidates without event alignment', async () => {
+    const branch = completedBranch('caption', [
+      {
+        video_id: 'video-1', rank: 1, raw_score: 0.9, original_frame_id: 10,
+        start_ms: 100, end_ms: 101, evidence_ids: [],
+      },
+      {
+        video_id: 'video-1', rank: 2, raw_score: 0.8, original_frame_id: 20,
+        start_ms: 2_000, end_ms: 2_001, evidence_ids: [],
+      },
+    ]);
+    const service = new RetrievalService(loadConfig(), [branch], createRegistry());
+
+    const response = await service.search({
+      query: '1. open the door\n2. walk into the room',
+      task: 'trake',
+      retrieval: { near_frame_window_ms: 500 },
+    });
+
+    expect(response.task).toBe('trake');
+    expect(response.degraded).toBe(false);
+    expect(response.results.map((result) => result.original_frame_id)).toEqual([10, 20]);
   });
 
   it('fuses candidates and returns a frontend-compatible response', async () => {

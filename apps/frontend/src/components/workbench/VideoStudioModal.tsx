@@ -18,7 +18,10 @@ interface Props {
   initialFrameId: number;
   initialTimestampMs?: number;
   onClose: () => void;
-  onSelectFrame: (frame: StudioFrame) => void;
+  onSelectFrame?: (frame: StudioFrame) => void;
+  onSelectFrames?: (frames: readonly StudioFrame[]) => void;
+  selectionMode?: 'single' | 'multiple';
+  initialSelectedFrameIds?: readonly number[];
   loadExactFrame?: (frameId: number, signal?: AbortSignal) => Promise<CanonicalFrameResponse>;
 }
 
@@ -28,8 +31,17 @@ export function VideoStudioModal({
   initialTimestampMs = 0,
   onClose,
   onSelectFrame,
+  onSelectFrames,
+  selectionMode = 'single',
+  initialSelectedFrameIds = [],
   loadExactFrame,
 }: Props) {
+  const isMultiSelect = selectionMode === 'multiple';
+  const selectedFrameIdsKey = initialSelectedFrameIds.join(',');
+  const initialFrameIds = useMemo(
+    () => selectedFrameIdsKey ? selectedFrameIdsKey.split(',').map(Number) : [],
+    [selectedFrameIdsKey],
+  );
   const dialogRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -42,12 +54,32 @@ export function VideoStudioModal({
   const [currentTimeMs, setCurrentTimeMs] = useState(initialFrame?.timestamp_ms ?? 0);
   const [showBoxes, setShowBoxes] = useState(true);
   const [exactFrame, setExactFrame] = useState<CanonicalFrameResponse | null>(null);
+  const [selectedFrameOverride, setSelectedFrameOverride] = useState<StudioFrame | null>(null);
+  const [selectedFrames, setSelectedFrames] = useState<StudioFrame[]>(() => (
+    initialFrameIds
+      .map((frameId) => studio.frames.find((frame) => frame.original_frame_id === frameId))
+      .filter((frame): frame is StudioFrame => frame !== undefined)
+      .sort((left, right) => left.timestamp_ms - right.timestamp_ms)
+  ));
+  const [targetSlotIndex, setTargetSlotIndex] = useState<number | null>(null);
   const [isLoadingExactFrame, setIsLoadingExactFrame] = useState(false);
   const [exactFrameError, setExactFrameError] = useState<string | null>(null);
-  const selectedFrame = exactFrame
+  const [selectionError, setSelectionError] = useState<string | null>(null);
+  const selectedFrame = selectedFrameOverride
+    ?? exactFrame
     ?? studio.frames.find((frame) => frame.original_frame_id === selectedFrameId)
     ?? initialFrame
     ?? null;
+  const orderedSelectedFrames = useMemo(
+    () => [...selectedFrames].sort((left, right) => (
+      left.timestamp_ms - right.timestamp_ms || left.original_frame_id - right.original_frame_id
+    )),
+    [selectedFrames],
+  );
+  const selectionIsValid = orderedSelectedFrames.length === 4
+    && orderedSelectedFrames.every((frame, index) => (
+      index === 0 || orderedSelectedFrames[index - 1].timestamp_ms < frame.timestamp_ms
+    ));
   const lastFrameId = studio.video.frame_count === undefined || studio.video.frame_count === null
     ? 2_147_483_647
     : Math.max(0, studio.video.frame_count - 1);
@@ -86,8 +118,24 @@ export function VideoStudioModal({
     setSelectedFrameId(initialFrame?.original_frame_id ?? null);
     setCurrentTimeMs(initialFrame?.timestamp_ms ?? 0);
     setExactFrame(null);
+    setSelectedFrameOverride(null);
     setExactFrameError(null);
   }, [initialFrame?.original_frame_id, initialFrame?.timestamp_ms, initialFrameId]);
+
+  useEffect(() => {
+    if (!isMultiSelect) {
+      setSelectedFrames([]);
+      setTargetSlotIndex(null);
+      return;
+    }
+    setSelectedFrames(initialFrameIds
+      .map((frameId) => studio.frames.find((frame) => frame.original_frame_id === frameId))
+      .filter((frame): frame is StudioFrame => frame !== undefined)
+      .sort((left, right) => left.timestamp_ms - right.timestamp_ms)
+      .slice(0, 4));
+    setTargetSlotIndex(null);
+    setSelectionError(null);
+  }, [initialFrameIds, selectedFrameIdsKey, isMultiSelect, studio.frames]);
 
   useEffect(() => {
     if (!loadExactFrame || initialFrameId < 0 || studio.frames.some((frame) => frame.original_frame_id === initialFrameId)) {
@@ -120,7 +168,10 @@ export function VideoStudioModal({
 
   function seek(timestampMs: number, clearExact = true) {
     const clamped = Math.max(0, Math.min(studio.video.duration_ms, timestampMs));
-    if (clearExact) setExactFrame(null);
+    if (clearExact) {
+      setExactFrame(null);
+      setSelectedFrameOverride(null);
+    }
     setCurrentTimeMs(clamped);
     const frame = nearestStudioFrame(studio.frames, clamped);
     if (frame) setSelectedFrameId(frame.original_frame_id);
@@ -130,6 +181,8 @@ export function VideoStudioModal({
   function selectFrame(frame: StudioFrame) {
     setExactFrame(null);
     setExactFrameError(null);
+    setSelectionError(null);
+    setSelectedFrameOverride(frame);
     setSelectedFrameId(frame.original_frame_id);
     seek(frame.timestamp_ms);
   }
@@ -137,7 +190,10 @@ export function VideoStudioModal({
   function handleTimeUpdate() {
     const timestampMs = Math.round((videoRef.current?.currentTime ?? 0) * 1000);
     setCurrentTimeMs(timestampMs);
-    if (!exactFrame || Math.abs(timestampMs - exactFrame.timestamp_ms) > 50) setExactFrame(null);
+    if (!exactFrame || Math.abs(timestampMs - exactFrame.timestamp_ms) > 50) {
+      setExactFrame(null);
+      setSelectedFrameOverride(null);
+    }
     const frame = nearestStudioFrame(studio.frames, timestampMs);
     if (frame) setSelectedFrameId(frame.original_frame_id);
   }
@@ -149,6 +205,7 @@ export function VideoStudioModal({
     try {
       const frame = await loadExactFrame(frameId);
       setExactFrame(frame);
+      setSelectedFrameOverride(null);
       setSelectedFrameId(frame.original_frame_id);
       setCurrentTimeMs(frame.timestamp_ms);
       if (videoRef.current) videoRef.current.currentTime = frame.timestamp_ms / 1000;
@@ -165,7 +222,64 @@ export function VideoStudioModal({
     if (!loadExactFrame) return;
     const frame = await loadCurrentVideoFrame(currentVideoFrameId);
     if (!frame) return;
-    onSelectFrame(frame);
+    if (!isMultiSelect) {
+      onSelectFrame?.(frame);
+      onClose();
+      return;
+    }
+    addFrameToSelection(frame);
+  }
+
+  function addFrameToSelection(frame: StudioFrame) {
+    const existingIndex = selectedFrames.findIndex((item) => item.original_frame_id === frame.original_frame_id);
+    const slotIndex = targetSlotIndex ?? (selectedFrames.length < 4 ? selectedFrames.length : null);
+    if (existingIndex >= 0 && existingIndex !== slotIndex) {
+      setSelectionError(`Frame ${frame.original_frame_id} đã có trong bộ 4.`);
+      return;
+    }
+    if (slotIndex === null) {
+      setSelectionError('Bộ 4 đã đủ frame. Hãy chọn một slot để thay thế.');
+      return;
+    }
+    setSelectedFrames((current) => {
+      const next = [...current];
+      next[slotIndex] = frame;
+      return next.sort((left, right) => (
+        left.timestamp_ms - right.timestamp_ms || left.original_frame_id - right.original_frame_id
+      ));
+    });
+    setTargetSlotIndex(null);
+    setSelectionError(null);
+  }
+
+  function addCurrentFrameToSelection() {
+    if (!isMultiSelect || !selectedFrame) return;
+    addFrameToSelection(selectedFrame);
+  }
+
+  function removeSelectedFrame(index: number) {
+    setSelectedFrames((current) => current.filter((_, frameIndex) => frameIndex !== index));
+    setTargetSlotIndex(null);
+    setSelectionError(null);
+  }
+
+  function focusSelectedFrame(frame: StudioFrame, index: number) {
+    setTargetSlotIndex(index);
+    setSelectedFrameOverride(frame);
+    setExactFrame(null);
+    setExactFrameError(null);
+    setSelectedFrameId(frame.original_frame_id);
+    setCurrentTimeMs(frame.timestamp_ms);
+    if (videoRef.current) videoRef.current.currentTime = frame.timestamp_ms / 1000;
+  }
+
+  function confirmSelection() {
+    if (!isMultiSelect) return;
+    if (!selectionIsValid || !onSelectFrames) {
+      setSelectionError('TRAKE cần đúng 4 frame khác nhau, tăng dần theo thời gian.');
+      return;
+    }
+    onSelectFrames(orderedSelectedFrames);
     onClose();
   }
 
@@ -229,7 +343,7 @@ export function VideoStudioModal({
               </div>
               <div className="video-studio-exact-picker-controls">
                 <button type="button" className="secondary-button" onClick={() => void chooseCurrentVideoFrame()} disabled={!loadExactFrame || isLoadingExactFrame}>
-                  {isLoadingExactFrame ? 'Đang tải…' : 'Chọn frame hiện tại'}
+                  {isLoadingExactFrame ? 'Đang tải…' : isMultiSelect ? 'Tải frame hiện tại' : 'Chọn frame hiện tại'}
                 </button>
               </div>
               <small>
@@ -260,6 +374,45 @@ export function VideoStudioModal({
                 </button>
               ))}
             </div>
+
+            {isMultiSelect && (
+              <section className="studio-selected-set" aria-label="Bộ 4 frame đã chọn">
+                <div className="studio-selected-set-heading">
+                  <div>
+                    <p className="eyebrow">TRAKE</p>
+                    <h3>Bộ 4 frame đã chọn</h3>
+                  </div>
+                  <strong>{orderedSelectedFrames.length}/4 frame đã chọn</strong>
+                </div>
+                <div className="studio-selected-set-grid">
+                  {Array.from({ length: 4 }, (_, index) => {
+                    const frame = orderedSelectedFrames[index];
+                    return frame ? (
+                      <article className={targetSlotIndex === index ? 'studio-selected-slot is-target' : 'studio-selected-slot'} key={frame.original_frame_id}>
+                        <button type="button" className="studio-selected-slot-preview" onClick={() => focusSelectedFrame(frame, index)} aria-label={`Chọn slot ${index + 1}, frame ${frame.original_frame_id}`}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={studioFrameThumbnailUri(frame)} alt={`Frame ${frame.original_frame_id}`} loading="lazy" decoding="async" />
+                          <span>Slot {index + 1} · frame {frame.original_frame_id}</span>
+                          <small>{formatMs(frame.timestamp_ms)} · {frame.objects.length > 0 ? frame.objects.map((object) => object.label).join(', ') : 'Không có object'}</small>
+                        </button>
+                        <button type="button" className="studio-selected-slot-remove" onClick={() => removeSelectedFrame(index)} aria-label={`Xóa frame ${frame.original_frame_id} khỏi bộ 4`}>×</button>
+                      </article>
+                    ) : (
+                      <div className={targetSlotIndex === index ? 'studio-selected-slot is-empty is-target' : 'studio-selected-slot is-empty'} key={`empty-${index}`}>
+                        <span>Slot {index + 1}</span>
+                        <small>Chọn frame rồi thêm vào đây</small>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="studio-selected-set-actions">
+                  <button type="button" className="primary-button" onClick={confirmSelection} disabled={!selectionIsValid}>
+                    Xác nhận bộ 4 frame
+                  </button>
+                </div>
+                {selectionError && <p className="inline-error" role="alert">{selectionError}</p>}
+              </section>
+            )}
           </section>
 
           <aside className="video-studio-inspector" aria-label="Thông tin frame đang chọn">
@@ -323,11 +476,21 @@ export function VideoStudioModal({
                   <button type="button" className="secondary-button" onClick={() => setShowBoxes((visible) => !visible)}>
                     {showBoxes ? 'Ẩn bounding box' : 'Hiện bounding box'}
                   </button>
-                  <button type="button" className="primary-button" onClick={() => { onSelectFrame(selectedFrame); onClose(); }}>
-                    {selectedFrame.is_exact_frame
-                      ? `Chọn frame đại diện (canonical frame ${selectedFrame.original_frame_id})`
-                      : `Chọn frame đại diện (keyframe ${selectedFrame.keyframe_no})`}
-                  </button>
+                  {isMultiSelect ? (
+                    <button type="button" className="primary-button" onClick={addCurrentFrameToSelection} disabled={selectedFrames.length >= 4 && targetSlotIndex === null}>
+                      {targetSlotIndex !== null
+                        ? `Thay frame vào slot ${targetSlotIndex + 1}`
+                        : selectedFrames.length < 4
+                          ? 'Thêm frame đang xem vào bộ 4'
+                          : 'Chọn slot để thay frame'}
+                    </button>
+                  ) : (
+                    <button type="button" className="primary-button" onClick={() => { onSelectFrame?.(selectedFrame); onClose(); }}>
+                      {selectedFrame.is_exact_frame
+                        ? `Chọn frame đại diện (canonical frame ${selectedFrame.original_frame_id})`
+                        : `Chọn frame đại diện (keyframe ${selectedFrame.keyframe_no})`}
+                    </button>
+                  )}
                 </div>
 
                 <section className="studio-evidence-section">
