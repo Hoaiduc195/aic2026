@@ -80,6 +80,8 @@ import {
 import {
   applyCanonicalFrameToCandidate,
   applyStudioFrameToCandidate,
+  autoBuildTrakeAnswers,
+  autoSelectNearbyTrakeFrames,
   buildRankedTextualSubmission,
   emptyTrakeFrameSlots,
   moveFrameToBoundary,
@@ -91,6 +93,7 @@ import {
   TRAKE_FRAME_COUNT,
   validateTrakeSequence,
 } from '../lib/workbench-model';
+import { buildSubmissionCsv } from '../lib/submission-csv';
 import { useWorkbenchStore } from '../lib/workbench-store';
 import { frameThumbnailUri } from '../lib/video-studio-model';
 import { runVqaBatch } from '../lib/vqa-batch';
@@ -796,6 +799,66 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
     setSelectedAnchor(frame);
   }
 
+  function autoSelectNearbyTrakeFramesForAnchor() {
+    if (!selectedAnchor) return;
+    const availableFrames = studioQuery.data?.video.video_id === selectedAnchor.video_id
+      ? studioQuery.data.frames
+      : rankedFrames.filter((frame) => frame.video_id === selectedAnchor.video_id);
+    const asrSpans = studioQuery.data?.video.video_id === selectedAnchor.video_id
+      ? studioQuery.data.asr_spans
+      : [];
+    const selected = autoSelectNearbyTrakeFrames(selectedAnchor, availableFrames, asrSpans);
+    const normalized = normalizeTrakeFrameSlots(selected);
+    const selectionKey = selectedAnchor.result_key;
+    setAssignedFramesByResult((current) => ({
+      ...current,
+      [selectionKey]: normalized,
+    }));
+    const firstFrame = selected[0] ?? selectedAnchor;
+    setActiveFrame(firstFrame);
+    setNotice(`Đã tự động chọn 4 frame: ${selected.map((frame) => frame.original_frame_id).join(' → ')}.`);
+  }
+
+  function autoFillTrakeQueue() {
+    if (task !== 'trake' || rankedFrames.length === 0) return;
+    const trakeAnswers = autoBuildTrakeAnswers(rankedFrames, 100);
+    if (trakeAnswers.length === 0) {
+      setError('Không có đủ kết quả để tạo chuỗi TRAKE.');
+      return;
+    }
+    replaceAnswers(trakeAnswers);
+    setError(null);
+    setNotice(`Đã tự động tạo ${trakeAnswers.length} chuỗi TRAKE từ kết quả tìm kiếm.`);
+  }
+
+  function exportRankedTrakeCsv() {
+    if (task !== 'trake' || !response?.query_id || rankedFrames.length === 0) return;
+    const trakeAnswers = answers.length > 0 && answers[0] && 'frame_ids' in answers[0]
+      ? (answers as readonly TrakeAnswer[])
+      : autoBuildTrakeAnswers(rankedFrames, 100);
+
+    if (trakeAnswers.length === 0) {
+      setError('Không có đáp án TRAKE để xuất CSV.');
+      return;
+    }
+
+    try {
+      const csv = buildSubmissionCsv('trake', trakeAnswers);
+      const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `aic-${safeFilenamePart(response.query_id)}-trake.csv`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setNotice(`Đã xuất CSV ${trakeAnswers.length} chuỗi TRAKE.`);
+    } catch (reason) {
+      setError(readError(reason, 'Không thể xuất CSV TRAKE.'));
+    }
+  }
+
   function resizeInspector(width: number) {
     const boundedWidth = Math.min(MAX_INSPECTOR_WIDTH, Math.max(MIN_INSPECTOR_WIDTH, Math.round(width)));
     setInspectorWidth(boundedWidth);
@@ -1230,6 +1293,8 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
             onMoveToBottom={(frame) => moveFrameToEdge(frame, 'bottom')}
             onQueryFrame={queryByFrame}
             onExport={task === 'textual_kis' ? exportRankedTextualFrames : undefined}
+            onFillTrakeQueue={task === 'trake' ? autoFillTrakeQueue : undefined}
+            onExportTrakeCsv={task === 'trake' ? exportRankedTrakeCsv : undefined}
             queueKeys={task === 'qa' ? vqaQueueKeys : undefined}
             queueCount={task === 'qa' ? vqaQueue.length : undefined}
             onAddToQueue={task === 'qa' ? addFrameToVqaQueue : undefined}
@@ -1262,6 +1327,7 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
               vqaAnswerLoading={vqaAnswerMutation.isPending || batchVqaLoading}
               onAddAnswer={addCurrentAnswer}
               onSelectAssignedFrame={selectAssignedFrame}
+              onAutoSelectNearbyFrames={task === 'trake' ? autoSelectNearbyTrakeFramesForAnchor : undefined}
             />
           )}
         </div>

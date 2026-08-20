@@ -30,6 +30,8 @@ interface Props {
   onMoveToBottom?: (frame: FrameCandidate) => void;
   onQueryFrame?: (frame: FrameCandidate) => void;
   onExport?: () => void;
+  onFillTrakeQueue?: () => void;
+  onExportTrakeCsv?: () => void;
   queueKeys?: ReadonlySet<string>;
   queueCount?: number;
   onAddToQueue?: (frame: FrameCandidate) => void;
@@ -63,6 +65,8 @@ export function FrameGrid({
   onMoveToBottom,
   onQueryFrame,
   onExport,
+  onFillTrakeQueue,
+  onExportTrakeCsv,
   queueKeys = new Set<string>(),
   queueCount = 0,
   onAddToQueue,
@@ -320,6 +324,30 @@ export function FrameGrid({
             >
               Xuất JSON top 100
             </button>
+          )}
+          {(onFillTrakeQueue || onExportTrakeCsv) && searched && (
+            <div className="trake-result-toolbar" aria-label="Công cụ hàng đợi TRAKE">
+              {onFillTrakeQueue && (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={frames.length === 0}
+                  onClick={onFillTrakeQueue}
+                >
+                  ⚡ Fill 100 chuỗi TRAKE
+                </button>
+              )}
+              {onExportTrakeCsv && (
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={frames.length === 0}
+                  onClick={onExportTrakeCsv}
+                >
+                  Xuất CSV top 100
+                </button>
+              )}
+            </div>
           )}
           {onFillQueue && searched && (
             <div className="vqa-result-toolbar" aria-label="Công cụ hàng đợi VQA">

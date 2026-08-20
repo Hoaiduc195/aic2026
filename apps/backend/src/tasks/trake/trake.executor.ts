@@ -4,6 +4,19 @@ import type { TaskExecutor, TaskExecutorInput } from '../task-executor';
 import { buildSearchResponse } from '../task-executor';
 import type { FusedCandidate } from '../../common/types';
 
+function temporalTransitionMultiplier(deltaMs: number): number {
+  if (deltaMs < 400) {
+    return 0.5; // Heavy penalty for frames too close to be distinct narrative events
+  }
+  if (deltaMs >= 1000 && deltaMs <= 120000) {
+    return 1.2; // Reward natural narrative pacing (1s to 2 mins)
+  }
+  if (deltaMs > 900000) {
+    return 0.8; // Mild penalty for excessive jumps (> 15 mins)
+  }
+  return 1.0;
+}
+
 @Injectable()
 export class TrakeExecutor implements TaskExecutor {
   readonly task = 'trake' as const;
@@ -11,8 +24,11 @@ export class TrakeExecutor implements TaskExecutor {
 
   async execute(input: TaskExecutorInput) {
     const numVariants = input.plan.query_variants.length;
-    if (numVariants <= 1 || input.candidates.length === 0) {
+    if (input.candidates.length === 0) {
       return buildSearchResponse(input, this.name, []);
+    }
+    if (numVariants <= 1) {
+      return buildSearchResponse(input, this.name, input.candidates);
     }
 
     const byVideo = new Map<string, FusedCandidate[]>();
@@ -41,31 +57,32 @@ export class TrakeExecutor implements TaskExecutor {
       }
 
       for (let v = 1; v < numVariants; v++) {
-        let maxPrevScore = -1;
-        let maxPrevIndex = -1;
-        // Optimization: since strictly increasing, and array is sorted, 
-        // we can just maintain the max valid prefix as we scan i.
-        // Wait, multiple candidates might have the SAME original_frame_id.
-        // We only transition from strictly smaller frame IDs.
-        
-        // Two pointers to maintain max score for strictly smaller frame IDs
-        let p = 0;
-        let runningMaxScore = -1;
-        let runningMaxIndex = -1;
-
         for (let i = 0; i < n; i++) {
-          while (p < i && candidates[p].original_frame_id! < candidates[i].original_frame_id!) {
-            if (dp[p][v - 1] > runningMaxScore) {
-              runningMaxScore = dp[p][v - 1];
-              runningMaxIndex = p;
+          const vScore = candidates[i].variant_scores?.[v] ?? 0;
+          if (vScore <= 0) continue;
+
+          let bestPrevScore = -1;
+          let bestPrevIndex = -1;
+
+          for (let p = 0; p < i; p++) {
+            if (candidates[p].original_frame_id! >= candidates[i].original_frame_id!) continue;
+            if (dp[p][v - 1] <= 0) continue;
+
+            const prevMs = candidates[p].timestamp_ms ?? (candidates[p].original_frame_id! * 40);
+            const currMs = candidates[i].timestamp_ms ?? (candidates[i].original_frame_id! * 40);
+            const deltaMs = Math.max(1, currMs - prevMs);
+            const transition = temporalTransitionMultiplier(deltaMs);
+
+            const totalScore = dp[p][v - 1] + vScore * transition;
+            if (totalScore > bestPrevScore) {
+              bestPrevScore = totalScore;
+              bestPrevIndex = p;
             }
-            p++;
           }
 
-          const vScore = candidates[i].variant_scores?.[v] ?? 0;
-          if (vScore > 0 && runningMaxScore >= 0) {
-            dp[i][v] = runningMaxScore + vScore;
-            parent[i][v] = runningMaxIndex;
+          if (bestPrevScore > 0 && bestPrevIndex >= 0) {
+            dp[i][v] = bestPrevScore;
+            parent[i][v] = bestPrevIndex;
           }
         }
       }
@@ -94,12 +111,15 @@ export class TrakeExecutor implements TaskExecutor {
     }
 
     // Sort aligned candidates by the new score (descending)
-    alignedCandidates.sort((a, b) => b.score - a.score);
+    if (alignedCandidates.length > 0) {
+      alignedCandidates.sort((a, b) => b.score - a.score);
+      return buildSearchResponse(
+        { ...input, candidates: alignedCandidates },
+        this.name,
+        [],
+      );
+    }
 
-    return buildSearchResponse(
-      { ...input, candidates: alignedCandidates },
-      this.name,
-      [],
-    );
+    return buildSearchResponse(input, this.name, input.candidates);
   }
 }

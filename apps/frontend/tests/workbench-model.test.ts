@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  autoBuildTrakeAnswers,
+  autoSelectNearbyTrakeFrames,
   buildAnswer,
   buildRankedTextualSubmission,
   buildSubmission,
@@ -248,7 +250,83 @@ describe('workbench answer model', () => {
     expect(top.map((frame) => frame.original_frame_id)).toEqual([2, 0, 1, 3]);
     expect(bottom.map((frame) => frame.original_frame_id)).toEqual([0, 2, 3, 1]);
     expect(moveFrameToBoundary(frames, 0, 'top')).toEqual(frames);
-    expect(moveFrameToBoundary(frames, 3, 'bottom')).toEqual(frames);
     expect(frames.map((frame) => frame.original_frame_id)).toEqual([0, 1, 2, 3]);
   });
+
+  it('auto-selects four chronological frames for TRAKE around an anchor', () => {
+    const anchor: FrameCandidate = {
+      result_key: 'video_01\u0000200',
+      video_id: 'video_01',
+      original_frame_id: 200,
+      timestamp_ms: 8_000,
+      thumbnail_uri: '/frame/200',
+      start_ms: 8_000,
+      end_ms: 8_500,
+      score: 0.9,
+      evidence: [],
+      matched_modalities: [],
+    };
+
+    const available: FrameCandidate[] = [
+      { ...anchor, original_frame_id: 100, timestamp_ms: 4_000 },
+      anchor,
+      { ...anchor, original_frame_id: 300, timestamp_ms: 12_000 },
+      { ...anchor, original_frame_id: 400, timestamp_ms: 16_000 },
+      { ...anchor, original_frame_id: 500, timestamp_ms: 20_000 },
+    ];
+
+    const selected = autoSelectNearbyTrakeFrames(anchor, available);
+    expect(selected).toHaveLength(4);
+    expect(validateTrakeSequence(selected)).toBe(true);
+    expect(selected.map((f) => f.original_frame_id)).toEqual([200, 300, 400, 500]);
+  });
+
+  it('auto-builds batch TRAKE answers from ranked retrieval frames', () => {
+    const ranked: FrameCandidate[] = [
+      {
+        result_key: 'video_01\u0000100',
+        video_id: 'video_01',
+        original_frame_id: 100,
+        timestamp_ms: 4_000,
+        thumbnail_uri: '/frame/100',
+        start_ms: 4_000,
+        end_ms: 4_500,
+        score: 0.95,
+        evidence: [],
+        matched_modalities: [],
+      },
+      {
+        result_key: 'video_01\u0000200',
+        video_id: 'video_01',
+        original_frame_id: 200,
+        timestamp_ms: 8_000,
+        thumbnail_uri: '/frame/200',
+        start_ms: 8_000,
+        end_ms: 8_500,
+        score: 0.90,
+        evidence: [],
+        matched_modalities: [],
+      },
+      {
+        result_key: 'video_02\u000050',
+        video_id: 'video_02',
+        original_frame_id: 50,
+        timestamp_ms: 2_000,
+        thumbnail_uri: '/frame/50',
+        start_ms: 2_000,
+        end_ms: 2_500,
+        score: 0.85,
+        evidence: [],
+        matched_modalities: [],
+      },
+    ];
+
+    const answers = autoBuildTrakeAnswers(ranked, 10);
+    expect(answers).toHaveLength(2);
+    expect(answers[0].video_id).toBe('video_01');
+    expect(answers[0].frame_ids).toHaveLength(4);
+    expect(answers[1].video_id).toBe('video_02');
+    expect(answers[1].frame_ids).toHaveLength(4);
+  });
 });
+

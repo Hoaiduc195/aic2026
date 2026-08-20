@@ -37,6 +37,7 @@ interface Props {
   vqaAnswerLoading?: boolean;
   onAddAnswer: () => void;
   onSelectAssignedFrame: (index: number) => void;
+  onAutoSelectNearbyFrames?: () => void;
 }
 
 const EVIDENCE_LABELS: ReadonlyArray<{
@@ -66,6 +67,7 @@ export function FrameInspector({
   vqaAnswerLoading = false,
   onAddAnswer,
   onSelectAssignedFrame,
+  onAutoSelectNearbyFrames,
 }: Props) {
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartRef = useRef<{ clientX: number; width: number } | null>(null);
@@ -187,7 +189,19 @@ export function FrameInspector({
           </div>
         ) : task === 'trake' ? (
           <div className="trake-frame-selection">
-            <p className="muted-copy">Chọn đủ 4 frame trong Video Studio. Object list của từng frame được hiển thị ngay bên dưới.</p>
+            <div className="trake-selection-header">
+              <p className="muted-copy">Chọn đủ 4 frame trong Video Studio hoặc tự động gán frame lân cận.</p>
+              {onAutoSelectNearbyFrames && (
+                <button
+                  type="button"
+                  className="secondary-button full-width"
+                  style={{ marginBottom: '8px' }}
+                  onClick={onAutoSelectNearbyFrames}
+                >
+                  ⚡ Tự động chọn 4 frame lân cận
+                </button>
+              )}
+            </div>
             <div className="trake-frame-slots" aria-label="Bốn frame TRAKE đã chọn">
               {assignedFrames.map((frame, index) => {
                 const objects = frame ? groupEvidence(frame.evidence, frame.timestamp_ms).object : [];

@@ -75,3 +75,6 @@ database/indexes/*.faiss
 # Python environments
 venv/
 tmp/
+data/refined/
+*.parquet
+*.npy
