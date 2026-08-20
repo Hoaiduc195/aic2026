@@ -94,6 +94,7 @@ describe('MediaService', () => {
       annotation_source_frame_id: 50,
       captions: [{ text: 'a person' }],
       objects: [{ label: 'person' }],
+      ocr: [{ text: 'SALE 50%' }],
     });
   });
 

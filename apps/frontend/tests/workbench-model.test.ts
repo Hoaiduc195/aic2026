@@ -7,6 +7,7 @@ import {
   displayMatchedModalities,
   formatMs,
   groupEvidence,
+  applyStudioFrameToCandidate,
   moveFrameToBoundary,
   parseFrame,
   reorderFrames,
@@ -14,7 +15,7 @@ import {
   toFrameCandidates,
   validateTrakeSequence,
 } from '@/lib/workbench-model';
-import type { FrameCandidate, SearchResponse, SearchResult } from '@/lib/contracts';
+import type { FrameCandidate, SearchResponse, SearchResult, StudioFrame } from '@/lib/contracts';
 
 const result: SearchResult = {
   video_id: 'video_01',
@@ -144,6 +145,32 @@ describe('workbench answer model', () => {
     expect(groups.object).toHaveLength(1);
     expect(groups.object[0].snippet).toBe('person');
     expect(groups.asr.map((item) => item.evidence_id)).toEqual(['asr-1']);
+  });
+
+  it('keeps OCR and active ASR evidence when a Studio frame replaces a search candidate', () => {
+    const candidate = toFrameCandidates({
+      query_id: 'query_01',
+      degraded: false,
+      unavailable_branches: [],
+      results: [result],
+    }).frames[0];
+    const studioFrame = {
+      video_id: 'video_01',
+      keyframe_no: 6,
+      original_frame_id: 420,
+      timestamp_ms: 16_000,
+      captions: [],
+      objects: [],
+      ocr: [{ evidence_id: 'ocr-2', text: 'GIẢM GIÁ', language: 'vi', producer: 'ocr:v1' }],
+    } as StudioFrame & { ocr: { evidence_id: string; text: string; language: string; producer: string }[] };
+
+    const selected = applyStudioFrameToCandidate(candidate, studioFrame, [{
+      evidence_id: 'asr-2', start_ms: 15_000, end_ms: 17_000,
+      text: 'Khuyến mãi hôm nay', language: 'vi', producer: 'asr:v1',
+    }]);
+
+    expect(groupEvidence(selected.evidence, selected.timestamp_ms).ocr.map((item) => item.snippet)).toEqual(['GIẢM GIÁ']);
+    expect(groupEvidence(selected.evidence, selected.timestamp_ms).asr.map((item) => item.snippet)).toEqual(['Khuyến mãi hôm nay']);
   });
 
   it('reorders ranked frames immutably and exports only the first 100 textual answers', () => {
