@@ -16,9 +16,11 @@ from pipelines.ingestion.import_refined import (
     ImportOptions,
     build_artifact_id,
     build_evidence_id,
+    build_import_bundle,
     local_file_uri,
     run_import,
     to_pgvector_literal,
+    validate_refined,
     validate_embedding_rows,
 )
 
@@ -62,6 +64,45 @@ def test_embedding_rows_validate_matrix_and_index_alignment() -> None:
             matrix,
             expected_dim=3,
         )
+
+
+def test_validate_refined_includes_ocr_and_uses_frame_alias_identity(tmp_path: Path) -> None:
+    _write_minimal_refined_dataset(tmp_path)
+    _write_parquet(
+        tmp_path / "ocr.parquet",
+        [
+            {
+                "video_id": "L01_V001",
+                "keyframe_no": 1,
+                "text_content": "Bảng hiệu",
+                "normalized_text": "bảng hiệu",
+                "language": "vi",
+                "confidence": 0.95,
+                "detection_confidence": 0.9,
+                "bbox": [[1.0, 1.0], [2.0, 1.0], [2.0, 2.0], [1.0, 2.0]],
+                "image_width": 1280,
+                "image_height": 720,
+                "source_frame_path": "L01_V001/001.jpg",
+                "source_record_index": 0,
+                "source_detection_index": 0,
+                "model_version": "ocr-model",
+                "pipeline_version": "ocr-pipeline",
+                "schema_version": "1.0.0",
+            }
+        ],
+    )
+
+    state, summary = validate_refined(
+        tmp_path,
+        include_ocr=True,
+    )
+    bundle = build_import_bundle(
+        state,
+        ImportOptions(data_root=tmp_path, include_ocr=True),
+    )
+
+    assert summary["counts"]["ocr"] == 1
+    assert bundle.primary_artifacts["ocr"].target_table == "text_evidence"
 
 
 class _FakeCursor:
