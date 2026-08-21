@@ -102,6 +102,20 @@ function isHistoryEntry(value: unknown): value is WorkbenchHistoryEntry {
     && (entry.trakeQueue === undefined || isTrakeQueue(entry.trakeQueue));
 }
 
+function sortHistoryEntriesByRecency(entries: readonly WorkbenchHistoryEntry[]): WorkbenchHistoryEntry[] {
+  return entries
+    .map((entry, index) => ({ entry, index, timestamp: Date.parse(entry.created_at) }))
+    .sort((left, right) => {
+      const leftValid = Number.isFinite(left.timestamp);
+      const rightValid = Number.isFinite(right.timestamp);
+      if (!leftValid && !rightValid) return left.index - right.index;
+      if (!leftValid) return 1;
+      if (!rightValid) return -1;
+      return right.timestamp - left.timestamp || left.index - right.index;
+    })
+    .map(({ entry }) => entry);
+}
+
 export function getOrCreateWorkbenchSessionId(storage?: Storage): string {
   const target = browserStorage(storage);
   if (!target) return randomId('workbench-session');
@@ -159,7 +173,9 @@ export function loadWorkbenchHistory(storage?: Storage): WorkbenchHistoryEntry[]
     const raw = target.getItem(WORKBENCH_HISTORY_STORAGE_KEY);
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter(isHistoryEntry) : [];
+    return Array.isArray(parsed)
+      ? sortHistoryEntriesByRecency(parsed.filter(isHistoryEntry)).slice(0, MAX_WORKBENCH_HISTORY_ENTRIES)
+      : [];
   } catch {
     return [];
   }
