@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -264,6 +264,28 @@ describe('qualification frame-first workbench', () => {
       frames: [{ video_id: 'video_01', original_frame_id: 385 }],
     })));
     expect(await screen.findByRole('button', { name: 'Đáp án (1)' })).toBeInTheDocument();
+  });
+
+  it('automatically hides successful notices after a few seconds', () => {
+    vi.useFakeTimers();
+    try {
+      renderWorkbench();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Lưu cấu hình RRF' }));
+      expect(screen.getByRole('status')).toHaveTextContent('Đã lưu cấu hình RRF cho frontend.');
+
+      act(() => {
+        vi.advanceTimersByTime(3_999);
+      });
+      expect(screen.getByRole('status')).toBeInTheDocument();
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('keeps a separate workspace when switching between tasks', async () => {
