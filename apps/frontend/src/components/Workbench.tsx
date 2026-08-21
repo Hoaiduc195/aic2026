@@ -123,6 +123,7 @@ import {
   addVqaFrame,
   applyAnswerToPending,
   applyVqaBatchResults,
+  autoFillVqaQueueWithMajority,
   completedVqaAnswers,
   fillVqaQueue,
   moveVqaQueueItem as moveVqaQueueItemModel,
@@ -1330,16 +1331,22 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
       });
 
       const recordableResults = results.filter((item) => item.status !== 'skipped');
-      setVqaQueue((current) => applyVqaBatchResults(current, recordableResults));
+      const { updatedQueue, majorityAnswer, filledRemainingCount } = autoFillVqaQueueWithMajority(
+        vqaQueue,
+        rankedFrames,
+        recordableResults,
+        100,
+      );
+      setVqaQueue(updatedQueue);
       const activeFrameAnswer = activeFrame
-        ? recordableResults.find((item) => queueKey(item.frame) === queueKey(activeFrame))?.answer?.trim()
+        ? updatedQueue.find((item) => item.key === queueKey(activeFrame))?.answer?.trim()
         : undefined;
       if (activeFrameAnswer) setQaAnswer(activeFrameAnswer);
       const answeredCount = results.filter((item) => item.status === 'answered').length;
       const failedCount = results.filter((item) => item.status === 'error' || item.status === 'needs_more_evidence' || item.status === 'abstained').length;
       setNotice(controller.signal.aborted
         ? `Đã dừng batch VQA sau ${results.length}/${Math.min(limit, rankedFrames.length)} frame; đã ghi ${recordableResults.length} kết quả vào hàng đợi.`
-        : `Đã xử lý ${results.length} frame: ${answeredCount} answered${failedCount ? `, ${failedCount} cần kiểm tra` : ''}; đã ghi ${recordableResults.length} kết quả vào hàng đợi.`);
+        : `Đã xử lý Top-${results.length} frame (${answeredCount} trả lời, ${failedCount} cần kiểm tra)${majorityAnswer ? `; tự động điền đáp án phổ biến "${majorityAnswer}" cho ${filledRemainingCount} frame còn lại (đủ 100/100 đáp án).` : '.'}`);
     } catch (reason) {
       if (!controller.signal.aborted) setError(readError(reason, 'Batch VQA thất bại.'));
     } finally {

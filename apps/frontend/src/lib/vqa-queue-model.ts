@@ -172,3 +172,63 @@ export function completedVqaAnswers(existing: readonly VqaQueueItem[]): QaAnswer
     .filter((item): item is VqaQueueItem & { readonly answer: string } => item.status === 'answered' && Boolean(item.answer?.trim()))
     .map((item) => ({ video_id: item.video_id, frame_id: item.frame_id, answer: item.answer.trim() }));
 }
+
+/**
+ * Finds the most frequent valid answer from completed batch results.
+ */
+export function findMajorityVqaAnswer(
+  results: readonly VqaBatchResult[],
+): string | null {
+  const counts = new Map<string, number>();
+  for (const result of results) {
+    if (result.status === 'answered' && result.answer?.trim() && result.answer.trim() !== 'Không biết') {
+      const normalized = result.answer.trim();
+      counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
+    }
+  }
+  let majorityAnswer: string | null = null;
+  let maxCount = 0;
+  for (const [answer, count] of counts.entries()) {
+    if (count > maxCount) {
+      maxCount = count;
+      majorityAnswer = answer;
+    }
+  }
+  return majorityAnswer;
+}
+
+/**
+ * Fills the VQA queue up to 100 frames from ranked candidates, applies batch results to top-k,
+ * and automatically populates all remaining pending/unanswered frames with the majority answer.
+ */
+export function autoFillVqaQueueWithMajority(
+  existing: readonly VqaQueueItem[],
+  rankedFrames: readonly FrameCandidate[],
+  batchResults: readonly VqaBatchResult[],
+  limit = 100,
+): { updatedQueue: VqaQueueItem[]; majorityAnswer: string | null; filledRemainingCount: number } {
+  const filledQueue = fillVqaQueue(existing, rankedFrames, limit);
+  const withBatch = applyVqaBatchResults(filledQueue, batchResults.filter((r) => r.status !== 'skipped'));
+  const majorityAnswer = findMajorityVqaAnswer(batchResults);
+
+  if (!majorityAnswer) {
+    return { updatedQueue: withBatch, majorityAnswer: null, filledRemainingCount: 0 };
+  }
+
+  let filledRemainingCount = 0;
+  const finalQueue = withBatch.map((item) => {
+    if (item.status !== 'answered') {
+      filledRemainingCount += 1;
+      return {
+        ...item,
+        status: 'answered' as const,
+        answer: majorityAnswer,
+        error: undefined,
+      };
+    }
+    return item;
+  });
+
+  return { updatedQueue: finalQueue, majorityAnswer, filledRemainingCount };
+}
+

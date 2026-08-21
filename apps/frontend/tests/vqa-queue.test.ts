@@ -5,6 +5,7 @@ import type { VqaBatchResult } from '@/lib/vqa-batch';
 import {
   applyAnswerToPending,
   applyVqaBatchResults,
+  autoFillVqaQueueWithMajority,
   completedVqaAnswers,
   fillVqaQueue,
   queueKey,
@@ -82,5 +83,31 @@ describe('VQA queue model', () => {
       [2, 'abstained', 'Không biết', undefined],
       [3, 'error', undefined, 'timeout'],
     ]);
+  });
+
+  it('identifies the majority answer and automatically populates remaining frames up to 100', () => {
+    const frames = Array.from({ length: 100 }, (_, idx) => frame(idx));
+    const results: VqaBatchResult[] = [
+      { frame: frame(0), status: 'answered', answer: 'màu đỏ' },
+      { frame: frame(1), status: 'answered', answer: 'màu xanh' },
+      { frame: frame(2), status: 'answered', answer: 'màu đỏ' },
+      { frame: frame(3), status: 'abstained', answer: 'Không biết' },
+      { frame: frame(4), status: 'answered', answer: 'màu đỏ' },
+    ];
+
+    const { updatedQueue, majorityAnswer, filledRemainingCount } = autoFillVqaQueueWithMajority(
+      [],
+      frames,
+      results,
+      100,
+    );
+
+    expect(majorityAnswer).toBe('màu đỏ');
+    expect(updatedQueue).toHaveLength(100);
+    expect(filledRemainingCount).toBe(96); // 1 abstained + 95 remaining frames
+    expect(updatedQueue.every((item) => item.status === 'answered')).toBe(true);
+    expect(updatedQueue[1]?.answer).toBe('màu xanh'); // preserved individual answer
+    expect(updatedQueue[0]?.answer).toBe('màu đỏ');
+    expect(updatedQueue[99]?.answer).toBe('màu đỏ'); // populated with majority
   });
 });
