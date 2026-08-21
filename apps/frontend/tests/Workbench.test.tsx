@@ -1030,7 +1030,7 @@ describe('qualification frame-first workbench', () => {
       reader.readAsText(blob);
     });
     expect(blob.type).toBe('text/csv;charset=utf-8');
-    expect(blobText).toBe('video_01,385,một chiếc chai\r\nvideo_02,411,một chiếc chai\r\nvideo_03,530,một chiếc chai\r\n');
+    expect(blobText).toBe('video_01,385,"một chiếc chai"\r\nvideo_02,411,"một chiếc chai"\r\nvideo_03,530,"một chiếc chai"\r\n');
     expect(click).toHaveBeenCalledOnce();
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:vqa-csv');
     click.mockRestore();
