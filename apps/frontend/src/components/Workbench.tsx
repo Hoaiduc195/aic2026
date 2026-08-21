@@ -245,6 +245,7 @@ function readCsvFile(file: File): Promise<string> {
 
 const VQA_BATCH_CONCURRENCY = 4;
 const MAX_CSV_IMPORT_BYTES = 1_000_000;
+const NOTICE_DISMISS_MS = 4_000;
 
 type TaskWorkspaceSnapshot = WorkbenchSnapshot & { readonly history_id: string | null };
 type TrakeFrameSlots = Array<FrameCandidate | null>;
@@ -405,6 +406,12 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
     }
     setRankedFrames(normalized.frames);
   }, [normalized.frames, response?.query_id]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timeoutId = window.setTimeout(() => setNotice(null), NOTICE_DISMISS_MS);
+    return () => window.clearTimeout(timeoutId);
+  }, [notice]);
 
   useEffect(() => () => {
     batchAbortRef.current?.abort();
