@@ -704,6 +704,24 @@ describe('qualification frame-first workbench', () => {
     expect(screen.getByRole('button', { name: 'Export JSON' })).toBeInTheDocument();
   });
 
+  it('clears the answer queue before executing a new textual query', async () => {
+    const user = userEvent.setup();
+    const search = vi.fn(async () => response);
+    renderWorkbench({ search });
+
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Query đầu tiên');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+    await user.click(screen.getByRole('button', { name: 'Lấy top 100 frame vào hàng đợi (0/100)' }));
+    expect(screen.getByRole('button', { name: 'Đáp án (1)' })).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText('Mô tả sự kiện'));
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Query thứ hai');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('button', { name: 'Đáp án (0)' })).toBeInTheDocument();
+  });
+
   it('moves a result frame directly to the top or bottom with boundary actions', async () => {
     const user = userEvent.setup();
     const rankedResponse: SearchResponse = {
