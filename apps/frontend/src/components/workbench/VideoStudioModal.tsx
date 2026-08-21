@@ -233,10 +233,10 @@ export function VideoStudioModal({
   async function chooseCurrentVideoFrame() {
     if (!loadExactFrame) return;
     const video = videoRef.current;
-    const videoHasMetadata = (video?.readyState ?? 0) >= 1;
-    const playheadTimeSeconds = videoHasMetadata && Number.isFinite(video?.currentTime)
-      ? video.currentTime
-      : currentTimeMs / 1000;
+    let playheadTimeSeconds = currentTimeMs / 1000;
+    if (video && video.readyState >= 1 && Number.isFinite(video.currentTime)) {
+      playheadTimeSeconds = video.currentTime;
+    }
     const frameId = sourceFrameIdAtTime(playheadTimeSeconds, studio.video.fps, lastFrameId);
     const frame = await loadCurrentVideoFrame(frameId);
     if (!frame) return;
