@@ -7,6 +7,7 @@ import type {
   FrameCandidate,
   CanonicalFrameResponse,
   ExactFrameSearchRequest,
+  QaAnswer,
   QualificationAnswer,
   QualificationEventInput,
   QualificationTask,
@@ -127,6 +128,7 @@ import {
   moveVqaQueueItem as moveVqaQueueItemModel,
   queueKey,
   removeVqaQueueItem as removeVqaQueueItemModel,
+  restoreVqaQueueFromAnswers,
   updateVqaQueueItem,
   type VqaQueueItem,
 } from '../lib/vqa-queue-model';
@@ -271,6 +273,43 @@ function importedTrakeDisplayFrames(
   });
 }
 
+function orderFramesByRefs(
+  refs: readonly ImportedFrameRef[],
+  candidates: readonly FrameCandidate[],
+): FrameCandidate[] {
+  const candidatesByKey = new Map(candidates.map((frame) => [queueKey(frame), frame] as const));
+  const seen = new Set<string>();
+  const ordered = refs.flatMap((ref) => {
+    const key = `${ref.video_id}\u0000${ref.original_frame_id}`;
+    const frame = candidatesByKey.get(key);
+    if (!frame || seen.has(key)) return [];
+    seen.add(key);
+    return [frame];
+  });
+
+  return [
+    ...ordered,
+    ...candidates.filter((frame) => !seen.has(queueKey(frame))),
+  ];
+}
+
+function buildTrakeFrameSelections(
+  queue: readonly TrakeQueueItem[],
+  inProgress: Readonly<TrakeFrameSelections>,
+): Record<string, readonly FrameCandidate[]> {
+  const selections: Record<string, readonly FrameCandidate[]> = {};
+  queue.forEach((item) => {
+    if (isCompleteTrakeQueueItem(item)) {
+      selections[item.anchor.result_key] = item.frames.map((frame) => ({ ...frame }));
+    }
+  });
+  Object.entries(inProgress).forEach(([resultKey, frames]) => {
+    const selected = frames.filter((frame): frame is FrameCandidate => frame !== null);
+    if (selected.length > 0) selections[resultKey] = selected.map((frame) => ({ ...frame }));
+  });
+  return selections;
+}
+
 function mergeExactFrameResponses(responses: readonly SearchResponse[]): SearchResponse {
   const first = responses[0];
   if (!first) throw new Error('Exact-frame không trả về kết quả.');
@@ -393,6 +432,10 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
   const vqaQueueKeys = useMemo(() => new Set(vqaQueue.map((item) => item.key)), [vqaQueue]);
   const trakeAnswers = useMemo(() => trakeQueueAnswers(trakeQueue), [trakeQueue]);
   const trakeMissingCount = useMemo(() => incompleteTrakeQueueCount(trakeQueue), [trakeQueue]);
+  const trakeFrameSelections = useMemo(
+    () => buildTrakeFrameSelections(trakeQueue, assignedFramesByResult),
+    [assignedFramesByResult, trakeQueue],
+  );
   const assignedFrames = useMemo(
     () => selectedAnchor
       ? assignedFramesByResult[selectedAnchor.result_key] ?? emptyTrakeFrameSlots()
@@ -794,35 +837,53 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
       const nextFrames = toFrameCandidates(next).frames;
       const availableFrameKeys = new Set(nextFrames.map((frame) => `${frame.video_id}:${frame.original_frame_id}`));
       const importedFrameAnswers = [...importedAnswers];
+      const importedVqaAnswers = task === 'qa'
+        ? importedFrameAnswers.filter((answer): answer is QaAnswer => 'answer' in answer)
+        : [];
       const importedTrakeAnswers = task === 'trake'
         ? importedFrameAnswers.filter((answer): answer is TrakeAnswer => 'frame_ids' in answer)
         : [];
+      const orderedFrames = orderFramesByRefs(frameRefs, nextFrames);
       const displayFrames = importedTrakeAnswers.length > 0
-        ? importedTrakeDisplayFrames(importedTrakeAnswers, nextFrames)
-        : nextFrames;
+        ? importedTrakeDisplayFrames(importedTrakeAnswers, orderedFrames)
+        : orderedFrames;
+      const restoredVqaQueue = task === 'qa'
+        ? restoreVqaQueueFromAnswers(importedVqaAnswers, orderedFrames)
+        : [];
       const restoredTrakeQueue = task === 'trake'
         ? restoreTrakeQueueFromAnswers(
           importedTrakeAnswers,
-          nextFrames,
+          orderedFrames,
         )
         : [];
+      const restoredTrakeSelections: TrakeFrameSelections = task === 'trake'
+        ? Object.fromEntries(
+          Object.entries(buildTrakeFrameSelections(restoredTrakeQueue, {})).map(([resultKey, frames]) => [
+            resultKey,
+            normalizeTrakeFrameSlots(frames),
+          ]),
+        )
+        : {};
       const restoredAnswers = task === 'trake'
         ? trakeQueueAnswers(restoredTrakeQueue)
-        : importedFrameAnswers.filter((answer) => (
-          'frame_id' in answer && availableFrameKeys.has(`${answer.video_id}:${answer.frame_id}`)
-        ));
+        : task === 'qa'
+          ? completedVqaAnswers(restoredVqaQueue)
+          : importedFrameAnswers.filter((answer) => (
+            'frame_id' in answer && availableFrameKeys.has(`${answer.video_id}:${answer.frame_id}`)
+          ));
 
-      setVqaQueue([]);
+      setVqaQueue(restoredVqaQueue);
       setTrakeQueue(restoredTrakeQueue);
+      setAssignedFramesByResult(restoredTrakeSelections);
       replaceAnswers(restoredAnswers);
       const snapshot = captureSnapshot({
         response: next,
         rankedFrames: displayFrames,
         selectedAnchor: null,
         assignedFrames: emptyTrakeFrameSlots(),
-        assignedFramesByResult: {},
+        assignedFramesByResult: restoredTrakeSelections,
         answers: restoredAnswers,
-        vqaQueue: [],
+        vqaQueue: restoredVqaQueue,
         trakeQueue: restoredTrakeQueue,
       });
       const entry = addHistorySnapshot(snapshot);
@@ -1604,6 +1665,7 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
             onMoveToBottom={(frame) => moveFrameToEdge(frame, 'bottom')}
             onQueryFrame={queryByFrame}
             onExportTrakeCsv={task === 'trake' ? exportRankedTrakeCsv : undefined}
+            trakeFrameSelections={task === 'trake' ? trakeFrameSelections : undefined}
             queueKeys={task === 'qa' ? vqaQueueKeys : undefined}
             queueCount={task === 'qa' ? vqaQueue.length : task === 'trake' ? trakeQueue.length : answers.length}
             onAddToQueue={task === 'qa' ? addFrameToVqaQueue : undefined}

@@ -1018,6 +1018,11 @@ textarea:focus-visible,
   white-space: nowrap;
 }
 
+.frame-card-body .trake-selection-summary {
+  color: var(--accent);
+  font-weight: 750;
+}
+
 .frame-card-controls {
   display: flex;
   align-items: center;

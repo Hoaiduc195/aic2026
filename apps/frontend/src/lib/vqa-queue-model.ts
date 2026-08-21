@@ -63,6 +63,34 @@ export function fillVqaQueue(
   return [...current, ...additions].slice(0, maxItems);
 }
 
+export function restoreVqaQueueFromAnswers(
+  answers: readonly QaAnswer[],
+  candidates: readonly FrameCandidate[],
+  limit = VQA_QUEUE_LIMIT,
+): VqaQueueItem[] {
+  const maxItems = limitValue(limit);
+  const candidatesByKey = new Map(candidates.map((frame) => [queueKey(frame), frame] as const));
+  const seen = new Set<string>();
+
+  return answers.flatMap((answer) => {
+    const frame = candidatesByKey.get(queueKey({
+      video_id: answer.video_id,
+      original_frame_id: answer.frame_id,
+    }));
+    const answerText = answer.answer.trim();
+    if (!frame || !answerText) return [];
+
+    const key = queueKey(frame);
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{
+      ...itemFromFrame(frame),
+      status: 'answered' as const,
+      answer: answerText,
+    }];
+  }).slice(0, maxItems);
+}
+
 export function addVqaFrame(
   existing: readonly VqaQueueItem[],
   frame: FrameCandidate,

@@ -30,6 +30,7 @@ interface Props {
   onMoveToBottom?: (frame: FrameCandidate) => void;
   onQueryFrame?: (frame: FrameCandidate) => void;
   onExportTrakeCsv?: () => void;
+  trakeFrameSelections?: Readonly<Record<string, readonly FrameCandidate[]>>;
   queueKeys?: ReadonlySet<string>;
   queueCount?: number;
   onAddToQueue?: (frame: FrameCandidate) => void;
@@ -64,6 +65,7 @@ export function FrameGrid({
   onMoveToBottom,
   onQueryFrame,
   onExportTrakeCsv,
+  trakeFrameSelections = {},
   queueKeys = new Set<string>(),
   queueCount = 0,
   onAddToQueue,
@@ -428,6 +430,7 @@ export function FrameGrid({
           const modalityLabel = displayMatchedModalities(frame.matched_modalities);
           const resultLabel = frameCandidateLabel(frame);
           const displayLabel = frameCandidateDisplayLabel(frame);
+          const selectedTrakeFrames = trakeFrameSelections[frame.result_key] ?? [];
           return (
             <li
               className={`frame-card frame-list-item frame-list-item--spacious${entry.dragging ? ' frame-list-item--dragging' : ''}${selected ? ' selected' : ''}`}
@@ -468,6 +471,11 @@ export function FrameGrid({
                     <strong>{frame.video_id}</strong>
                     <span>{displayLabel} · {formatMs(frame.timestamp_ms)}</span>
                     <small>{modalityLabel || '—'}</small>
+                    {selectedTrakeFrames.length > 0 && (
+                      <small className="trake-selection-summary">
+                        Đang chọn: {selectedTrakeFrames.map((selectedFrame) => selectedFrame.original_frame_id).join(' → ')}
+                      </small>
+                    )}
                   </div>
                 </button>
               </div>
