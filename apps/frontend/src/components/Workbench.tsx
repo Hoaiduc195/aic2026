@@ -251,6 +251,25 @@ type TaskWorkspaceSnapshot = WorkbenchSnapshot & { readonly history_id: string |
 type TrakeFrameSlots = Array<FrameCandidate | null>;
 type TrakeFrameSelections = Record<string, TrakeFrameSlots>;
 
+function importedTrakeDisplayFrames(
+  answers: readonly TrakeAnswer[],
+  candidates: readonly FrameCandidate[],
+): FrameCandidate[] {
+  const candidatesByKey = new Map(candidates.map((frame) => [trakeQueueKey(frame), frame] as const));
+  const seen = new Set<string>();
+  return answers.flatMap((answer) => {
+    const firstFrameId = answer.frame_ids[0];
+    if (firstFrameId === undefined) return [];
+    const frame = candidatesByKey.get(trakeQueueKey({
+      video_id: answer.video_id,
+      original_frame_id: firstFrameId,
+    }));
+    if (!frame || seen.has(frame.result_key)) return [];
+    seen.add(frame.result_key);
+    return [frame];
+  });
+}
+
 function emptyTaskWorkspaceSnapshot(task: QualificationTask): TaskWorkspaceSnapshot {
   return {
     task,
@@ -754,9 +773,15 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
       const nextFrames = toFrameCandidates(next).frames;
       const availableFrameKeys = new Set(nextFrames.map((frame) => `${frame.video_id}:${frame.original_frame_id}`));
       const importedFrameAnswers = [...importedAnswers];
+      const importedTrakeAnswers = task === 'trake'
+        ? importedFrameAnswers.filter((answer): answer is TrakeAnswer => 'frame_ids' in answer)
+        : [];
+      const displayFrames = importedTrakeAnswers.length > 0
+        ? importedTrakeDisplayFrames(importedTrakeAnswers, nextFrames)
+        : nextFrames;
       const restoredTrakeQueue = task === 'trake'
         ? restoreTrakeQueueFromAnswers(
-          importedFrameAnswers.filter((answer): answer is TrakeAnswer => 'frame_ids' in answer),
+          importedTrakeAnswers,
           nextFrames,
         )
         : [];
@@ -771,7 +796,7 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
       replaceAnswers(restoredAnswers);
       const snapshot = captureSnapshot({
         response: next,
-        rankedFrames: nextFrames,
+        rankedFrames: displayFrames,
         selectedAnchor: null,
         assignedFrames: emptyTrakeFrameSlots(),
         assignedFramesByResult: {},
@@ -780,8 +805,9 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
         trakeQueue: restoredTrakeQueue,
       });
       const entry = addHistorySnapshot(snapshot);
+      restoredRankedQueryRef.current = next.query_id;
       setResponse(next);
-      setRankedFrames(nextFrames);
+      setRankedFrames(displayFrames);
       setActiveHistoryId(entry.history_id);
       setTaskSnapshots((current) => ({ ...current, [task]: { ...snapshot, history_id: entry.history_id } }));
 
