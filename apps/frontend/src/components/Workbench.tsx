@@ -245,6 +245,7 @@ function readCsvFile(file: File): Promise<string> {
 
 const VQA_BATCH_CONCURRENCY = 4;
 const MAX_CSV_IMPORT_BYTES = 1_000_000;
+const MAX_EXACT_FRAME_BATCH_SIZE = 100;
 const NOTICE_DISMISS_MS = 4_000;
 
 type TaskWorkspaceSnapshot = WorkbenchSnapshot & { readonly history_id: string | null };
@@ -268,6 +269,19 @@ function importedTrakeDisplayFrames(
     seen.add(frame.result_key);
     return [frame];
   });
+}
+
+function mergeExactFrameResponses(responses: readonly SearchResponse[]): SearchResponse {
+  const first = responses[0];
+  if (!first) throw new Error('Exact-frame không trả về kết quả.');
+
+  return {
+    ...first,
+    degraded: responses.some((response) => response.degraded),
+    unavailable_branches: Array.from(new Set(responses.flatMap((response) => response.unavailable_branches))),
+    results: responses.flatMap((response) => response.results),
+    warnings: Array.from(new Set(responses.flatMap((response) => response.warnings ?? []))),
+  };
 }
 
 function emptyTaskWorkspaceSnapshot(task: QualificationTask): TaskWorkspaceSnapshot {
@@ -765,11 +779,18 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
 
     clearExactFrameWorkspace();
     try {
-      const next = await exactFrameMutation.mutateAsync({
-        task: task === 'qa' ? 'vqa' : task,
-        frames: [...uniqueRefs],
-        session_id: currentSessionId(),
-      });
+      const exactFrameResponses: SearchResponse[] = [];
+      const exactTask = task === 'qa' ? 'vqa' : task;
+      const sessionId = currentSessionId();
+      for (let offset = 0; offset < uniqueRefs.length; offset += MAX_EXACT_FRAME_BATCH_SIZE) {
+        const batch = uniqueRefs.slice(offset, offset + MAX_EXACT_FRAME_BATCH_SIZE);
+        exactFrameResponses.push(await exactFrameMutation.mutateAsync({
+          task: exactTask,
+          frames: [...batch],
+          session_id: sessionId,
+        }));
+      }
+      const next = mergeExactFrameResponses(exactFrameResponses);
       const nextFrames = toFrameCandidates(next).frames;
       const availableFrameKeys = new Set(nextFrames.map((frame) => `${frame.video_id}:${frame.original_frame_id}`));
       const importedFrameAnswers = [...importedAnswers];
