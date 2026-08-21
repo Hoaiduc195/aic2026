@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Workbench } from '@/components/Workbench';
 import type {
   CanonicalFrameResponse,
+  ExactFrameSearchRequest,
   FrameCandidate,
   QueryImprovementResponse,
   SearchResponse,
@@ -137,6 +138,7 @@ const trakeStudio: VideoStudioResponse = {
 function renderWorkbench({
   searchResponse = response,
   search = vi.fn(async () => searchResponse),
+  exactFrameSearch = vi.fn(async () => searchResponse),
   loadStudio = vi.fn(async () => studio),
   loadFrame = vi.fn(async (_videoId: string, frameId: number): Promise<CanonicalFrameResponse> => ({
     video_id: 'video_01',
@@ -153,6 +155,19 @@ function renderWorkbench({
     thumbnail_uri: `/api/v1/media/videos/video_01/frames/${frameId}/thumbnail`,
     is_exact_frame: true,
     annotation_source_frame_id: 385,
+  })),
+  loadKeyframe = vi.fn(async (_videoId: string, keyframeNo: number): Promise<CanonicalFrameResponse> => ({
+    video_id: 'video_01',
+    keyframe_no: keyframeNo,
+    original_frame_id: 385,
+    timestamp_ms: 12_833,
+    captions: [],
+    ocr: [],
+    objects: [],
+    asr_spans: [],
+    thumbnail_uri: '/api/v1/media/videos/video_01/frames/385/thumbnail',
+    is_exact_frame: true,
+    annotation_source_frame_id: null,
   })),
   saveSelection = vi.fn(async (): Promise<SelectionRevision> => ({
     selection_id: 'selection_01', query_id: 'query_0001', revision: 1, task: 'textual_kis',
@@ -176,7 +191,9 @@ function renderWorkbench({
     <QueryClientProvider client={queryClient}>
       <Workbench
         search={search}
+        exactFrameSearch={exactFrameSearch}
         loadFrame={loadFrame}
+        loadKeyframe={loadKeyframe}
         loadStudio={loadStudio}
         saveSelection={saveSelection}
         createPreview={createPreview}
@@ -185,10 +202,70 @@ function renderWorkbench({
       />
     </QueryClientProvider>,
   );
-  return { ...view, search, loadFrame, loadStudio, saveSelection, createPreview };
+  return { ...view, search, exactFrameSearch, loadFrame, loadKeyframe, loadStudio, saveSelection, createPreview };
 }
 
 describe('qualification frame-first workbench', () => {
+  it('looks up an exact source frame by video ID and frame ID', async () => {
+    const user = userEvent.setup();
+    const exactFrameSearch = vi.fn(async (_request: ExactFrameSearchRequest) => ({
+      ...response,
+      query: 'Exact frame lookup',
+      query_mode: 'exact_frames' as const,
+    }));
+    renderWorkbench({ exactFrameSearch });
+
+    await user.type(screen.getByLabelText('Video ID'), 'video_01');
+    await user.selectOptions(screen.getByLabelText('Loại ID frame'), 'original_frame_id');
+    await user.type(screen.getByLabelText('ID frame'), '385');
+    await user.click(screen.getByRole('button', { name: 'Tra cứu frame' }));
+
+    await waitFor(() => expect(exactFrameSearch).toHaveBeenCalledWith({
+      task: 'textual_kis',
+      frames: [{ video_id: 'video_01', original_frame_id: 385 }],
+      session_id: expect.any(String),
+    }));
+  });
+
+  it('resolves a keyframe ordinal before running exact frame lookup', async () => {
+    const user = userEvent.setup();
+    const exactFrameSearch = vi.fn(async () => ({
+      ...response,
+      query: 'Exact frame lookup',
+      query_mode: 'exact_frames' as const,
+    }));
+    const { loadKeyframe } = renderWorkbench({ exactFrameSearch });
+
+    await user.type(screen.getByLabelText('Video ID'), 'video_01');
+    await user.selectOptions(screen.getByLabelText('Loại ID frame'), 'keyframe_no');
+    await user.type(screen.getByLabelText('ID frame'), '7');
+    await user.click(screen.getByRole('button', { name: 'Tra cứu frame' }));
+
+    await waitFor(() => expect(loadKeyframe).toHaveBeenCalledWith('video_01', 7));
+    expect(exactFrameSearch).toHaveBeenLastCalledWith(expect.objectContaining({
+      frames: [{ video_id: 'video_01', original_frame_id: 385 }],
+    }));
+  });
+
+  it('imports answer CSV, reloads its exact frames, and restores the answer queue', async () => {
+    const user = userEvent.setup();
+    const exactFrameSearch = vi.fn(async () => ({
+      ...response,
+      query: 'Exact frame lookup',
+      query_mode: 'exact_frames' as const,
+    }));
+    renderWorkbench({ exactFrameSearch });
+
+    const file = new File(['video_01,385\r\n'], 'answers.csv', { type: 'text/csv' });
+    await user.upload(screen.getByLabelText('Import CSV đáp án'), file);
+
+    await waitFor(() => expect(exactFrameSearch).toHaveBeenCalledWith(expect.objectContaining({
+      task: 'textual_kis',
+      frames: [{ video_id: 'video_01', original_frame_id: 385 }],
+    })));
+    expect(await screen.findByRole('button', { name: 'Đáp án (1)' })).toBeInTheDocument();
+  });
+
   it('keeps a separate workspace when switching between tasks', async () => {
     const user = userEvent.setup();
     renderWorkbench();
