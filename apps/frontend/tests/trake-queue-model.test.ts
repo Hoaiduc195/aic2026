@@ -5,6 +5,7 @@ import {
   completeTrakeQueueItem,
   fillTrakeQueue,
   isCompleteTrakeQueueItem,
+  restoreTrakeQueueFromAnswers,
   trakeQueueAnswers,
   type TrakeQueueItem,
 } from '@/lib/trake-queue-model';
@@ -56,5 +57,18 @@ describe('TRAKE queue model', () => {
     expect(isCompleteTrakeQueueItem(completeTrakeQueueItem(item, [
       frame('video-1', 10), frame('video-2', 20), frame('video-1', 30), frame('video-1', 40),
     ]))).toBe(false);
+  });
+
+  it('restores legacy answers only from existing frame candidates', () => {
+    const candidates = [10, 20, 30, 40].map((frameId) => frame('video-1', frameId));
+    const restored = restoreTrakeQueueFromAnswers([
+      { video_id: 'video-1', frame_ids: [10, 20, 30, 40] },
+      { video_id: 'video-2', frame_ids: [10, 20, 30, 40] },
+    ], candidates);
+
+    expect(restored).toHaveLength(1);
+    expect(trakeQueueAnswers(restored)).toEqual([
+      { video_id: 'video-1', frame_ids: [10, 20, 30, 40] },
+    ]);
   });
 });

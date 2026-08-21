@@ -80,10 +80,9 @@ import {
 import {
   applyCanonicalFrameToCandidate,
   applyStudioFrameToCandidate,
-  autoBuildTrakeAnswers,
   autoSelectNearbyTrakeFrames,
-  buildRankedTextualSubmission,
   emptyTrakeFrameSlots,
+  fillTextualKisAnswers,
   moveFrameToBoundary,
   normalizeFrameCandidate,
   normalizeTrakeFrameSlots,
@@ -96,6 +95,19 @@ import {
 import { buildSubmissionCsv } from '../lib/submission-csv';
 import { useWorkbenchStore } from '../lib/workbench-store';
 import { frameThumbnailUri } from '../lib/video-studio-model';
+import {
+  completeTrakeQueueItem,
+  fillTrakeQueue,
+  incompleteTrakeQueueCount,
+  isCompleteTrakeQueueItem,
+  moveTrakeQueueItem,
+  removeTrakeQueueItem,
+  restoreTrakeQueueFromAnswers,
+  trakeQueueAnswers,
+  trakeQueueKey,
+  type TrakeQueueItem,
+  upsertCompletedTrakeQueueItem,
+} from '../lib/trake-queue-model';
 import { runVqaBatch } from '../lib/vqa-batch';
 import {
   DEFAULT_VQA_BATCH_SETTINGS,
@@ -140,7 +152,11 @@ interface Props {
 }
 
 function initialEvents(): QualificationEventInput[] {
-  return [{ event_id: 'event-1', event_ordinal: 1, description: '' }];
+  return Array.from({ length: TRAKE_FRAME_COUNT }, (_, index) => ({
+    event_id: `event-${index + 1}`,
+    event_ordinal: index + 1,
+    description: '',
+  }));
 }
 
 function queryImproverWarningMessage(warning: string | null): string {
@@ -177,12 +193,9 @@ function buildWorkbenchQuery(
   task: QualificationTask,
   description: string,
   question: string,
-  events: readonly QualificationEventInput[],
-): { query: string; improvementQuery: string; backendTask: QueryImprovementRequest['task'] } {
-  const eventDescriptions = events.map((item) => item.description.trim());
+): { query: string; backendTask: QueryImprovementRequest['task'] } {
   const cleanDescription = description.trim();
   const cleanQuestion = question.trim();
-  const trakeQuery = [cleanDescription, ...eventDescriptions.map((item, index) => `${index + 1}. ${item}`)].join('\n');
   const query = task === 'trake'
     ? cleanDescription
     : task === 'qa'
@@ -190,7 +203,6 @@ function buildWorkbenchQuery(
       : cleanDescription;
   return {
     query,
-    improvementQuery: task === 'trake' ? trakeQuery : query,
     backendTask: task === 'qa' ? 'vqa' : task,
   };
 }
@@ -233,6 +245,7 @@ function emptyTaskWorkspaceSnapshot(task: QualificationTask): TaskWorkspaceSnaps
     answers: [],
     qaAnswer: '',
     vqaQueue: [],
+    trakeQueue: [],
     history_id: null,
   };
 }
@@ -260,6 +273,8 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
   const [assignedFramesByResult, setAssignedFramesByResult] = useState<TrakeFrameSelections>({});
   const [qaAnswer, setQaAnswer] = useState('');
   const [vqaQueue, setVqaQueue] = useState<VqaQueueItem[]>([]);
+  const [trakeQueue, setTrakeQueue] = useState<TrakeQueueItem[]>([]);
+  const [trakeQueueLoading, setTrakeQueueLoading] = useState(false);
   const [batchTopK, setBatchTopK] = useState('10');
   const [batchVqaLoading, setBatchVqaLoading] = useState(false);
   const [batchVqaProgress, setBatchVqaProgress] = useState<{ completed: number; total: number; failed: number } | null>(null);
@@ -319,6 +334,8 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
   );
   const vqaAnswers = useMemo(() => completedVqaAnswers(vqaQueue), [vqaQueue]);
   const vqaQueueKeys = useMemo(() => new Set(vqaQueue.map((item) => item.key)), [vqaQueue]);
+  const trakeAnswers = useMemo(() => trakeQueueAnswers(trakeQueue), [trakeQueue]);
+  const trakeMissingCount = useMemo(() => incompleteTrakeQueueCount(trakeQueue), [trakeQueue]);
   const assignedFrames = useMemo(
     () => selectedAnchor
       ? assignedFramesByResult[selectedAnchor.result_key] ?? emptyTrakeFrameSlots()
@@ -336,9 +353,10 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
     selectedAnchor: overrides.selectedAnchor !== undefined ? overrides.selectedAnchor : selectedAnchor,
     assignedFrames: overrides.assignedFrames ?? assignedFrames,
     assignedFramesByResult: overrides.assignedFramesByResult ?? assignedFramesByResult,
-    answers: overrides.answers ?? answers,
+    answers: overrides.answers ?? (task === 'trake' ? trakeAnswers : answers),
     qaAnswer: overrides.qaAnswer ?? qaAnswer,
     vqaQueue: overrides.vqaQueue ?? vqaQueue,
+    trakeQueue: overrides.trakeQueue ?? trakeQueue,
   }), [
     answers,
     assignedFrames,
@@ -351,6 +369,8 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
     response,
     selectedAnchor,
     task,
+    trakeAnswers,
+    trakeQueue,
     vqaQueue,
   ]);
 
@@ -424,6 +444,7 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
     response,
     selectedAnchor,
     task,
+    trakeQueue,
     vqaQueue,
   ]);
 
@@ -448,11 +469,31 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
             .map((frame) => frame ? normalizeFrameCandidate(frame) : null),
         }
         : {};
+    const restoredTrakeCandidates = [
+      ...Object.values(restoredAssignedFramesByResult).flatMap((frames) => frames.filter((frame): frame is FrameCandidate => frame !== null)),
+      ...(snapshot.selectedAnchor ? [normalizeFrameCandidate(snapshot.selectedAnchor)] : []),
+      ...restoredRankedFrames,
+    ];
+    const restoredTrakeQueue = snapshot.trakeQueue
+      ? snapshot.trakeQueue.map((item) => ({
+        key: item.key,
+        anchor: normalizeFrameCandidate(item.anchor),
+        frames: item.frames.map(normalizeFrameCandidate),
+      }))
+      : restoreTrakeQueueFromAnswers(
+        snapshot.answers.filter((answer): answer is TrakeAnswer => 'frame_ids' in answer),
+        restoredTrakeCandidates,
+      );
     setTask(snapshot.task);
-    replaceAnswers(snapshot.answers);
+    replaceAnswers(snapshot.task === 'trake' ? trakeQueueAnswers(restoredTrakeQueue) : snapshot.answers);
     setDescription(snapshot.description);
     setQuestion(snapshot.question);
-    setEvents(snapshot.events.map((event) => ({ ...event })));
+    setEvents(snapshot.task === 'trake'
+      ? initialEvents().map((event, index) => ({
+        ...event,
+        description: snapshot.events[index]?.description ?? '',
+      }))
+      : snapshot.events.map((event) => ({ ...event })));
     restoredRankedQueryRef.current = snapshot.response?.query_id ?? null;
     setResponse(snapshot.response);
     setRankedFrames(restoredRankedFrames);
@@ -464,11 +505,13 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
       ...item,
       thumbnail_uri: frameThumbnailUri(item.video_id, item.frame_id),
     })));
+    setTrakeQueue(restoredTrakeQueue);
     setActiveHistoryId(historyId);
     setDrawerOpen(false);
     setStudioOpen(false);
     setStudioVideoId(null);
     setBatchVqaProgress(null);
+    setTrakeQueueLoading(false);
     setError(null);
     setNotice(null);
   }
@@ -495,7 +538,7 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
       : !cleanDescription) return;
     if (task === 'qa' && !cleanQuestion) return;
 
-    const { query, backendTask } = buildWorkbenchQuery(task, description, question, events);
+    const { query, backendTask } = buildWorkbenchQuery(task, description, question);
 
     setError(null);
     setNotice(null);
@@ -508,6 +551,8 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
     batchAbortRef.current?.abort();
     batchAbortRef.current = null;
     setVqaQueue([]);
+    setTrakeQueue([]);
+    setTrakeQueueLoading(false);
     setBatchVqaProgress(null);
     const embeddingValidationError = validateEmbeddingSettings(embeddingSettings);
     if (embeddingValidationError) {
@@ -573,6 +618,8 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
     batchAbortRef.current?.abort();
     batchAbortRef.current = null;
     setVqaQueue([]);
+    setTrakeQueue([]);
+    setTrakeQueueLoading(false);
     setBatchVqaProgress(null);
 
     const embeddingValidationError = validateEmbeddingSettings(embeddingSettings);
@@ -759,23 +806,6 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
     }
   }
 
-  function exportRankedTextualFrames() {
-    if (task !== 'textual_kis' || !response?.query_id || rankedFrames.length === 0) return;
-    const payload = buildRankedTextualSubmission(response.query_id, rankedFrames);
-    if (!payload) return;
-
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `aic-${safeFilenamePart(response.query_id)}-textual_kis.json`;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-    setNotice(`Đã export ${payload.answers.length} kết quả theo thứ tự hiện tại.`);
-  }
-
   function openStudio() {
     if (!activeFrame) return;
     setStudioVideoId(activeFrame.video_id);
@@ -832,6 +862,10 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
       ? studioQuery.data.asr_spans
       : [];
     const selected = autoSelectNearbyTrakeFrames(selectedAnchor, availableFrames, asrSpans);
+    if (selected.length !== TRAKE_FRAME_COUNT || !validateTrakeSequence(selected)) {
+      setError('Không đủ frame thực tế cùng video để tự động chọn đủ 4 frame TRAKE.');
+      return;
+    }
     const normalized = normalizeTrakeFrameSlots(selected);
     const selectionKey = selectedAnchor.result_key;
     setAssignedFramesByResult((current) => ({
@@ -843,23 +877,55 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
     setNotice(`Đã tự động chọn 4 frame: ${selected.map((frame) => frame.original_frame_id).join(' → ')}.`);
   }
 
-  function autoFillTrakeQueue() {
+  function fillTrakeAnswerQueue() {
     if (task !== 'trake' || rankedFrames.length === 0) return;
-    const trakeAnswers = autoBuildTrakeAnswers(rankedFrames, 100);
-    if (trakeAnswers.length === 0) {
-      setError('Không có đủ kết quả để tạo chuỗi TRAKE.');
-      return;
-    }
-    replaceAnswers(trakeAnswers);
+    setTrakeQueue((current) => fillTrakeQueue(current, rankedFrames, 100));
     setError(null);
-    setNotice(`Đã tự động tạo ${trakeAnswers.length} chuỗi TRAKE từ kết quả tìm kiếm.`);
+    setNotice(`Đã nạp tối đa 100 retrieval frame vào hàng đợi TRAKE (${Math.min(100, rankedFrames.length)} frame).`);
+  }
+
+  async function completeMissingTrakeQueue() {
+    if (task !== 'trake' || trakeQueueLoading || trakeMissingCount === 0) return;
+
+    setTrakeQueueLoading(true);
+    setError(null);
+    setNotice(null);
+    const studioCache = new Map<string, Promise<VideoStudioResponse | null>>();
+    const getStudio = (videoId: string): Promise<VideoStudioResponse | null> => {
+      const cached = studioCache.get(videoId);
+      if (cached) return cached;
+      const request = loadStudio(videoId).catch(() => null);
+      studioCache.set(videoId, request);
+      return request;
+    };
+
+    try {
+      const nextItems = await Promise.all(trakeQueue.map(async (item) => {
+        if (isCompleteTrakeQueueItem(item)) return item;
+
+        const rankedForVideo = rankedFrames.filter((frame) => frame.video_id === item.anchor.video_id);
+        const studio = rankedForVideo.length >= TRAKE_FRAME_COUNT ? null : await getStudio(item.anchor.video_id);
+        const availableFrames = studio
+          ? [...rankedForVideo, ...studio.frames]
+          : rankedForVideo;
+        const selected = autoSelectNearbyTrakeFrames(item.anchor, availableFrames, studio?.asr_spans ?? []);
+        return selected.length === TRAKE_FRAME_COUNT && validateTrakeSequence(selected)
+          ? completeTrakeQueueItem(item, selected)
+          : item;
+      }));
+      const completedCount = nextItems.filter(isCompleteTrakeQueueItem).length;
+      const remainingCount = nextItems.length - completedCount;
+      setTrakeQueue(nextItems);
+      setNotice(remainingCount > 0
+        ? `Đã chọn đủ 4 frame cho ${completedCount} item; còn ${remainingCount} item thiếu frame thực tế.`
+        : `Đã chọn đủ 4 frame cho ${completedCount} câu trả lời TRAKE.`);
+    } finally {
+      setTrakeQueueLoading(false);
+    }
   }
 
   function exportRankedTrakeCsv() {
     if (task !== 'trake' || !response?.query_id || rankedFrames.length === 0) return;
-    const trakeAnswers = answers.length > 0 && answers[0] && 'frame_ids' in answers[0]
-      ? (answers as readonly TrakeAnswer[])
-      : autoBuildTrakeAnswers(rankedFrames, 100);
 
     if (trakeAnswers.length === 0) {
       setError('Không có đáp án TRAKE để xuất CSV.');
@@ -912,6 +978,12 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
   function fillVqaAnswerQueue() {
     setVqaQueue((current) => fillVqaQueue(current, rankedFrames, 100));
     setNotice(`Đã fill hàng đợi theo thứ tự hiện tại (${Math.min(100, rankedFrames.length)} frame).`);
+  }
+
+  function fillTextualKisQueue() {
+    if (task !== 'textual_kis') return;
+    replaceAnswers(fillTextualKisAnswers(answers as readonly TextualKisAnswer[], rankedFrames, 100));
+    setNotice(`Đã nạp tối đa 100 frame KIS vào hàng đợi (${Math.min(100, rankedFrames.length)} frame).`);
   }
 
   function applyAnswerToAllPending(answer: string) {
@@ -997,9 +1069,15 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
 
   function addCurrentAnswer() {
     if (!activeFrame || !selectedAnchor) return;
-    const currentQueueCount = task === 'qa' ? vqaQueue.length : answers.length;
+    const currentQueueCount = task === 'qa' ? vqaQueue.length : task === 'trake' ? trakeQueue.length : answers.length;
     const activeKey = queueKey(activeFrame);
-    if (currentQueueCount >= 100 && (task !== 'qa' || !vqaQueueKeys.has(activeKey))) {
+    const trakeKey = trakeQueueKey(selectedAnchor);
+    const hasExistingTrakeItem = trakeQueue.some((item) => item.key === trakeKey);
+    if (currentQueueCount >= 100 && (task === 'qa'
+      ? !vqaQueueKeys.has(activeKey)
+      : task === 'trake'
+        ? !hasExistingTrakeItem
+        : true)) {
       setError('Hàng đợi đã đạt giới hạn 100 đáp án.');
       return;
     }
@@ -1022,10 +1100,7 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
         setError('TRAKE cần chọn đủ 4 frame, cùng video và tăng dần theo thời gian.');
         return;
       }
-      addAnswer({
-        video_id: sequence[0].video_id,
-        frame_ids: sequence.map((frame) => frame.original_frame_id),
-      } satisfies TrakeAnswer);
+      setTrakeQueue((current) => upsertCompletedTrakeQueueItem(current, selectedAnchor, sequence, 100));
       const selectionKey = selectedAnchor.result_key;
       setAssignedFramesByResult((current) => {
         const { [selectionKey]: _removed, ...remaining } = current;
@@ -1177,19 +1252,6 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
     setVqaBatchError(null);
   }
 
-  function addEvent() {
-    setEvents((current) => {
-      const nextOrdinal = current.length + 1;
-      return [...current, { event_id: `event-${Date.now()}-${nextOrdinal}`, event_ordinal: nextOrdinal, description: '' }];
-    });
-  }
-
-  function removeEvent(eventId: string) {
-    setEvents((current) => current
-      .filter((item) => item.event_id !== eventId)
-      .map((item, index) => ({ ...item, event_ordinal: index + 1 })));
-  }
-
   return (
     <main className="app-shell">
       <header className="app-topbar">
@@ -1220,7 +1282,7 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
             Cài đặt
           </button>
           <button type="button" className="answer-badge" onClick={() => setDrawerOpen(true)}>
-            Đáp án ({task === 'qa' ? vqaQueue.length : answers.length})
+            Đáp án ({task === 'qa' ? vqaQueue.length : task === 'trake' ? trakeQueue.length : answers.length})
           </button>
           <button
             type="button"
@@ -1280,8 +1342,6 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
             )));
             clearQueryImproverError();
           }}
-          onAddEvent={() => { addEvent(); clearQueryImproverError(); }}
-          onRemoveEvent={(eventId) => { removeEvent(eventId); clearQueryImproverError(); }}
           queryImproverEnabled={queryImproverSettings.enabled}
           queryImproverPending={queryImproverMutation.isPending}
           queryImproverError={queryImproverError}
@@ -1316,13 +1376,18 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
             onMoveToTop={(frame) => moveFrameToEdge(frame, 'top')}
             onMoveToBottom={(frame) => moveFrameToEdge(frame, 'bottom')}
             onQueryFrame={queryByFrame}
-            onExport={task === 'textual_kis' ? exportRankedTextualFrames : undefined}
-            onFillTrakeQueue={task === 'trake' ? autoFillTrakeQueue : undefined}
             onExportTrakeCsv={task === 'trake' ? exportRankedTrakeCsv : undefined}
             queueKeys={task === 'qa' ? vqaQueueKeys : undefined}
-            queueCount={task === 'qa' ? vqaQueue.length : undefined}
+            queueCount={task === 'qa' ? vqaQueue.length : task === 'trake' ? trakeQueue.length : answers.length}
             onAddToQueue={task === 'qa' ? addFrameToVqaQueue : undefined}
-            onFillQueue={task === 'qa' ? fillVqaAnswerQueue : undefined}
+            onFillQueue={task === 'qa'
+              ? fillVqaAnswerQueue
+              : task === 'trake'
+                ? fillTrakeAnswerQueue
+                : fillTextualKisQueue}
+            queueLabel={task === 'trake'
+              ? `Lấy top 100 retrieval frame vào hàng đợi (${trakeQueue.length}/100)`
+              : `Lấy top 100 frame vào hàng đợi (${task === 'qa' ? vqaQueue.length : answers.length}/100)`}
             batchTopK={task === 'qa' ? batchTopK : undefined}
             onBatchTopKChange={task === 'qa' ? setBatchTopK : undefined}
             onRunBatchVqa={task === 'qa' ? runBatchVqa : undefined}
@@ -1412,7 +1477,7 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
         open={drawerOpen}
         task={task}
         queryId={response?.query_id ?? 'draft-query'}
-        answers={task === 'qa' ? vqaAnswers : answers}
+        answers={task === 'qa' ? vqaAnswers : task === 'trake' ? trakeAnswers : answers}
         saveSelection={saveSelection}
         createPreview={createPreview}
         onClose={() => setDrawerOpen(false)}
@@ -1422,6 +1487,11 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
         onRemoveVqaQueueItem={task === 'qa' ? removeVqaQueueItem : undefined}
         onMoveVqaQueueItem={task === 'qa' ? moveVqaQueueItem : undefined}
         onApplyAnswerToPending={task === 'qa' ? applyAnswerToAllPending : undefined}
+        trakeQueue={task === 'trake' ? trakeQueue : undefined}
+        onRemoveTrakeQueueItem={task === 'trake' ? (key) => setTrakeQueue((current) => removeTrakeQueueItem(current, key)) : undefined}
+        onMoveTrakeQueueItem={task === 'trake' ? (from, to) => setTrakeQueue((current) => moveTrakeQueueItem(current, from, to)) : undefined}
+        onCompleteMissingTrakeQueue={task === 'trake' ? completeMissingTrakeQueue : undefined}
+        trakeQueueLoading={task === 'trake' ? trakeQueueLoading : false}
       />
     </main>
   );

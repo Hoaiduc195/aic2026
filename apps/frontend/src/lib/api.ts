@@ -465,6 +465,13 @@ function parseStudioFrame(value: unknown, index: number): import('./contracts').
   if (!Array.isArray(value.captions) || !Array.isArray(value.objects)) {
     throw new Error(`studio.frames[${index}] annotations không hợp lệ`);
   }
+  const thumbnailUri = value.thumbnail_uri === null || value.thumbnail_uri === undefined
+    ? undefined
+    : requiredBrowserUri(value.thumbnail_uri, `studio.frames[${index}].thumbnail_uri`);
+  const isExactFrame = value.is_exact_frame === true ? true : undefined;
+  const annotationSource = value.annotation_source_frame_id === null || value.annotation_source_frame_id === undefined
+    ? undefined
+    : nonNegativeInteger(value.annotation_source_frame_id, `studio.frames[${index}].annotation_source_frame_id`);
   return {
     video_id: requiredText(value.video_id, `studio.frames[${index}].video_id`),
     keyframe_no: value.keyframe_no === null || value.keyframe_no === undefined
@@ -475,6 +482,9 @@ function parseStudioFrame(value: unknown, index: number): import('./contracts').
     captions: value.captions.map((caption, captionIndex) => parseStudioCaption(caption, index, captionIndex)),
     ocr: Array.isArray(value.ocr) ? value.ocr.map((item, ocrIndex) => parseStudioOcr(item, index, ocrIndex)) : [],
     objects: value.objects.map((object, objectIndex) => parseStudioObject(object, index, objectIndex)),
+    ...(thumbnailUri ? { thumbnail_uri: thumbnailUri } : {}),
+    ...(isExactFrame ? { is_exact_frame: true } : {}),
+    ...(annotationSource === undefined ? {} : { annotation_source_frame_id: annotationSource }),
   };
 }
 

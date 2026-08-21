@@ -6,6 +6,7 @@ import type {
   SearchResponse,
 } from './contracts';
 import type { VqaQueueItem } from './vqa-queue-model';
+import type { TrakeQueueItem } from './trake-queue-model';
 
 export const WORKBENCH_SESSION_STORAGE_KEY = 'aic.workbench.session-id';
 export const WORKBENCH_HISTORY_STORAGE_KEY = 'aic.workbench.history.v1';
@@ -25,6 +26,7 @@ export interface WorkbenchSnapshot {
   readonly answers: readonly QualificationAnswer[];
   readonly qaAnswer: string;
   readonly vqaQueue: readonly VqaQueueItem[];
+  readonly trakeQueue?: readonly TrakeQueueItem[];
 }
 
 export interface WorkbenchHistoryEntry extends WorkbenchSnapshot {
@@ -70,6 +72,15 @@ function isAssignedFramesByResult(value: unknown): boolean {
   return Object.values(value).every((frames) => Array.isArray(frames));
 }
 
+function isTrakeQueue(value: unknown): boolean {
+  return Array.isArray(value) && value.every((item) => (
+    isRecord(item)
+    && typeof item.key === 'string'
+    && isRecord(item.anchor)
+    && Array.isArray(item.frames)
+  ));
+}
+
 function isHistoryEntry(value: unknown): value is WorkbenchHistoryEntry {
   if (!value || typeof value !== 'object') return false;
   const entry = value as Partial<WorkbenchHistoryEntry>;
@@ -87,7 +98,8 @@ function isHistoryEntry(value: unknown): value is WorkbenchHistoryEntry {
     && (entry.assignedFramesByResult === undefined || isAssignedFramesByResult(entry.assignedFramesByResult))
     && Array.isArray(entry.answers)
     && typeof entry.qaAnswer === 'string'
-    && Array.isArray(entry.vqaQueue);
+    && Array.isArray(entry.vqaQueue)
+    && (entry.trakeQueue === undefined || isTrakeQueue(entry.trakeQueue));
 }
 
 export function getOrCreateWorkbenchSessionId(storage?: Storage): string {
@@ -124,6 +136,15 @@ export function createWorkbenchHistoryEntry(
       : {}),
     answers: snapshot.answers.map((answer) => ({ ...answer })),
     vqaQueue: snapshot.vqaQueue.map((item) => ({ ...item })),
+    ...(snapshot.trakeQueue
+      ? {
+        trakeQueue: snapshot.trakeQueue.map((item) => ({
+          key: item.key,
+          anchor: { ...item.anchor },
+          frames: item.frames.map((frame) => ({ ...frame })),
+        })),
+      }
+      : {}),
     history_id: historyId,
     created_at: createdAt.toISOString(),
     label: snapshotLabel(snapshot),

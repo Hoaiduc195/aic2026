@@ -710,7 +710,8 @@ textarea:focus-visible,
   gap: 10px;
 }
 
-.vqa-result-toolbar {
+.vqa-result-toolbar,
+.result-queue-toolbar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;

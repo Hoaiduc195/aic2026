@@ -339,6 +339,30 @@ describe('workbench answer model', () => {
         matched_modalities: [],
       },
       {
+        result_key: 'video_01\u0000300',
+        video_id: 'video_01',
+        original_frame_id: 300,
+        timestamp_ms: 12_000,
+        thumbnail_uri: '/frame/300',
+        start_ms: 12_000,
+        end_ms: 12_500,
+        score: 0.88,
+        evidence: [],
+        matched_modalities: [],
+      },
+      {
+        result_key: 'video_01\u0000400',
+        video_id: 'video_01',
+        original_frame_id: 400,
+        timestamp_ms: 16_000,
+        thumbnail_uri: '/frame/400',
+        start_ms: 16_000,
+        end_ms: 16_500,
+        score: 0.87,
+        evidence: [],
+        matched_modalities: [],
+      },
+      {
         result_key: 'video_02\u000050',
         video_id: 'video_02',
         original_frame_id: 50,
@@ -353,11 +377,10 @@ describe('workbench answer model', () => {
     ];
 
     const answers = autoBuildTrakeAnswers(ranked, 10);
-    expect(answers).toHaveLength(2);
+    expect(answers).toHaveLength(1);
     expect(answers[0].video_id).toBe('video_01');
     expect(answers[0].frame_ids).toHaveLength(4);
-    expect(answers[1].video_id).toBe('video_02');
-    expect(answers[1].frame_ids).toHaveLength(4);
+    expect(answers[0].frame_ids).toEqual([100, 200, 300, 400]);
   });
 });
 

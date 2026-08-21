@@ -36,6 +36,7 @@ export function exactFrameThumbnailUri(videoId: string, originalFrameId: number)
 }
 
 export function studioFrameThumbnailUri(frame: Pick<StudioFrame, 'video_id' | 'original_frame_id' | 'is_exact_frame' | 'thumbnail_uri'>): string {
-  return frame.thumbnail_uri
-    ?? (frame.is_exact_frame ? exactFrameThumbnailUri(frame.video_id, frame.original_frame_id) : frameThumbnailUri(frame.video_id, frame.original_frame_id));
+  return frame.is_exact_frame
+    ? exactFrameThumbnailUri(frame.video_id, frame.original_frame_id)
+    : frame.thumbnail_uri ?? frameThumbnailUri(frame.video_id, frame.original_frame_id);
 }

@@ -225,6 +225,8 @@ export interface FrameCandidate {
   score: number;
   evidence: SearchEvidence[];
   matched_modalities: string[];
+  is_exact_frame?: boolean;
+  annotation_source_frame_id?: number | null;
 }
 
 export interface VideoFrame {

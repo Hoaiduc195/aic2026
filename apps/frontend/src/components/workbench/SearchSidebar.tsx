@@ -24,8 +24,6 @@ interface Props {
   onDescriptionChange: (value: string) => void;
   onQuestionChange: (value: string) => void;
   onEventChange: (eventId: string, value: string) => void;
-  onAddEvent: () => void;
-  onRemoveEvent: (eventId: string) => void;
   onQueryImproverChange: (enabled: boolean) => void;
   onImproveQuery: () => void;
   onQueryImproverSave: () => void;
@@ -81,8 +79,6 @@ export function SearchSidebar({
   onDescriptionChange,
   onQuestionChange,
   onEventChange,
-  onAddEvent,
-  onRemoveEvent,
   onQueryImproverChange,
   onImproveQuery,
   onQueryImproverSave,
@@ -154,21 +150,8 @@ export function SearchSidebar({
                     onChange={(event) => onEventChange(item.event_id, event.target.value)}
                   />
                 </label>
-                {events.length > 1 && (
-                  <button
-                    type="button"
-                    className="icon-button"
-                    aria-label={`Xóa sự kiện ${index + 1}`}
-                    onClick={() => onRemoveEvent(item.event_id)}
-                  >
-                    ×
-                  </button>
-                )}
               </div>
             ))}
-            <button type="button" className="secondary-button full-width" aria-label="Thêm sự kiện" onClick={onAddEvent}>
-              + Thêm sự kiện
-            </button>
           </fieldset>
         )}
 

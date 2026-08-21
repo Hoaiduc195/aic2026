@@ -12,7 +12,7 @@ import type {
   TextualKisAnswer,
   TrakeAnswer,
 } from './contracts';
-import { activeAsrSpans, frameThumbnailUri, studioFrameThumbnailUri } from './video-studio-model';
+import { activeAsrSpans, exactFrameThumbnailUri, frameThumbnailUri, studioFrameThumbnailUri } from './video-studio-model';
 
 export interface NormalizedFrames {
   frames: FrameCandidate[];
@@ -125,6 +125,23 @@ export function buildRankedTextualSubmission(
   return buildSubmission('textual_kis', queryId, answers);
 }
 
+export function fillTextualKisAnswers(
+  existing: readonly TextualKisAnswer[],
+  frames: readonly FrameCandidate[],
+  limit = 100,
+): TextualKisAnswer[] {
+  const maxItems = Math.max(0, Math.min(100, Math.floor(limit)));
+  const current = existing.map((answer) => ({ ...answer }));
+  const known = new Set(current.map((answer) => `${answer.video_id}\u0000${answer.frame_id}`));
+  const additions = frames.flatMap((frame) => {
+    const key = `${frame.video_id}\u0000${frame.original_frame_id}`;
+    if (known.has(key)) return [];
+    known.add(key);
+    return [{ video_id: frame.video_id, frame_id: frame.original_frame_id }];
+  });
+  return [...current, ...additions].slice(0, maxItems);
+}
+
 export function resultKey(result: SearchResult): string {
   return `${result.video_id}\u0000${result.original_frame_id ?? `${result.start_ms}:${result.end_ms}`}`;
 }
@@ -175,7 +192,9 @@ export function toFrameCandidates(response: SearchResponse): NormalizedFrames {
 export function normalizeFrameCandidate(frame: FrameCandidate): FrameCandidate {
   return {
     ...frame,
-    thumbnail_uri: frameThumbnailUri(frame.video_id, frame.original_frame_id),
+    thumbnail_uri: frame.is_exact_frame
+      ? exactFrameThumbnailUri(frame.video_id, frame.original_frame_id)
+      : frameThumbnailUri(frame.video_id, frame.original_frame_id),
   };
 }
 
@@ -248,6 +267,13 @@ export function applyStudioFrameToCandidate(
     original_frame_id: frame.original_frame_id,
     timestamp_ms: frame.timestamp_ms,
     thumbnail_uri: studioFrameThumbnailUri(frame),
+    ...(frame.is_exact_frame ? {
+      is_exact_frame: true,
+      annotation_source_frame_id: frame.annotation_source_frame_id ?? null,
+    } : {
+      is_exact_frame: undefined,
+      annotation_source_frame_id: undefined,
+    }),
     evidence: Array.from(uniqueMap.values()),
   };
 }
@@ -293,7 +319,9 @@ export function validateTrakeSequence(frames: readonly FrameCandidate[]): boolea
   if (frames.length !== TRAKE_FRAME_COUNT) return false;
   const videoId = frames[0].video_id;
   return frames.every((frame, index) => (
-    frame.video_id === videoId && (index === 0 || frames[index - 1].timestamp_ms < frame.timestamp_ms)
+    frame.video_id === videoId
+      && (index === 0 || frames[index - 1].timestamp_ms < frame.timestamp_ms)
+      && (index === 0 || frames[index - 1].original_frame_id < frame.original_frame_id)
   ));
 }
 
@@ -346,21 +374,7 @@ export function autoSelectNearbyTrakeFrames(
     }
   }
 
-  const result: FrameCandidate[] = [...sorted.slice(0, TRAKE_FRAME_COUNT)];
-  while (result.length < TRAKE_FRAME_COUNT) {
-    const last = result[result.length - 1] ?? anchor;
-    const nextFrameId = last.original_frame_id + 25;
-    const nextTimestampMs = last.timestamp_ms + 1000;
-    result.push({
-      ...last,
-      original_frame_id: nextFrameId,
-      timestamp_ms: nextTimestampMs,
-      keyframe_no: undefined,
-      thumbnail_uri: frameThumbnailUri(last.video_id, nextFrameId),
-    });
-  }
-
-  return sortTrakeFrames(result);
+  return [];
 }
 
 /**
@@ -389,8 +403,7 @@ export function autoBuildTrakeAnswers(
     if (unique.length >= TRAKE_FRAME_COUNT) {
       frameIds = unique.slice(0, TRAKE_FRAME_COUNT).map((frame) => frame.original_frame_id);
     } else {
-      const selected = autoSelectNearbyTrakeFrames(unique[0] ?? frames[0], unique);
-      frameIds = selected.map((frame) => frame.original_frame_id);
+      frameIds = [];
     }
 
     if (frameIds.length === TRAKE_FRAME_COUNT) {

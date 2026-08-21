@@ -188,8 +188,10 @@ test.describe('qualification frame-first workbench', () => {
 
     await page.getByRole('tab', { name: 'TRAKE' }).click();
     await expect(page.getByLabel('Mô tả sự kiện 1')).toBeVisible();
-    await page.getByRole('button', { name: 'Thêm sự kiện' }).click();
     await expect(page.getByLabel('Mô tả sự kiện 2')).toBeVisible();
+    await expect(page.getByLabel('Mô tả sự kiện 3')).toBeVisible();
+    await expect(page.getByLabel('Mô tả sự kiện 4')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Thêm sự kiện' })).toHaveCount(0);
   });
 
   test('searches frames, opens video studio, then queues the answer in the drawer', async ({ page }) => {
