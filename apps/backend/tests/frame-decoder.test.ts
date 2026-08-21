@@ -44,5 +44,6 @@ describe('FfmpegFrameDecoder', () => {
     expect(spawn.mock.calls[0][1]).toEqual(expect.arrayContaining([
       expect.stringContaining('select=eq(n\\,42)'),
     ]));
+    expect(spawn.mock.calls[0][1]).not.toContain('-hide_banner');
   });
 });

@@ -42,6 +42,7 @@ describe('FfmpegImageCompressor', () => {
       '-i', 'https://signed.example/keyframes/video-1/42.webp',
       '-q:v', '5',
     ]));
+    expect(spawn.mock.calls[0][1]).not.toContain('-hide_banner');
   });
 
   it('rejects non-http image URLs before invoking FFmpeg', async () => {
