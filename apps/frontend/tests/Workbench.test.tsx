@@ -322,6 +322,54 @@ describe('qualification frame-first workbench', () => {
     expect(screen.getByText('Frame 385 → 386 → 450 → 500')).toBeInTheDocument();
   });
 
+  it('batches oversized TRAKE CSV imports into exact-frame requests of at most 100 frames', async () => {
+    const user = userEvent.setup();
+    const csv = Array.from({ length: 26 }, (_, rowIndex) => {
+      const firstFrameId = rowIndex * 4 + 1;
+      return ['video_01', firstFrameId, firstFrameId + 1, firstFrameId + 2, firstFrameId + 3].join(',');
+    }).join('\r\n');
+    const exactFrameSearch = vi.fn(async (request: ExactFrameSearchRequest): Promise<SearchResponse> => {
+      if (request.frames.length > 100) {
+        throw new Error('Yêu cầu exact-frame không hợp lệ.');
+      }
+
+      return {
+        ...response,
+        task: 'trake',
+        query: 'TRAKE exact frame lookup',
+        query_id: `query-batch-${request.frames[0]?.original_frame_id ?? 'empty'}`,
+        query_mode: 'exact_frames',
+        results: request.frames.map(({ video_id, original_frame_id }) => {
+          const timestampMs = original_frame_id * 1_000;
+          return {
+            ...response.results[0],
+            video_id,
+            original_frame_id,
+            start_ms: timestampMs,
+            end_ms: timestampMs + 500,
+            representative_frame: {
+              ...response.results[0].representative_frame,
+              original_frame_id,
+              timestamp_ms: timestampMs + 250,
+            },
+          };
+        }),
+      };
+    });
+    renderWorkbench({ exactFrameSearch });
+
+    await user.click(screen.getByRole('tab', { name: 'TRAKE' }));
+    await user.upload(
+      screen.getByLabelText('Import CSV đáp án'),
+      new File([`${csv}\r\n`], 'trake-many-rows.csv', { type: 'text/csv' }),
+    );
+
+    await waitFor(() => expect(exactFrameSearch).toHaveBeenCalledTimes(2));
+    expect(exactFrameSearch.mock.calls.map(([request]) => request.frames.length)).toEqual([100, 4]);
+    expect(await screen.findByRole('button', { name: 'Đáp án (26)' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('automatically hides successful notices after a few seconds', () => {
     vi.useFakeTimers();
     try {
