@@ -75,7 +75,6 @@ function runAttempt(
     let child: Pick<ChildProcess, 'stdout' | 'stderr' | 'once' | 'kill'>;
     try {
       child = spawnProcess(ffmpegPath, [
-        '-hide_banner',
         '-loglevel', 'error',
         '-i', imageUrl,
         '-frames:v', '1',

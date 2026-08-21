@@ -25,6 +25,13 @@ interface Props {
   loadExactFrame?: (frameId: number, signal?: AbortSignal) => Promise<CanonicalFrameResponse>;
 }
 
+function sourceFrameIdAtTime(timestampSeconds: number, fps: number, lastFrameId: number): number {
+  if (!Number.isFinite(timestampSeconds) || timestampSeconds <= 0 || !Number.isFinite(fps) || fps <= 0) {
+    return 0;
+  }
+  return Math.max(0, Math.min(lastFrameId, Math.floor((timestampSeconds * fps) + Number.EPSILON)));
+}
+
 export function VideoStudioModal({
   studio,
   initialFrameId,
@@ -86,10 +93,7 @@ export function VideoStudioModal({
     : Math.max(0, studio.video.frame_count - 1);
   const currentVideoFrameId = Math.max(
     0,
-    Math.min(
-      lastFrameId,
-      Math.round((currentTimeMs / 1000) * Math.max(0, studio.video.fps)),
-    ),
+    sourceFrameIdAtTime(currentTimeMs / 1000, studio.video.fps, lastFrameId),
   );
   const activeSpans = useMemo(
     () => activeAsrSpans(studio.asr_spans, currentTimeMs),
@@ -228,7 +232,13 @@ export function VideoStudioModal({
 
   async function chooseCurrentVideoFrame() {
     if (!loadExactFrame) return;
-    const frame = await loadCurrentVideoFrame(currentVideoFrameId);
+    const video = videoRef.current;
+    const videoHasMetadata = (video?.readyState ?? 0) >= 1;
+    const playheadTimeSeconds = videoHasMetadata && Number.isFinite(video?.currentTime)
+      ? video.currentTime
+      : currentTimeMs / 1000;
+    const frameId = sourceFrameIdAtTime(playheadTimeSeconds, studio.video.fps, lastFrameId);
+    const frame = await loadCurrentVideoFrame(frameId);
     if (!frame) return;
     if (!isMultiSelect) {
       onSelectFrame?.(frame);

@@ -254,6 +254,7 @@ describe('VideoStudioModal', () => {
       get: () => currentTime,
       set: (value: number) => { currentTime = value; },
     });
+    Object.defineProperty(video, 'readyState', { configurable: true, value: 1 });
     fireEvent.timeUpdate(video);
 
     // The browser has advanced to the frame beginning at 3.04s, before its next timeupdate event.
