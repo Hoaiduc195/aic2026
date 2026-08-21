@@ -268,6 +268,40 @@ describe('VideoStudioModal', () => {
     );
   });
 
+  it('keeps the next source frame at an imprecise decimal frame boundary', async () => {
+    const user = userEvent.setup();
+    const loadExactFrame = vi.fn(async (frameId: number): Promise<CanonicalFrameResponse> => ({
+      video_id: 'video-1',
+      keyframe_no: null,
+      original_frame_id: frameId,
+      timestamp_ms: frameId * 40,
+      thumbnail_uri: `/api/v1/media/videos/video-1/frames/${frameId}/thumbnail`,
+      is_exact_frame: true,
+      annotation_source_frame_id: 50,
+      captions: [],
+      objects: [],
+    }));
+
+    render(
+      <VideoStudioModal
+        studio={studio}
+        initialFrameId={50}
+        selectionMode="multiple"
+        onClose={vi.fn()}
+        onSelectFrames={vi.fn()}
+        loadExactFrame={loadExactFrame}
+      />,
+    );
+
+    const video = screen.getByLabelText('Video video-1');
+    Object.defineProperty(video, 'currentTime', { configurable: true, value: 1.16 });
+    Object.defineProperty(video, 'readyState', { configurable: true, value: 1 });
+
+    await user.click(screen.getByRole('button', { name: 'Tải frame hiện tại' }));
+
+    await waitFor(() => expect(loadExactFrame).toHaveBeenCalledWith(29));
+  });
+
   it('uses the frame at the current video position without a manual frame ID', async () => {
     const user = userEvent.setup();
     const exactFrame: CanonicalFrameResponse = {

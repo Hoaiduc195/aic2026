@@ -25,11 +25,13 @@ interface Props {
   loadExactFrame?: (frameId: number, signal?: AbortSignal) => Promise<CanonicalFrameResponse>;
 }
 
+const FRAME_INDEX_EPSILON = 1e-6;
+
 function sourceFrameIdAtTime(timestampSeconds: number, fps: number, lastFrameId: number): number {
   if (!Number.isFinite(timestampSeconds) || timestampSeconds <= 0 || !Number.isFinite(fps) || fps <= 0) {
     return 0;
   }
-  return Math.max(0, Math.min(lastFrameId, Math.floor((timestampSeconds * fps) + Number.EPSILON)));
+  return Math.max(0, Math.min(lastFrameId, Math.floor((timestampSeconds * fps) + FRAME_INDEX_EPSILON)));
 }
 
 export function VideoStudioModal({
