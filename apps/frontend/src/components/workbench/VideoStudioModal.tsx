@@ -45,6 +45,7 @@ export function VideoStudioModal({
   const dialogRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const pendingExactFrameSeekRef = useRef<number | null>(null);
   const initialFrame = useMemo(
     () => studio.frames.find((frame) => frame.original_frame_id === initialFrameId)
       ?? nearestStudioFrame(studio.frames, initialTimestampMs),
@@ -120,6 +121,7 @@ export function VideoStudioModal({
     setExactFrame(null);
     setSelectedFrameOverride(null);
     setExactFrameError(null);
+    pendingExactFrameSeekRef.current = null;
   }, [initialFrame?.original_frame_id, initialFrame?.timestamp_ms, initialFrameId]);
 
   useEffect(() => {
@@ -169,6 +171,7 @@ export function VideoStudioModal({
   function seek(timestampMs: number, clearExact = true) {
     const clamped = Math.max(0, Math.min(studio.video.duration_ms, timestampMs));
     if (clearExact) {
+      pendingExactFrameSeekRef.current = null;
       setExactFrame(null);
       setSelectedFrameOverride(null);
     }
@@ -190,7 +193,11 @@ export function VideoStudioModal({
   function handleTimeUpdate() {
     const timestampMs = Math.round((videoRef.current?.currentTime ?? 0) * 1000);
     setCurrentTimeMs(timestampMs);
-    if (!exactFrame || Math.abs(timestampMs - exactFrame.timestamp_ms) > 50) {
+    const isPendingExactFrameSeek = exactFrame !== null
+      && pendingExactFrameSeekRef.current === exactFrame.original_frame_id;
+    if (isPendingExactFrameSeek) {
+      pendingExactFrameSeekRef.current = null;
+    } else if (!exactFrame || Math.abs(timestampMs - exactFrame.timestamp_ms) > 50) {
       setExactFrame(null);
       setSelectedFrameOverride(null);
     }
@@ -204,6 +211,7 @@ export function VideoStudioModal({
     setExactFrameError(null);
     try {
       const frame = await loadExactFrame(frameId);
+      pendingExactFrameSeekRef.current = frame.original_frame_id;
       setExactFrame(frame);
       setSelectedFrameOverride(null);
       setSelectedFrameId(frame.original_frame_id);
