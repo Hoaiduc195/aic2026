@@ -17,6 +17,7 @@ import {
   resultKey,
   toFrameCandidates,
   validateTrakeSequence,
+  normalizeFrameCandidate,
 } from '@/lib/workbench-model';
 import type { FrameCandidate, SearchResponse, SearchResult, StudioFrame } from '@/lib/contracts';
 
@@ -281,6 +282,36 @@ describe('workbench answer model', () => {
     expect(selected.map((f) => f.original_frame_id)).toEqual([200, 300, 400, 500]);
   });
 
+  it('does not fabricate frame IDs when nearby real frames are insufficient', () => {
+    const anchor: FrameCandidate = {
+      result_key: 'video_01\\u0000200',
+      video_id: 'video_01',
+      original_frame_id: 200,
+      timestamp_ms: 8_000,
+      thumbnail_uri: '/frame/200',
+      start_ms: 8_000,
+      end_ms: 8_500,
+      score: 0.9,
+      evidence: [],
+      matched_modalities: [],
+    };
+
+    expect(autoSelectNearbyTrakeFrames(anchor, [anchor])).toEqual([]);
+  });
+
+  it('preserves the exact-frame thumbnail route when normalizing a manually selected frame', () => {
+    const exact: FrameCandidate = {
+      ...resultToCandidate(),
+      is_exact_frame: true,
+      thumbnail_uri: '/api/v1/media/videos/video_01/frames/386/thumbnail',
+      original_frame_id: 386,
+    };
+
+    expect(normalizeFrameCandidate(exact).thumbnail_uri).toBe(
+      '/api/v1/media/videos/video_01/frames/386/thumbnail',
+    );
+  });
+
   it('auto-builds batch TRAKE answers from ranked retrieval frames', () => {
     const ranked: FrameCandidate[] = [
       {
@@ -329,4 +360,19 @@ describe('workbench answer model', () => {
     expect(answers[1].frame_ids).toHaveLength(4);
   });
 });
+
+function resultToCandidate(): FrameCandidate {
+  return {
+    result_key: 'video_01\\u0000385',
+    video_id: 'video_01',
+    original_frame_id: 385,
+    timestamp_ms: 15_400,
+    thumbnail_uri: '/frame/385',
+    start_ms: 12_000,
+    end_ms: 18_000,
+    score: 0.93,
+    evidence: [],
+    matched_modalities: [],
+  };
+}
 
