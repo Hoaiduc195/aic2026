@@ -135,12 +135,8 @@ const trakeStudio: VideoStudioResponse = {
   ],
 };
 
-function renderWorkbench({
-  searchResponse = response,
-  search = vi.fn(async () => searchResponse),
-  exactFrameSearch = vi.fn(async () => searchResponse),
-  loadStudio = vi.fn(async () => studio),
-  loadFrame = vi.fn(async (_videoId: string, frameId: number): Promise<CanonicalFrameResponse> => ({
+function createInspectorFrameLoader() {
+  return vi.fn(async (_videoId: string, frameId: number): Promise<CanonicalFrameResponse> => ({
     video_id: 'video_01',
     keyframe_no: null,
     original_frame_id: frameId,
@@ -155,7 +151,15 @@ function renderWorkbench({
     thumbnail_uri: `/api/v1/media/videos/video_01/frames/${frameId}/thumbnail`,
     is_exact_frame: true,
     annotation_source_frame_id: 385,
-  })),
+  }));
+}
+
+function renderWorkbench({
+  searchResponse = response,
+  search = vi.fn(async () => searchResponse),
+  exactFrameSearch = vi.fn(async () => searchResponse),
+  loadStudio = vi.fn(async () => studio),
+  loadFrame,
   loadKeyframe = vi.fn(async (_videoId: string, keyframeNo: number): Promise<CanonicalFrameResponse> => ({
     video_id: 'video_01',
     keyframe_no: keyframeNo,
@@ -581,7 +585,8 @@ describe('qualification frame-first workbench', () => {
 
   it('opens frame evidence and lazily loads only the video studio', async () => {
     const user = userEvent.setup();
-    const { loadStudio } = renderWorkbench();
+    const loadFrame = createInspectorFrameLoader();
+    const { loadStudio } = renderWorkbench({ loadFrame });
 
     await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
     await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
@@ -601,7 +606,8 @@ describe('qualification frame-first workbench', () => {
 
   it('hydrates Inspector with OCR and ASR context for a selected search frame', async () => {
     const user = userEvent.setup();
-    const { loadFrame } = renderWorkbench();
+    const loadFrame = createInspectorFrameLoader();
+    renderWorkbench({ loadFrame });
 
     await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
     await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
@@ -680,6 +686,7 @@ describe('qualification frame-first workbench', () => {
 
   it('renders object evidence and only ASR overlapping the active frame', async () => {
     const user = userEvent.setup();
+    const loadFrame = createInspectorFrameLoader();
     const evidenceResponse: SearchResponse = {
       ...response,
       results: [{
@@ -692,7 +699,7 @@ describe('qualification frame-first workbench', () => {
         matched_modalities: ['object', 'asr'],
       }],
     };
-    renderWorkbench({ searchResponse: evidenceResponse });
+    renderWorkbench({ searchResponse: evidenceResponse, loadFrame });
 
     await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
     await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
