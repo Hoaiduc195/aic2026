@@ -24,7 +24,7 @@ import type {
 import { exactFrameThumbnailUri } from './video-studio-model';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api';
-const MODALITIES = new Set(['embedding', 'visual', 'ocr', 'asr', 'caption', 'object', 'temporal', 'audio']);
+const MODALITIES = new Set(['embedding', 'visual', 'ocr', 'asr', 'caption', 'object', 'temporal', 'audio', 'clip', 'vlm', 'vlm_rerank']);
 const EVIDENCE_TYPES = new Set<EvidenceType>(['frame', 'ocr', 'asr', 'caption', 'object', 'track', 'audio', 'temporal']);
 const TASKS = new Set<SearchTask>(['textual_kis', 'video_kis', 'avs', 'vqa', 'trake', 'kisc']);
 
