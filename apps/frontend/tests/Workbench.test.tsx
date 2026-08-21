@@ -275,6 +275,56 @@ describe('qualification frame-first workbench', () => {
     expect(await screen.findByRole('button', { name: 'Đáp án (1)' })).toBeInTheDocument();
   });
 
+  it('restores imported VQA answers in CSV order and shows each answer', async () => {
+    const user = userEvent.setup();
+    const secondResult = {
+      ...vqaResponse.results[0],
+      video_id: 'video_02',
+      original_frame_id: 420,
+      representative_frame: {
+        ...vqaResponse.results[0].representative_frame!,
+        original_frame_id: 420,
+        timestamp_ms: 14_000,
+      },
+    };
+    const exactFrameSearch = vi.fn(async () => ({
+      ...vqaResponse,
+      query_id: 'query-vqa-import',
+      query_mode: 'exact_frames' as const,
+      results: [secondResult, vqaResponse.results[0]],
+    }));
+    renderWorkbench({ exactFrameSearch });
+
+    await user.click(screen.getByRole('tab', { name: 'Hỏi & Đáp' }));
+    await user.upload(
+      screen.getByLabelText('Import CSV đáp án'),
+      new File([
+        'video_01,385,"Câu trả lời thứ nhất"\r\nvideo_02,420,"Câu trả lời thứ hai"\r\n',
+      ], 'vqa-answers.csv', { type: 'text/csv' }),
+    );
+
+    await waitFor(() => expect(exactFrameSearch).toHaveBeenCalledWith(expect.objectContaining({
+      task: 'vqa',
+      frames: [
+        { video_id: 'video_01', original_frame_id: 385 },
+        { video_id: 'video_02', original_frame_id: 420 },
+      ],
+    })));
+    const frameButtons = await screen.findAllByRole('button', { name: /Chọn frame/ });
+    expect(frameButtons.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Chọn frame video_01 · 385',
+      'Chọn frame video_02 · 420',
+    ]);
+    await user.click(screen.getByRole('button', { name: 'Đáp án (2)' }));
+
+    const drawer = screen.getByRole('dialog', { name: 'Hàng đợi đáp án' });
+    const rows = within(drawer).getAllByRole('article');
+    expect(rows[0]).toHaveTextContent('video_01 · frame 385');
+    expect(rows[0]).toHaveTextContent('Câu trả lời thứ nhất');
+    expect(rows[1]).toHaveTextContent('video_02 · frame 420');
+    expect(rows[1]).toHaveTextContent('Câu trả lời thứ hai');
+  });
+
   it('shows only the first frame of each imported TRAKE answer in the result object list', async () => {
     const user = userEvent.setup();
     const importedFrameIds = [385, 386, 450, 500];
@@ -317,6 +367,12 @@ describe('qualification frame-first workbench', () => {
     expect(screen.queryByRole('button', { name: 'Chọn frame video_01 · 386' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Chọn frame video_01 · 450' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Chọn frame video_01 · 500' })).not.toBeInTheDocument();
+    expect(screen.getByText('Đang chọn: 385 → 386 → 450 → 500')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Chọn frame video_01 · 385' }));
+    expect(screen.getByText('4/4 frame đã chọn')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Xem frame TRAKE 1, frame 385' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Xem frame TRAKE 4, frame 500' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Đáp án (1)' }));
     expect(screen.getByText('Frame 385 → 386 → 450 → 500')).toBeInTheDocument();
