@@ -270,6 +270,53 @@ describe('qualification frame-first workbench', () => {
     expect(await screen.findByRole('button', { name: 'Đáp án (1)' })).toBeInTheDocument();
   });
 
+  it('shows only the first frame of each imported TRAKE answer in the result object list', async () => {
+    const user = userEvent.setup();
+    const importedFrameIds = [385, 386, 450, 500];
+    const trakeResponse: SearchResponse = {
+      ...response,
+      task: 'trake',
+      query: 'TRAKE exact frame lookup',
+      query_mode: 'exact_frames',
+      results: importedFrameIds.map((frameId, index) => ({
+        ...response.results[0],
+        original_frame_id: frameId,
+        start_ms: 10_000 + index * 1_000,
+        end_ms: 16_000 + index * 1_000,
+        representative_frame: {
+          ...response.results[0].representative_frame,
+          original_frame_id: frameId,
+          timestamp_ms: 12_800 + index * 1_000,
+        },
+        evidence_ids: [`object-${frameId}`],
+        evidence: [{
+          evidence_id: `object-${frameId}`,
+          type: 'object',
+          snippet: `object-${frameId}`,
+          producer: 'object:test',
+        }],
+      })),
+    };
+    const exactFrameSearch = vi.fn(async () => trakeResponse);
+    renderWorkbench({ exactFrameSearch });
+
+    await user.click(screen.getByRole('tab', { name: 'TRAKE' }));
+    const file = new File(['video_01,385,386,450,500\r\n'], 'trake-answers.csv', { type: 'text/csv' });
+    await user.upload(screen.getByLabelText('Import CSV đáp án'), file);
+
+    await waitFor(() => expect(exactFrameSearch).toHaveBeenCalledWith(expect.objectContaining({
+      task: 'trake',
+      frames: importedFrameIds.map((original_frame_id) => ({ video_id: 'video_01', original_frame_id })),
+    })));
+    expect(await screen.findByRole('button', { name: 'Chọn frame video_01 · 385' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Chọn frame video_01 · 386' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Chọn frame video_01 · 450' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Chọn frame video_01 · 500' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Đáp án (1)' }));
+    expect(screen.getByText('Frame 385 → 386 → 450 → 500')).toBeInTheDocument();
+  });
+
   it('automatically hides successful notices after a few seconds', () => {
     vi.useFakeTimers();
     try {
