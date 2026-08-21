@@ -552,6 +552,7 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
     batchAbortRef.current = null;
     setVqaQueue([]);
     setTrakeQueue([]);
+    replaceAnswers([]);
     setTrakeQueueLoading(false);
     setBatchVqaProgress(null);
     const embeddingValidationError = validateEmbeddingSettings(embeddingSettings);
@@ -619,6 +620,7 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
     batchAbortRef.current = null;
     setVqaQueue([]);
     setTrakeQueue([]);
+    replaceAnswers([]);
     setTrakeQueueLoading(false);
     setBatchVqaProgress(null);
 
