@@ -167,6 +167,7 @@ export function formatMs(value: number): string {
 }
 
 export function toFrameCandidates(response: SearchResponse): NormalizedFrames {
+  const exactFrameQuery = response.query_mode === 'exact_frames';
   const frames = response.results.flatMap((result) => {
     const frame = result.representative_frame;
     if (!frame) return [];
@@ -177,12 +178,18 @@ export function toFrameCandidates(response: SearchResponse): NormalizedFrames {
       ...(frame.keyframe_no === undefined ? {} : { keyframe_no: frame.keyframe_no }),
       original_frame_id: frame.original_frame_id,
       timestamp_ms: frame.timestamp_ms,
-      thumbnail_uri: frameThumbnailUri(result.video_id, frame.original_frame_id),
+      thumbnail_uri: exactFrameQuery
+        ? exactFrameThumbnailUri(result.video_id, frame.original_frame_id)
+        : frameThumbnailUri(result.video_id, frame.original_frame_id),
       start_ms: result.start_ms,
       end_ms: result.end_ms,
       score: result.score,
       evidence: [...result.evidence],
       matched_modalities: [...result.matched_modalities],
+      ...(exactFrameQuery ? {
+        is_exact_frame: true,
+        annotation_source_frame_id: null,
+      } : {}),
     } satisfies FrameCandidate];
   });
 

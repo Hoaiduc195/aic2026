@@ -1,6 +1,6 @@
 'use client';
 
-import type { FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 
 import type { QualificationEventInput, QualificationTask } from '../../lib/contracts';
 import type { RrfSettings, RrfWeightKey } from '../../lib/rrf-settings';
@@ -29,6 +29,9 @@ interface Props {
   onQueryImproverSave: () => void;
   onQueryImproverReset: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onExactFrameSearch: (videoId: string, idType: 'original_frame_id' | 'keyframe_no', frameId: number) => void;
+  onImportCsv: (file: File) => void;
+  exactFramePending: boolean;
   onRrfChange: (settings: RrfSettings) => void;
   onRrfSave: () => void;
   onRrfReset: () => void;
@@ -52,6 +55,8 @@ const RRF_WEIGHT_FIELDS: ReadonlyArray<{ key: RrfWeightKey; label: string }> = [
   { key: 'temporal', label: 'Trọng số temporal' },
   { key: 'audio', label: 'Trọng số audio' },
 ];
+
+const SAFE_VIDEO_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/;
 
 function parseNumberInput(value: string): number {
   return value === '' ? Number.NaN : Number(value);
@@ -84,6 +89,9 @@ export function SearchSidebar({
   onQueryImproverSave,
   onQueryImproverReset,
   onSubmit,
+  onExactFrameSearch,
+  onImportCsv,
+  exactFramePending,
   onRrfChange,
   onRrfSave,
   onRrfReset,
@@ -91,11 +99,24 @@ export function SearchSidebar({
   onRetrievalSave,
   onRetrievalReset,
 }: Props) {
+  const [manualVideoId, setManualVideoId] = useState('');
+  const [manualIdType, setManualIdType] = useState<'original_frame_id' | 'keyframe_no'>('original_frame_id');
+  const [manualFrameId, setManualFrameId] = useState('');
   const vlmRerank = retrievalSettings.vlm_rerank ?? { enabled: false, top_k: 15, weight: 0.6 };
   const hasQuery = task === 'trake'
     ? Boolean(description.trim()) && events.length > 0 && events.every((item) => item.description.trim())
     : description.trim() && (task !== 'qa' || question.trim());
   const descriptionLabel = task === 'trake' ? 'Truy vấn chính' : 'Mô tả sự kiện';
+  const parsedManualFrameId = Number(manualFrameId);
+  const manualVideoIdValid = SAFE_VIDEO_ID.test(manualVideoId.trim());
+  const manualFrameValid = manualFrameId.trim() !== '' && Number.isSafeInteger(parsedManualFrameId)
+    && parsedManualFrameId >= (manualIdType === 'keyframe_no' ? 1 : 0);
+
+  function submitExactFrameSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!manualVideoIdValid || !manualFrameValid) return;
+    onExactFrameSearch(manualVideoId.trim(), manualIdType, parsedManualFrameId);
+  }
 
   return (
     <aside className="search-sidebar" aria-label="Bộ điều khiển tìm kiếm">
@@ -176,6 +197,76 @@ export function SearchSidebar({
           {pending ? 'Đang tìm…' : 'Tìm frame'}
         </button>
       </form>
+
+      <section className="sidebar-panel exact-frame-panel" aria-labelledby="exact-frame-title">
+        <div className="sidebar-panel-heading">
+          <div>
+            <p className="section-kicker">Tra cứu trực tiếp</p>
+            <h2 id="exact-frame-title">Nạp frame theo ID</h2>
+          </div>
+          <span className="sidebar-panel-badge">Exact</span>
+        </div>
+
+        <form className="exact-frame-form" onSubmit={submitExactFrameSearch}>
+          <label className="input-field compact-field">
+            <span>Video ID</span>
+            <input
+              aria-label="Video ID"
+              value={manualVideoId}
+              maxLength={200}
+              placeholder="video_01"
+              onChange={(event) => setManualVideoId(event.target.value)}
+            />
+          </label>
+          <label className="input-field compact-field">
+            <span>Loại ID frame</span>
+            <select
+              aria-label="Loại ID frame"
+              value={manualIdType}
+              onChange={(event) => setManualIdType(event.target.value as 'original_frame_id' | 'keyframe_no')}
+            >
+              <option value="original_frame_id">Frame ID gốc</option>
+              <option value="keyframe_no">Keyframe ordinal</option>
+            </select>
+          </label>
+          <label className="input-field compact-field">
+            <span>ID frame</span>
+            <input
+              aria-label="ID frame"
+              type="number"
+              min={manualIdType === 'keyframe_no' ? 1 : 0}
+              step="1"
+              value={manualFrameId}
+              placeholder="385"
+              onChange={(event) => setManualFrameId(event.target.value)}
+            />
+          </label>
+          <button
+            type="submit"
+            className="secondary-button full-width"
+            disabled={exactFramePending || !manualVideoIdValid || !manualFrameValid}
+          >
+            {exactFramePending ? 'Đang nạp frame…' : 'Tra cứu frame'}
+          </button>
+        </form>
+        <label className="file-input-field">
+          <span>Khôi phục đáp án từ CSV hiện tại</span>
+          <input
+            aria-label="Import CSV đáp án"
+            type="file"
+            accept=".csv,text/csv"
+            disabled={exactFramePending}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.currentTarget.value = '';
+              if (file) onImportCsv(file);
+            }}
+          />
+        </label>
+        <p className="sidebar-help">
+          Có thể nhập frame ID gốc hoặc thứ tự keyframe; CSV sẽ nạp lại frame và hàng đợi đáp án theo task hiện tại.
+        </p>
+      </section>
 
       <section className="sidebar-panel query-improver-panel" aria-labelledby="query-improver-title">
         <div className="sidebar-panel-heading">

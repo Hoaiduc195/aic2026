@@ -1,5 +1,6 @@
 import type {
   EvidenceType,
+  ExactFrameSearchRequest,
   CandidatePage,
   CanonicalFrameResponse,
   QualificationAnswer,
@@ -54,6 +55,21 @@ export async function searchMedia(
     throw new ApiError(message, response.status);
   }
 
+  return parseSearchResponse(payload);
+}
+
+export async function searchExactFrames(
+  request: ExactFrameSearchRequest,
+  signal?: AbortSignal,
+): Promise<SearchResponse> {
+  const response = await fetch(`${API_BASE}/v1/search/exact-frames`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(request),
+    signal,
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw apiError(payload, response.status, 'Không thể tải các frame exact.');
   return parseSearchResponse(payload);
 }
 
@@ -127,6 +143,20 @@ export async function getVideoFrame(
   );
   const payload = await response.json().catch(() => null);
   if (!response.ok) throw apiError(payload, response.status, 'Không thể tải canonical frame.');
+  return parseCanonicalFrameResponse(payload);
+}
+
+export async function getVideoKeyframe(
+  videoId: string,
+  keyframeNo: number,
+  signal?: AbortSignal,
+): Promise<CanonicalFrameResponse> {
+  const response = await fetch(
+    `${API_BASE}/v1/videos/${encodeURIComponent(videoId)}/keyframes/${encodeURIComponent(String(keyframeNo))}`,
+    { signal },
+  );
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw apiError(payload, response.status, 'Không thể tải keyframe.');
   return parseCanonicalFrameResponse(payload);
 }
 
@@ -293,7 +323,7 @@ export function parseSearchResponse(value: unknown): SearchResponse {
     query: optionalQuery(value.query),
     query_mode: value.query_mode === undefined
       ? undefined
-      : value.query_mode === 'text' || value.query_mode === 'frame_image'
+      : value.query_mode === 'text' || value.query_mode === 'frame_image' || value.query_mode === 'exact_frames'
         ? value.query_mode
         : (() => { throw new Error('query_mode không hợp lệ'); })(),
     session_id: value.session_id === null ? null : optionalText(value.session_id),

@@ -57,6 +57,17 @@ export class MediaController {
     );
   }
 
+  @Get(':videoId/keyframes/:keyframeNo')
+  keyframe(
+    @Param('videoId') videoId: string,
+    @Param('keyframeNo') keyframeNo: string,
+  ) {
+    return this.media.getFrameByKeyframe(
+      identifier(videoId, 'video_id'),
+      integer(keyframeNo, 'keyframe_no', 1, 2_147_483_647),
+    );
+  }
+
   @Get(':videoId/frames/:frameId/thumbnail')
   async frameThumbnail(
     @Param('videoId') videoId: string,

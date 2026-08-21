@@ -6,6 +6,7 @@ import { type CSSProperties, type FormEvent, useCallback, useEffect, useMemo, us
 import type {
   FrameCandidate,
   CanonicalFrameResponse,
+  ExactFrameSearchRequest,
   QualificationAnswer,
   QualificationEventInput,
   QualificationTask,
@@ -93,6 +94,7 @@ import {
   validateTrakeSequence,
 } from '../lib/workbench-model';
 import { buildSubmissionCsv } from '../lib/submission-csv';
+import { parseAnswerCsv, type CsvImportIssue, type ImportedFrameRef } from '../lib/query-import';
 import { useWorkbenchStore } from '../lib/workbench-store';
 import { frameThumbnailUri } from '../lib/video-studio-model';
 import {
@@ -143,7 +145,9 @@ import { VideoStudioModal } from './workbench/VideoStudioModal';
 
 interface Props {
   search: (request: SearchRequest) => Promise<SearchResponse>;
+  exactFrameSearch: (request: ExactFrameSearchRequest) => Promise<SearchResponse>;
   loadFrame?: (videoId: string, frameId: number, signal?: AbortSignal) => Promise<CanonicalFrameResponse>;
+  loadKeyframe?: (videoId: string, keyframeNo: number, signal?: AbortSignal) => Promise<CanonicalFrameResponse>;
   loadStudio: (videoId: string, signal?: AbortSignal) => Promise<VideoStudioResponse>;
   saveSelection: (queryId: string, task: QualificationTask, answers: readonly QualificationAnswer[]) => Promise<SelectionRevision>;
   createPreview: (queryId: string, task: QualificationTask, answers: readonly QualificationAnswer[]) => Promise<SubmissionPreview>;
@@ -225,7 +229,22 @@ function buildQueryImprovementRequest(
   };
 }
 
+function readCsvFile(file: File): Promise<string> {
+  const fileWithText = file as File & { text?: () => Promise<string> };
+  if (typeof fileWithText.text === 'function') return fileWithText.text();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener('load', () => {
+      if (typeof reader.result === 'string') resolve(reader.result);
+      else reject(new Error('Không thể đọc nội dung CSV.'));
+    });
+    reader.addEventListener('error', () => reject(new Error('Không thể đọc nội dung CSV.')));
+    reader.readAsText(file);
+  });
+}
+
 const VQA_BATCH_CONCURRENCY = 4;
+const MAX_CSV_IMPORT_BYTES = 1_000_000;
 
 type TaskWorkspaceSnapshot = WorkbenchSnapshot & { readonly history_id: string | null };
 type TrakeFrameSlots = Array<FrameCandidate | null>;
@@ -250,7 +269,7 @@ function emptyTaskWorkspaceSnapshot(task: QualificationTask): TaskWorkspaceSnaps
   };
 }
 
-export function Workbench({ search, loadFrame, loadStudio, saveSelection, createPreview, suggestVqaAnswer, improveQuery }: Props) {
+export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, loadStudio, saveSelection, createPreview, suggestVqaAnswer, improveQuery }: Props) {
   const task = useWorkbenchStore((state) => state.task);
   const answers = useWorkbenchStore((state) => state.answers);
   const setTask = useWorkbenchStore((state) => state.setTask);
@@ -278,6 +297,7 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
   const [batchTopK, setBatchTopK] = useState('10');
   const [batchVqaLoading, setBatchVqaLoading] = useState(false);
   const [batchVqaProgress, setBatchVqaProgress] = useState<{ completed: number; total: number; failed: number } | null>(null);
+  const [exactFrameResolving, setExactFrameResolving] = useState(false);
   const batchAbortRef = useRef<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -307,6 +327,9 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
 
   const searchMutation = useMutation({
     mutationFn: (request: SearchRequest) => search(request),
+  });
+  const exactFrameMutation = useMutation({
+    mutationFn: (request: ExactFrameSearchRequest) => exactFrameSearch(request),
   });
   const vqaAnswerMutation = useMutation({
     mutationFn: (request: VqaAnswerRequest) => suggestVqaAnswer(request),
@@ -677,6 +700,151 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
       setNotice(`Đã tìm kiếm các frame tương tự ${frame.video_id} · frame ${frame.original_frame_id}.`);
     } catch (reason) {
       setError(readError(reason, 'Tìm kiếm bằng frame thất bại.'));
+    }
+  }
+
+  function clearExactFrameWorkspace() {
+    setError(null);
+    setNotice(null);
+    setActiveHistoryId(null);
+    restoredRankedQueryRef.current = null;
+    setResponse(null);
+    setSelectedAnchor(null);
+    setActiveFrame(null);
+    setAssignedFramesByResult({});
+    setStudioOpen(false);
+    setStudioVideoId(null);
+    batchAbortRef.current?.abort();
+    batchAbortRef.current = null;
+    setVqaQueue([]);
+    setTrakeQueue([]);
+    replaceAnswers([]);
+    setTrakeQueueLoading(false);
+    setBatchVqaProgress(null);
+  }
+
+  async function runExactFrameLookup(
+    frameRefs: readonly ImportedFrameRef[],
+    importedAnswers: readonly QualificationAnswer[] = [],
+    importIssues: readonly CsvImportIssue[] = [],
+  ) {
+    if (exactFrameMutation.isPending) return;
+    const uniqueRefs = Array.from(
+      new Map(frameRefs.map((frame) => [`${frame.video_id}:${frame.original_frame_id}`, frame])).values(),
+    );
+    if (uniqueRefs.length === 0) {
+      setError('Không có frame hợp lệ để tra cứu.');
+      return;
+    }
+
+    clearExactFrameWorkspace();
+    try {
+      const next = await exactFrameMutation.mutateAsync({
+        task: task === 'qa' ? 'vqa' : task,
+        frames: [...uniqueRefs],
+        session_id: currentSessionId(),
+      });
+      const nextFrames = toFrameCandidates(next).frames;
+      const availableFrameKeys = new Set(nextFrames.map((frame) => `${frame.video_id}:${frame.original_frame_id}`));
+      const importedFrameAnswers = [...importedAnswers];
+      const restoredTrakeQueue = task === 'trake'
+        ? restoreTrakeQueueFromAnswers(
+          importedFrameAnswers.filter((answer): answer is TrakeAnswer => 'frame_ids' in answer),
+          nextFrames,
+        )
+        : [];
+      const restoredAnswers = task === 'trake'
+        ? trakeQueueAnswers(restoredTrakeQueue)
+        : importedFrameAnswers.filter((answer) => (
+          'frame_id' in answer && availableFrameKeys.has(`${answer.video_id}:${answer.frame_id}`)
+        ));
+
+      setVqaQueue([]);
+      setTrakeQueue(restoredTrakeQueue);
+      replaceAnswers(restoredAnswers);
+      const snapshot = captureSnapshot({
+        response: next,
+        rankedFrames: nextFrames,
+        selectedAnchor: null,
+        assignedFrames: emptyTrakeFrameSlots(),
+        assignedFramesByResult: {},
+        answers: restoredAnswers,
+        vqaQueue: [],
+        trakeQueue: restoredTrakeQueue,
+      });
+      const entry = addHistorySnapshot(snapshot);
+      setResponse(next);
+      setRankedFrames(nextFrames);
+      setActiveHistoryId(entry.history_id);
+      setTaskSnapshots((current) => ({ ...current, [task]: { ...snapshot, history_id: entry.history_id } }));
+
+      const unavailableCount = uniqueRefs.filter((frame) => (
+        !availableFrameKeys.has(`${frame.video_id}:${frame.original_frame_id}`)
+      )).length;
+      const skippedCount = importIssues.length + unavailableCount;
+      const importedLabel = importedAnswers.length > 0
+        ? ` Đã khôi phục ${restoredAnswers.length} đáp án.`
+        : '';
+      const skippedLabel = skippedCount > 0
+        ? ` Bỏ qua ${skippedCount} dòng/frame không hợp lệ hoặc không khả dụng.`
+        : '';
+      setNotice(`Đã tra cứu ${nextFrames.length}/${uniqueRefs.length} frame theo ID.${importedLabel}${skippedLabel}`);
+    } catch (reason) {
+      setError(readError(reason, 'Tra cứu frame theo ID thất bại.'));
+    }
+  }
+
+  async function queryByIdentifier(
+    videoId: string,
+    idType: 'original_frame_id' | 'keyframe_no',
+    frameId: number,
+  ) {
+    if (exactFrameMutation.isPending || exactFrameResolving) return;
+    if (idType === 'original_frame_id') {
+      await runExactFrameLookup([{ video_id: videoId, original_frame_id: frameId }]);
+      return;
+    }
+    if (!loadKeyframe) {
+      setError('Chưa cấu hình API để phân giải keyframe ordinal.');
+      return;
+    }
+    setExactFrameResolving(true);
+    clearExactFrameWorkspace();
+    try {
+      const canonical = await loadKeyframe(videoId, frameId);
+      await runExactFrameLookup([{
+        video_id: canonical.video_id,
+        original_frame_id: canonical.original_frame_id,
+      }]);
+    } catch (reason) {
+      setError(readError(reason, 'Không thể phân giải keyframe ordinal.'));
+    } finally {
+      setExactFrameResolving(false);
+    }
+  }
+
+  async function importAnswerCsv(file: File) {
+    try {
+      if (file.size > MAX_CSV_IMPORT_BYTES) {
+        throw new Error('CSV không được vượt quá 1 MB.');
+      }
+      if (!/\.csv$/i.test(file.name)) {
+        throw new Error('Chỉ hỗ trợ file có phần mở rộng .csv.');
+      }
+      const contentType = file.type.trim().toLowerCase();
+      if (contentType && !['text/csv', 'application/csv', 'application/vnd.ms-excel'].includes(contentType)) {
+        throw new Error('Định dạng file không phải CSV.');
+      }
+      const parsed = parseAnswerCsv(await readCsvFile(file), task);
+      if (parsed.frame_refs.length === 0) {
+        setError(parsed.issues.length > 0
+          ? `CSV không có dòng hợp lệ để tra cứu (${parsed.issues.length} dòng bị bỏ qua).`
+          : 'CSV không có dòng đáp án hợp lệ để tra cứu.');
+        return;
+      }
+      await runExactFrameLookup(parsed.frame_refs, parsed.answers, parsed.issues);
+    } catch (reason) {
+      setError(readError(reason, 'Không thể đọc file CSV đáp án.'));
     }
   }
 
@@ -1334,7 +1502,7 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
           description={description}
           question={question}
           events={events}
-          pending={searchMutation.isPending}
+          pending={searchMutation.isPending || exactFrameMutation.isPending || exactFrameResolving}
           onTaskChange={changeTask}
           onDescriptionChange={(value) => { setDescription(value); clearQueryImproverError(); }}
           onQuestionChange={(value) => { setQuestion(value); clearQueryImproverError(); }}
@@ -1355,6 +1523,9 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
           onQueryImproverSave={saveQueryImproverSettingsForSession}
           onQueryImproverReset={resetQueryImproverSettings}
           onSubmit={submit}
+          onExactFrameSearch={queryByIdentifier}
+          onImportCsv={importAnswerCsv}
+          exactFramePending={exactFrameMutation.isPending || exactFrameResolving}
           onRrfChange={setRrfSettings}
           onRrfSave={saveRrfSettingsForSession}
           onRrfReset={resetRrfSettings}
@@ -1370,7 +1541,7 @@ export function Workbench({ search, loadFrame, loadStudio, saveSelection, create
           <FrameGrid
             frames={rankedFrames}
             selectedKey={selectedAnchor?.result_key ?? null}
-            loading={searchMutation.isPending}
+            loading={searchMutation.isPending || exactFrameMutation.isPending || exactFrameResolving}
             searched={response !== null}
             skipped={normalized.skipped}
             onSelect={selectSearchFrame}

@@ -58,7 +58,7 @@ export interface EmbeddingRequestConfig {
   readonly timeout_ms: number;
 }
 
-export type QueryMode = 'text' | 'frame_image';
+export type QueryMode = 'text' | 'frame_image' | 'exact_frames';
 
 export interface FrameQuery {
   readonly video_id: string;
@@ -73,6 +73,12 @@ export interface SearchRequest {
   readonly retrieval?: RetrievalOverrides;
   readonly embedding?: EmbeddingRequestConfig;
   readonly frame_query?: FrameQuery;
+}
+
+export interface ExactFrameSearchRequest {
+  readonly task: TaskType;
+  readonly frames: readonly FrameQuery[];
+  readonly session_id?: string;
 }
 
 export interface RetrievalExecutionPlan {

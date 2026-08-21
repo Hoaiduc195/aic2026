@@ -50,7 +50,7 @@ function randomId(prefix: string): string {
 
 function snapshotLabel(snapshot: WorkbenchSnapshot): string {
   const firstEvent = snapshot.events.find((event) => event.description.trim())?.description.trim();
-  if (snapshot.response?.query_mode === 'frame_image') {
+  if (snapshot.response?.query_mode === 'frame_image' || snapshot.response?.query_mode === 'exact_frames') {
     const result = snapshot.response.results[0];
     return result
       ? `Frame ${result.video_id} · ${result.original_frame_id ?? result.start_ms}`

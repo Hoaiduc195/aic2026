@@ -106,6 +106,22 @@ describe('workbench answer model', () => {
     });
   });
 
+  it('uses the exact-frame thumbnail proxy for manually looked-up non-keyframes', () => {
+    const normalized = toFrameCandidates({
+      query_id: 'query_exact',
+      query_mode: 'exact_frames',
+      degraded: false,
+      unavailable_branches: [],
+      results: [result],
+    });
+
+    expect(normalized.frames[0]).toMatchObject({
+      thumbnail_uri: '/api/v1/media/videos/video_01/frames/385/thumbnail',
+      is_exact_frame: true,
+      annotation_source_frame_id: null,
+    });
+  });
+
   it('rewrites signed preview URLs to a stable media proxy', () => {
     const normalized = toFrameCandidates({
       query_id: 'query_01',

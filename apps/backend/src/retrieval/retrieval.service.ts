@@ -9,6 +9,7 @@ import {
 import type {
   BranchName,
   BranchResult,
+  ExactFrameSearchRequest,
   RetrievalExecutionPlan,
   SearchRequest,
   SearchResponse,
@@ -18,7 +19,7 @@ import { candidateKey, fuseBranchResults } from './fusion';
 import { filterNearbyCandidates } from './temporal-filter';
 import type { RetrievalBranch } from './branch';
 import { buildDeterministicPlan, queryForBranch } from './query-planner';
-import type { TaskExecutorInput } from '../tasks/task-executor';
+import { buildSearchResponse, type TaskExecutorInput } from '../tasks/task-executor';
 import { TaskExecutorRegistry } from '../tasks/task-registry';
 import type { RetrievalStore } from './retrieval.store';
 import type { EvidenceRepository, EvidenceView } from './evidence.repository';
@@ -178,6 +179,77 @@ export class RetrievalService {
       : response;
   }
 
+  async searchExactFrames(request: ExactFrameSearchRequest): Promise<SearchResponse> {
+    const mediaService = this.mediaService;
+    if (!mediaService) throw new ServiceUnavailableException('exact frame service is not configured');
+
+    const persistedRequest: SearchRequest = {
+      query: 'Exact frame lookup',
+      task: request.task,
+      session_id: request.session_id,
+    };
+    const basePlan = this.createPlanForBranches(persistedRequest, []);
+    const plan: RetrievalExecutionPlan = {
+      ...basePlan,
+      query_mode: 'exact_frames',
+      query_variants: [],
+      transformations: [...basePlan.transformations, 'exact_frame_lookup'],
+    };
+    const startedAt = performance.now();
+    const uniqueFrames = [...new Map(request.frames.map((frame) => [
+      `${frame.video_id}\u0000${frame.original_frame_id}`,
+      frame,
+    ])).values()];
+    const loaded = await Promise.all(uniqueFrames.map(async (frame) => {
+      try {
+        return { frame, exact: await mediaService.getFrame(frame.video_id, frame.original_frame_id) };
+      } catch {
+        return { frame, exact: null };
+      }
+    }));
+    const warnings = loaded.flatMap(({ frame, exact }) => exact
+      ? []
+      : [`exact_frame_unavailable:${frame.video_id}:${frame.original_frame_id}`]);
+    const evidenceById = new Map<EvidenceView['evidence_id'], EvidenceView>();
+    const candidates = loaded
+      .flatMap(({ exact }) => {
+        if (!exact) return [];
+        const evidence = exactFrameEvidence(exact);
+        for (const item of evidence) evidenceById.set(item.evidence_id, item);
+        const endMs = exact.timestamp_ms + 1;
+        return [{
+          video_id: exact.video_id,
+          keyframe_no: exact.keyframe_no,
+          original_frame_id: exact.original_frame_id,
+          timestamp_ms: exact.timestamp_ms,
+          start_ms: exact.timestamp_ms,
+          end_ms: endMs,
+          score: 1,
+          evidence_ids: evidence.map((item) => item.evidence_id),
+          matched_modalities: ['visual', ...new Set(evidence.map((item) => item.type))],
+          fusion_trace: [],
+        }];
+      });
+
+    try {
+      await this.store?.saveRun(persistedRequest, plan, candidates);
+    } catch (error) {
+      this.logger.warn(`exact frame persistence failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+      warnings.push('retrieval_persistence_failed');
+    }
+
+    const input: TaskExecutorInput = {
+      request: persistedRequest,
+      plan,
+      branchResults: [],
+      candidates,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      config: this.config,
+      evidenceById,
+    };
+    return buildSearchResponse(input, 'manual-exact-frame-v1', warnings);
+  }
+
   private resolveBranches(request: SearchRequest, queryEmbedding?: readonly number[]): readonly RetrievalBranch[] {
     return this.embeddingService?.resolveBranches(this.branches, request, queryEmbedding) ?? this.branches;
   }
@@ -289,4 +361,35 @@ export class RetrievalService {
       producer: `${completed[0].producer}-multi-variant`,
     };
   }
+}
+
+function exactFrameEvidence(frame: Awaited<ReturnType<MediaService['getFrame']>>): EvidenceView[] {
+  return [
+    ...frame.captions.map((item) => ({
+      evidence_id: item.evidence_id,
+      type: 'caption',
+      snippet: item.text,
+      producer: item.producer,
+    })),
+    ...frame.ocr.map((item) => ({
+      evidence_id: item.evidence_id,
+      type: 'ocr',
+      snippet: item.text,
+      producer: item.producer,
+    })),
+    ...frame.objects.map((item) => ({
+      evidence_id: item.evidence_id,
+      type: 'object',
+      snippet: item.label,
+      producer: item.producer,
+    })),
+    ...frame.asr_spans.map((item) => ({
+      evidence_id: item.evidence_id,
+      type: 'asr',
+      start_ms: item.start_ms,
+      end_ms: item.end_ms,
+      snippet: item.text,
+      producer: item.producer,
+    })),
+  ];
 }

@@ -133,6 +133,6 @@ describe('parseExactFrameSearchRequest', () => {
     expect(() => parseExactFrameSearchRequest({
       task: 'textual_kis',
       frames: Array.from({ length: 101 }, (_, index) => ({ video_id: 'v', original_frame_id: index })),
-    })).toThrow('at most 100');
+    })).toThrow('1-100 items');
   });
 });
