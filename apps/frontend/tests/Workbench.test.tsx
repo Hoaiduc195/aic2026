@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ComponentProps } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { Workbench } from '@/components/Workbench';
@@ -154,6 +155,10 @@ function createInspectorFrameLoader() {
   }));
 }
 
+type RenderWorkbenchOptions = Partial<ComponentProps<typeof Workbench>> & {
+  readonly searchResponse?: SearchResponse;
+};
+
 function renderWorkbench({
   searchResponse = response,
   search = vi.fn(async () => searchResponse),
@@ -189,7 +194,7 @@ function renderWorkbench({
     model_version: 'test-model',
     warning: null,
   })),
-} = {}) {
+}: RenderWorkbenchOptions = {}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = render(
     <QueryClientProvider client={queryClient}>
@@ -626,7 +631,7 @@ describe('qualification frame-first workbench', () => {
       task: 'trake',
       query: 'Một người đi qua cửa hàng rồi rời đi',
     })));
-    const request = (search.mock.calls[0] as unknown[] | undefined)?.[0];
+    const request = (vi.mocked(search).mock.calls[0] as unknown[] | undefined)?.[0];
     expect(request).not.toHaveProperty('events');
   });
 
