@@ -15,9 +15,14 @@ class FakeEncoder:
 
     def __init__(self) -> None:
         self.last_text: str | None = None
+        self.last_image: tuple[bytes, str] | None = None
 
     def embed_text(self, text: str) -> list[float]:
         self.last_text = text
+        return [1.0 / math.sqrt(self.dimensions)] * self.dimensions
+
+    def embed_image(self, image: bytes, mime_type: str) -> list[float]:
+        self.last_image = (image, mime_type)
         return [1.0 / math.sqrt(self.dimensions)] * self.dimensions
 
 
@@ -66,6 +71,47 @@ class EmbeddingServiceTests(unittest.TestCase):
         response = wrong_client.post("/embed", json={"text": "query"})
         self.assertEqual(response.status_code, 502)
         self.assertEqual(response.json(), {"detail": "embedding inference failed"})
+
+    def test_embeds_raw_frame_bytes_with_authentication(self) -> None:
+        encoder = FakeEncoder()
+        client = TestClient(create_app(
+            settings=ServiceSettings(token="service-secret"),
+            encoder=encoder,
+        ))
+
+        response = client.post(
+            "/embed/image",
+            headers={
+                "authorization": "Bearer service-secret",
+                "content-type": "image/jpeg",
+            },
+            content=b"jpeg-bytes",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()["embedding"]), 1024)
+        self.assertEqual(encoder.last_image, (b"jpeg-bytes", "image/jpeg"))
+
+        self.assertEqual(
+            client.post(
+                "/embed/image",
+                headers={"authorization": "Bearer service-secret", "content-type": "application/octet-stream"},
+                content=b"jpeg-bytes",
+            ).status_code,
+            415,
+        )
+        limited_client = TestClient(create_app(
+            settings=ServiceSettings(token="service-secret", max_image_bytes=4),
+            encoder=FakeEncoder(),
+        ))
+        self.assertEqual(
+            limited_client.post(
+                "/embed/image",
+                headers={"authorization": "Bearer service-secret", "content-type": "image/jpeg"},
+                content=b"12345",
+            ).status_code,
+            413,
+        )
 
 
 if __name__ == "__main__":

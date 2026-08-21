@@ -30,7 +30,7 @@ export function loadEmbeddingSettings(): EmbeddingSettings {
     return {
       enabled: value.enabled === true,
       base_url: typeof value.base_url === 'string' ? value.base_url : '',
-      api_key: '',
+      api_key: typeof value.api_key === 'string' ? value.api_key : '',
       timeout_ms: numberValue(value.timeout_ms, DEFAULT_EMBEDDING_SETTINGS.timeout_ms),
     };
   } catch {
@@ -39,8 +39,7 @@ export function loadEmbeddingSettings(): EmbeddingSettings {
 }
 
 export function saveEmbeddingSettings(settings: EmbeddingSettings): void {
-  const { api_key: _apiKey, ...persisted } = settings;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...settings }));
 }
 
 export function validateEmbeddingSettings(settings: EmbeddingSettings): string | null {

@@ -64,4 +64,15 @@ describe('deterministic query planner', () => {
     expect(plan('hai chiếc xe máy').object_terms).toEqual(plan('hai chiếc xe máy').object_terms);
     expect(plan('hai chiếc xe máy').channel_weights).toEqual(plan('hai chiếc xe máy').channel_weights);
   });
+
+  it('preserves a near-frame window of up to 100 seconds', () => {
+    const result = buildDeterministicPlan(
+      { query: 'person', task: 'textual_kis' },
+      'query-fixed',
+      'index-v1',
+      registered,
+      { ...limits, nearFrameWindowMs: 100_000 },
+    );
+    expect(result.near_frame_window_ms).toBe(100_000);
+  });
 });

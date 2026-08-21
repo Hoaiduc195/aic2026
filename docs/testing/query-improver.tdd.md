@@ -4,6 +4,7 @@
 
 - Người dùng có thể đọc query tiếng Việt, tạo một query tiếng Anh rõ ràng hơn và kiểm tra/chỉnh sửa preview trước khi tìm kiếm.
 - TRAKE giữ nguyên số lượng và thứ tự sự kiện khi query lớn được cải thiện trong một lần gọi model.
+- Các task gửi phần chính và dữ liệu phụ riêng biệt: VQA dùng `query` + `question`, TRAKE dùng `query` + `events`.
 - Khi model không khả dụng hoặc trả output sai, hệ thống dùng query gốc thay vì làm hỏng retrieval.
 
 ## Validation evidence
@@ -12,6 +13,7 @@
 |---|---|---|
 | Query improver trả về một query tiếng Anh duy nhất | `apps/backend/tests/query-improver.test.ts` | PASS: 4 tests |
 | TRAKE giữ nguyên số dòng/thứ tự | `apps/backend/tests/query-improver.test.ts` | PASS |
+| TRAKE nhận/trả overview và event list ở các trường riêng | `apps/backend/tests/query-improver.test.ts`, `apps/backend/tests/query-improver-request.test.ts` | PASS |
 | Model unavailable/invalid output fallback về query gốc | `apps/backend/tests/query-improver.test.ts` | PASS |
 | Request model URL và task được validate | `apps/backend/tests/query-improver-request.test.ts` | PASS: 2 tests |
 | Endpoint được auth, throttle và gọi đúng service | `apps/backend/tests/api.integration.test.ts` | PASS: 6 tests |
@@ -31,9 +33,17 @@
 - `apps/frontend`: `pnpm lint` — PASS.
 - `apps/frontend`: `pnpm build` — PASS.
 
+### Current separate-payload validation
+
+- `apps/backend`: `pnpm test -- query-improver.test.ts query-improver-request.test.ts` — PASS, 16 tests.
+- `apps/frontend`: targeted Query Improver/TRAKE tests — PASS, 8 tests.
+- `apps/frontend`: `pnpm typecheck` — PASS.
+- `apps/frontend`: `pnpm lint` — PASS.
+- `apps/backend`: `pnpm typecheck` — currently blocked by pre-existing readonly-candidate errors in `src/tasks/trake/trake.executor.ts`; the Query Improver tests themselves pass.
+
 ## Scope notes
 
 - Không thêm schema database.
 - Không sinh query variants hoặc chạy retrieval nhiều lần cho query improver.
 - Query variants nội bộ của planner dành cho cấu trúc TRAKE vẫn được giữ nguyên.
-- Chưa tạo commit/push trong bước này; worktree còn các thay đổi local có sẵn từ trước.
+- Worktree vẫn có các file local có sẵn từ trước; chúng không thuộc thay đổi Query Improver.

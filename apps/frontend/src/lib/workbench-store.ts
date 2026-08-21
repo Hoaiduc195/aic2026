@@ -6,6 +6,7 @@ interface WorkbenchState {
   task: QualificationTask;
   answers: QualificationAnswer[];
   setTask: (task: QualificationTask) => void;
+  replaceAnswers: (answers: readonly QualificationAnswer[]) => void;
   addAnswer: (answer: QualificationAnswer) => void;
   removeAnswer: (index: number) => void;
   moveAnswer: (from: number, to: number) => void;
@@ -20,6 +21,7 @@ const initialState = {
 export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   ...initialState,
   setTask: (task) => set({ task, answers: [] }),
+  replaceAnswers: (answers) => set({ answers: [...answers].slice(0, 100) }),
   addAnswer: (answer) => set((state) => (
     state.answers.length >= 100 ? state : { answers: [...state.answers, answer] }
   )),

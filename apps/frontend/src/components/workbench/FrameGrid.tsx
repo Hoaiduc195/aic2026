@@ -16,6 +16,7 @@ import {
   frameCandidateLabel,
   formatMs,
 } from '../../lib/workbench-model';
+import { queueKey } from '../../lib/vqa-queue-model';
 
 interface Props {
   frames: readonly FrameCandidate[];
@@ -25,7 +26,22 @@ interface Props {
   skipped: number;
   onSelect: (frame: FrameCandidate) => void;
   onReorder: (from: number, to: number) => void;
+  onMoveToTop?: (frame: FrameCandidate) => void;
+  onMoveToBottom?: (frame: FrameCandidate) => void;
+  onQueryFrame?: (frame: FrameCandidate) => void;
   onExport?: () => void;
+  onFillTrakeQueue?: () => void;
+  onExportTrakeCsv?: () => void;
+  queueKeys?: ReadonlySet<string>;
+  queueCount?: number;
+  onAddToQueue?: (frame: FrameCandidate) => void;
+  onFillQueue?: () => void;
+  batchTopK?: string;
+  onBatchTopKChange?: (value: string) => void;
+  onRunBatchVqa?: () => void;
+  onStopBatchVqa?: () => void;
+  batchVqaLoading?: boolean;
+  batchVqaProgress?: { completed: number; total: number; failed: number } | null;
 }
 
 interface PendingPointerDrag {
@@ -45,7 +61,22 @@ export function FrameGrid({
   skipped,
   onSelect,
   onReorder,
+  onMoveToTop,
+  onMoveToBottom,
+  onQueryFrame,
   onExport,
+  onFillTrakeQueue,
+  onExportTrakeCsv,
+  queueKeys = new Set<string>(),
+  queueCount = 0,
+  onAddToQueue,
+  onFillQueue,
+  batchTopK = '10',
+  onBatchTopKChange,
+  onRunBatchVqa,
+  onStopBatchVqa,
+  batchVqaLoading = false,
+  batchVqaProgress = null,
 }: Props) {
   const cardRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const listRef = useRef<HTMLOListElement | null>(null);
@@ -60,6 +91,7 @@ export function FrameGrid({
   const [pointerPosition, setPointerPosition] = useState<{ x: number; y: number } | null>(null);
   const [previewSize, setPreviewSize] = useState<{ width: number; height: number } | null>(null);
   const [focusResultKey, setFocusResultKey] = useState<string | null>(null);
+  const [queryFrame, setQueryFrame] = useState<FrameCandidate | null>(null);
 
   useEffect(() => {
     if (!focusResultKey) return;
@@ -68,6 +100,15 @@ export function FrameGrid({
     target.focus();
     setFocusResultKey(null);
   }, [focusResultKey, frames]);
+
+  useEffect(() => {
+    if (!queryFrame) return undefined;
+    function closeOnEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === 'Escape') setQueryFrame(null);
+    }
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [queryFrame]);
 
   function resetMotion() {
     if (animationFrameRef.current !== null && typeof window !== 'undefined') {
@@ -284,6 +325,68 @@ export function FrameGrid({
               Xuất JSON top 100
             </button>
           )}
+          {(onFillTrakeQueue || onExportTrakeCsv) && searched && (
+            <div className="trake-result-toolbar" aria-label="Công cụ hàng đợi TRAKE">
+              {onFillTrakeQueue && (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={frames.length === 0}
+                  onClick={onFillTrakeQueue}
+                >
+                  ⚡ Fill 100 chuỗi TRAKE
+                </button>
+              )}
+              {onExportTrakeCsv && (
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={frames.length === 0}
+                  onClick={onExportTrakeCsv}
+                >
+                  Xuất CSV top 100
+                </button>
+              )}
+            </div>
+          )}
+          {onFillQueue && searched && (
+            <div className="vqa-result-toolbar" aria-label="Công cụ hàng đợi VQA">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={frames.length === 0}
+                onClick={onFillQueue}
+              >
+                Fill hàng đợi ({queueCount}/100)
+              </button>
+              <label className="batch-k-control">
+                <span>Top-K</span>
+                <input
+                  aria-label="Số frame batch VQA"
+                  type="number"
+                  min="1"
+                  max="100"
+                  inputMode="numeric"
+                  value={batchTopK}
+                  onChange={(event) => onBatchTopKChange?.(event.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="primary-button"
+                disabled={frames.length === 0}
+                onClick={batchVqaLoading ? onStopBatchVqa : onRunBatchVqa}
+              >
+                {batchVqaLoading ? 'Dừng batch' : 'LLM trả lời Top-K'}
+              </button>
+              {batchVqaProgress && (
+                <span className="batch-progress" role="status">
+                  {batchVqaProgress.completed}/{batchVqaProgress.total}
+                  {batchVqaProgress.failed > 0 ? ` · lỗi ${batchVqaProgress.failed}` : ''}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </header>
 
@@ -340,12 +443,15 @@ export function FrameGrid({
             .filter((candidate) => candidate.kind === 'placeholder' || !candidate.dragging)
             .length + 1;
           const selected = frame.result_key === selectedKey;
+          const frameQueueKey = queueKey(frame);
+          const queued = queueKeys.has(frameQueueKey);
           const modalityLabel = displayMatchedModalities(frame.matched_modalities);
           const resultLabel = frameCandidateLabel(frame);
           const displayLabel = frameCandidateDisplayLabel(frame);
           return (
             <li
               className={`frame-card frame-list-item frame-list-item--spacious${entry.dragging ? ' frame-list-item--dragging' : ''}${selected ? ' selected' : ''}`}
+              data-queued={queued ? 'true' : undefined}
               data-frame-key={frame.result_key}
               key={frame.result_key}
               onPointerDown={(event) => handlePointerDown(event, index)}
@@ -387,6 +493,49 @@ export function FrameGrid({
               </div>
               <div className="frame-card-controls" onKeyDown={(event) => event.stopPropagation()}>
                 <span className="drag-hint">Kéo để xếp hạng</span>
+                {onAddToQueue && (
+                  <button
+                    type="button"
+                    className="queue-card-action"
+                    aria-label={queued ? `Frame ${resultLabel} đã ở hàng đợi` : `Thêm ${resultLabel} vào hàng đợi`}
+                    disabled={queued}
+                    onClick={() => onAddToQueue(frame)}
+                  >
+                    {queued ? '✓' : '+'}
+                  </button>
+                )}
+                {onMoveToTop && (
+                  <button
+                    type="button"
+                    className="queue-card-action frame-boundary-action"
+                    aria-label={`Upvote ${resultLabel} — đưa lên đầu`}
+                    disabled={index === 0}
+                    onClick={() => onMoveToTop(frame)}
+                  >
+                    ⤒
+                  </button>
+                )}
+                {onMoveToBottom && (
+                  <button
+                    type="button"
+                    className="queue-card-action frame-boundary-action"
+                    aria-label={`Downvote ${resultLabel} — đưa xuống cuối`}
+                    disabled={index === frames.length - 1}
+                    onClick={() => onMoveToBottom(frame)}
+                  >
+                    ⤓
+                  </button>
+                )}
+                {onQueryFrame && (
+                  <button
+                    type="button"
+                    className="queue-card-action frame-query-action"
+                    aria-label={`Tìm kiếm bằng ${resultLabel}`}
+                    onClick={() => setQueryFrame(frame)}
+                  >
+                    ⌕
+                  </button>
+                )}
                 <button
                   type="button"
                   aria-label={`Đưa ${resultLabel} lên`}
@@ -415,6 +564,47 @@ export function FrameGrid({
           position={pointerPosition}
           size={previewSize}
         />
+      )}
+      {queryFrame && onQueryFrame && (
+        <div
+          className="frame-query-modal-layer"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setQueryFrame(null);
+          }}
+        >
+          <div
+            className="frame-query-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="frame-query-title"
+            aria-describedby="frame-query-description"
+          >
+            <p className="section-kicker">Image-only retrieval</p>
+            <h2 id="frame-query-title">Xác nhận tìm kiếm trên frame này</h2>
+            <p id="frame-query-description">
+              Backend sẽ dùng đúng ảnh của <strong>{queryFrame.video_id} · frame {queryFrame.original_frame_id}</strong> để tìm các frame tương tự.
+            </p>
+            <div className="frame-query-preview">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={queryFrame.thumbnail_uri} alt={`Frame ${queryFrame.original_frame_id}`} />
+            </div>
+            <div className="frame-query-actions">
+              <button type="button" className="secondary-button" onClick={() => setQueryFrame(null)}>Huỷ</button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => {
+                  const selectedFrame = queryFrame;
+                  setQueryFrame(null);
+                  onQueryFrame(selectedFrame);
+                }}
+              >
+                Xác nhận tìm kiếm
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </section>
   );
@@ -463,6 +653,8 @@ function DragPreview({
       </div>
       <div className="frame-card-controls frame-drag-preview-controls" aria-hidden="true">
         <span className="drag-hint">Kéo để xếp hạng</span>
+        <span className="frame-drag-preview-button">⤒</span>
+        <span className="frame-drag-preview-button">⤓</span>
         <span className="frame-drag-preview-button">↑</span>
         <span className="frame-drag-preview-button">↓</span>
       </div>

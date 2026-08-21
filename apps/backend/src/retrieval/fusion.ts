@@ -59,6 +59,15 @@ export function aggregateBranchCandidates(
         end_ms: Math.max(ends.length > 0 ? Math.max(...ends) : startMs + 1, startMs + 1),
         evidence_ids: [...new Set(hits.flatMap((hit) => hit.evidence_ids))],
         matched_terms: [...new Set(hits.flatMap((hit) => hit.matched_terms ?? []))],
+        variant_scores: hits.reduce((acc, hit) => {
+          if (hit.variant_scores) {
+            for (const [vId, vScore] of Object.entries(hit.variant_scores)) {
+              const vIdx = Number(vId);
+              acc[vIdx] = Math.max(acc[vIdx] ?? 0, vScore);
+            }
+          }
+          return acc;
+        }, {} as Record<number, number>),
         occurrence_count: hits.length,
       };
     })
@@ -78,12 +87,14 @@ export function fuseBranchResults(
     video_object_key?: string | null;
     keyframe_no?: number | null;
     original_frame_id?: number | null;
+    timestamp_ms?: number | null;
     start_ms: number;
     end_ms: number;
     preview_uri?: string;
     score: number;
     evidence_ids: Set<string>;
     matched_modalities: Set<string>;
+    variant_scores: Record<number, number>;
     fusion_trace: FusionTraceEntry[];
   }>();
   const rrfK = Number.isFinite(plan.rrf_k) ? plan.rrf_k : DEFAULT_RRF_K;
@@ -100,22 +111,34 @@ export function fuseBranchResults(
         video_object_key: candidate.video_object_key,
         keyframe_no: candidate.keyframe_no,
         original_frame_id: candidate.original_frame_id,
+        timestamp_ms: candidate.timestamp_ms,
         start_ms: candidate.start_ms ?? 0,
         end_ms: Math.max(candidate.end_ms ?? 1, (candidate.start_ms ?? 0) + 1),
         preview_uri: candidate.preview_uri,
         score: 0,
         evidence_ids: new Set<string>(),
         matched_modalities: new Set<string>(),
+        variant_scores: {},
         fusion_trace: [],
       };
       current.video_object_key ??= candidate.video_object_key;
       current.keyframe_no ??= candidate.keyframe_no;
       current.original_frame_id ??= candidate.original_frame_id;
+      current.timestamp_ms ??= candidate.timestamp_ms;
       current.score += contribution;
       current.start_ms = Math.min(current.start_ms, candidate.start_ms ?? current.start_ms);
       current.end_ms = Math.max(current.end_ms, candidate.end_ms ?? current.end_ms);
       candidate.evidence_ids.forEach((id) => current.evidence_ids.add(id));
       current.matched_modalities.add(modalityForBranch(branchResult.branch));
+      
+      if (candidate.variant_scores) {
+        for (const [vId, vScore] of Object.entries(candidate.variant_scores)) {
+          const vIdx = Number(vId);
+          // RRF contribution per variant
+          current.variant_scores[vIdx] = (current.variant_scores[vIdx] ?? 0) + (weight / (rrfK + candidate.rank));
+        }
+      }
+
       current.fusion_trace.push({
         branch: branchResult.branch,
         channel_rank: candidate.rank,

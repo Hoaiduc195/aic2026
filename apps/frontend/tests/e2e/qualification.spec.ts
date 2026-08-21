@@ -64,6 +64,25 @@ const frameContextResponse = {
   ],
 };
 
+const studioResponse = {
+  video: playbackResponse,
+  frames: [385, 411, 450, 500].map((original_frame_id, index) => ({
+    video_id: 'video_01',
+    keyframe_no: index + 5,
+    original_frame_id,
+    timestamp_ms: 12_800 + index * 1_000,
+    captions: [],
+    objects: index === 2 ? [{
+      evidence_id: 'object-450',
+      label: 'xe máy',
+      confidence: 0.88,
+      normalized_bbox: [0.2, 0.2, 0.5, 0.6],
+      producer: 'object:v1',
+    }] : [],
+  })),
+  asr_spans: [],
+};
+
 async function mockFrameFirstApis(page: Page) {
   const requests = {
     playback: 0,
@@ -96,6 +115,14 @@ async function mockFrameFirstApis(page: Page) {
     });
   });
 
+  await page.route('**/api/v1/videos/video_01/studio', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json; charset=utf-8',
+      body: JSON.stringify(studioResponse),
+    });
+  });
+
   await page.route('**/api/v1/media/videos/video_01', async (route) => {
     await route.fulfill({
       status: 200,
@@ -122,7 +149,7 @@ async function mockFrameFirstApis(page: Page) {
         query_id: 'query_0001',
         revision: 1,
         task: 'textual_kis',
-        answers: [{ video_id: 'video_01', frame_id: 351 }],
+        answers: [{ video_id: 'video_01', frame_id: 385 }],
         note: null,
       }),
     });
@@ -136,8 +163,8 @@ async function mockFrameFirstApis(page: Page) {
         query_id: 'query_0001',
         task: 'textual_kis',
         answer_count: 1,
-        answers: [{ video_id: 'video_01', frame_id: 351 }],
-        csv: 'video_id,frame_id\r\nvideo_01,351\r\n',
+        answers: [{ video_id: 'video_01', frame_id: 385 }],
+        csv: 'video_01,385\r\n',
         submittable: false,
         warnings: ['preview_only'],
       }),
@@ -165,7 +192,7 @@ test.describe('qualification frame-first workbench', () => {
     await expect(page.getByLabel('Mô tả sự kiện 2')).toBeVisible();
   });
 
-  test('searches frames, lazy loads video and same-video frames, then queues the answer in the drawer', async ({ page }) => {
+  test('searches frames, opens video studio, then queues the answer in the drawer', async ({ page }) => {
     const requests = await mockFrameFirstApis(page);
     await page.goto('/');
 
@@ -180,25 +207,70 @@ test.describe('qualification frame-first workbench', () => {
 
     await page.getByRole('button', { name: 'Xem video' }).click();
     await expect(page.getByLabel('Video video_01')).toHaveAttribute('src', playbackResponse.playback_uri);
-    expect(requests.playback).toBe(1);
+    expect(requests.playback).toBe(0);
 
-    await page.getByRole('button', { name: 'Xem các frame cùng video' }).click();
-    await expect(page.getByRole('button', { name: 'Chọn frame 351' })).toBeVisible();
-    expect(requests.frames).toBe(1);
+    await expect(page.getByRole('button', { name: 'Xem các frame cùng video' })).toHaveCount(0);
+    expect(requests.frames).toBe(0);
 
-    await page.getByRole('button', { name: 'Chọn frame 351' }).click();
-    await expect(page.getByText('Frame 351')).toBeVisible();
-
+    await page.getByRole('button', { name: 'Đóng video studio' }).click();
     await page.getByRole('button', { name: 'Thêm vào đáp án' }).click();
-    await expect(page.getByText('video_01 · frame 351')).toHaveCount(0);
+    await expect(page.getByText('video_01 · frame 385')).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Đáp án (1)' }).click();
     await expect(page.getByRole('dialog', { name: 'Hàng đợi đáp án' })).toBeVisible();
-    await expect(page.getByText('video_01 · frame 351')).toBeVisible();
+    await expect(page.getByText('video_01 · frame 385')).toBeVisible();
 
     await page.getByRole('button', { name: 'Lưu đáp án' }).click();
     await expect(page.getByText('Đã lưu revision 1')).toBeVisible();
     await page.getByRole('button', { name: 'Tạo preview' }).click();
     await expect(page.getByText('Preview đã tạo cho 1 đáp án')).toBeVisible();
+  });
+
+  test('preserves task workspaces and restores a successful query from history', async ({ page }) => {
+    await mockFrameFirstApis(page);
+    await page.goto('/');
+
+    await page.getByLabel('Mô tả sự kiện').fill('Một cửa hàng trên phố');
+    await page.getByRole('tab', { name: 'Hỏi & Đáp' }).click();
+    await expect(page.getByLabel('Mô tả sự kiện')).toHaveValue('');
+
+    await page.getByLabel('Mô tả sự kiện').fill('Một người đang đi bộ');
+    await page.getByLabel('Câu hỏi').fill('Người đó đang làm gì?');
+    await page.getByRole('tab', { name: 'Textual KIS' }).click();
+    await expect(page.getByLabel('Mô tả sự kiện')).toHaveValue('Một cửa hàng trên phố');
+
+    await page.getByRole('button', { name: 'Tìm frame' }).click();
+    await page.getByRole('button', { name: 'Lịch Sử' }).click();
+    const history = page.getByRole('dialog', { name: 'Lịch sử query' });
+    await expect(history).toBeVisible();
+    await expect(history.getByText('Một cửa hàng trên phố')).toBeVisible();
+
+    await history.getByRole('button', { name: /Khôi phục.*Một cửa hàng trên phố/ }).click();
+    await expect(page.getByLabel('Mô tả sự kiện')).toHaveValue('Một cửa hàng trên phố');
+    await expect(page.getByRole('button', { name: 'Chọn frame video_01 · 385' })).toBeVisible();
+  });
+
+  test('selects exactly four TRAKE frames and exposes their object evidence', async ({ page }) => {
+    await mockFrameFirstApis(page);
+    await page.goto('/');
+
+    await page.getByRole('tab', { name: 'TRAKE' }).click();
+    await page.getByLabel('Truy vấn chính').fill('Một người đi qua cửa hàng');
+    await page.getByLabel('Mô tả sự kiện 1').fill('Người đi vào cửa hàng');
+    await page.getByRole('button', { name: 'Tìm frame' }).click();
+    await page.getByRole('button', { name: 'Chọn frame video_01 · 385' }).click();
+    await page.getByRole('button', { name: 'Xem video studio' }).click();
+
+    for (const keyframe of [5, 6, 7, 8]) {
+      await page.getByRole('button', { name: 'Chọn keyframe ' + keyframe + ' · source frame ' + [385, 411, 450, 500][keyframe - 5] }).click();
+      await page.getByRole('button', { name: 'Thêm frame đang xem vào bộ 4' }).click();
+    }
+
+    await expect(page.getByText('4/4 frame đã chọn')).toBeVisible();
+    await page.getByRole('button', { name: 'Xác nhận bộ 4 frame' }).click();
+    await expect(page.getByText('xe máy')).toBeVisible();
+    await page.getByRole('button', { name: 'Thêm chuỗi vào đáp án' }).click();
+    await page.getByRole('button', { name: 'Đáp án (1)' }).click();
+    await expect(page.getByText('video_01 · frame 385 → 411 → 450 → 500')).toBeVisible();
   });
 });

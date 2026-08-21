@@ -1,5 +1,6 @@
 export type VlmAnswerStatus = 'answered' | 'needs_more_evidence' | 'abstained';
 export type VlmConfidenceLevel = 'high' | 'medium' | 'low';
+const UNKNOWN_ANSWER = 'Không biết';
 
 export interface VlmRelevanceResult {
   readonly score: number; // 0 - 100
@@ -15,6 +16,12 @@ export interface VlmAnswerResult {
   readonly reason?: string;
 }
 
+export interface VlmSequenceResult {
+  readonly is_valid_sequence: boolean;
+  readonly coherence_score: number;
+  readonly reason?: string;
+}
+
 export interface VisionLanguageModel {
   readonly isConfigured: boolean;
   readonly modelName: string;
@@ -24,6 +31,11 @@ export interface VisionLanguageModel {
     readonly imageUrl: string;
     readonly evidenceText?: string;
   }): Promise<VlmAnswerResult>;
+  verifyTemporalSequence?(input: {
+    readonly videoId: string;
+    readonly events: readonly string[];
+    readonly imageUrls: readonly string[];
+  }): Promise<VlmSequenceResult>;
 }
 
 export interface OpenAICompatibleVisionClientOptions {
@@ -94,7 +106,7 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
     this.endpoint = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
     this.modelName = options.model.trim();
     this.apiKey = options.apiKey?.trim() || undefined;
-    this.timeoutMs = options.timeoutMs ?? 10_000;
+    this.timeoutMs = options.timeoutMs ?? 15_000;
     this.maxTokens = options.maxTokens ?? 512;
     this.temperature = options.temperature ?? 0;
     this.retries = options.retries ?? 1;
@@ -132,9 +144,12 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
         'Answer one question about the provided video keyframe image with the supplied image as the primary source and the optional evidence as supporting context.',
         'Use evidence to add context or disambiguate, but do not let it override a clear visual observation.',
         'The evidence may be incomplete, noisy, stale, or incorrect.',
-        'Answer concisely in the same language as the question.',
+        'Always answer in Vietnamese, even when the question or evidence is in another language.',
+        'Return exactly one short noun phrase or one short sentence, preferably no more than 12 Vietnamese words.',
+        'For an object question, name only the object or a short description. Do not write a paragraph, greeting, reasoning, steps, list, markdown, or chatbot-style explanation.',
         'Do not invent details that are neither visible in the image nor reasonably supported by the combined context.',
-        'Return only JSON with answer_status, answer, normalized_answer, confidence with level and score, and optional reason.',
+        'If the image is insufficient, use abstained and set both answer and normalized_answer exactly to "Không biết".',
+        'Return only JSON with answer_status, non-empty string answer, non-empty string normalized_answer, confidence with level and score, and optional reason.',
       ].join(' '),
       prompt: input.evidenceText
         ? `Question: ${input.question}\nSupporting Text Evidence:\n${input.evidenceText}`
@@ -151,8 +166,8 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
     if (!parsed) {
       return {
         answer_status: 'abstained',
-        answer: null,
-        normalized_answer: null,
+        answer: UNKNOWN_ANSWER,
+        normalized_answer: UNKNOWN_ANSWER,
         confidence: { level: 'low', score: 0 },
         reason: 'Failed to parse VLM output',
       };
@@ -164,27 +179,87 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
       typeof parsed.normalized_answer === 'string' && parsed.normalized_answer.trim()
         ? parsed.normalized_answer.trim()
         : answer;
+    const effectiveStatus = status === 'answered' && !answer ? 'abstained' : status;
     return {
-      answer_status: status,
-      answer,
-      normalized_answer: normalizedAnswer,
-      confidence: confidence(parsed.confidence, status),
+      answer_status: effectiveStatus,
+      answer: effectiveStatus === 'answered' ? answer : UNKNOWN_ANSWER,
+      normalized_answer: effectiveStatus === 'answered' ? normalizedAnswer : UNKNOWN_ANSWER,
+      confidence: confidence(parsed.confidence, effectiveStatus),
       ...(typeof parsed.reason === 'string' && parsed.reason.trim() ? { reason: parsed.reason.trim() } : {}),
+    };
+  }
+
+  async verifyTemporalSequence(input: {
+    readonly videoId: string;
+    readonly events: readonly string[];
+    readonly imageUrls: readonly string[];
+  }): Promise<VlmSequenceResult> {
+    if (input.imageUrls.length === 0) {
+      return { is_valid_sequence: true, coherence_score: 70, reason: 'No images provided' };
+    }
+
+    const contentBlocks: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = [
+      {
+        type: 'text',
+        text: `Analyze these ${input.imageUrls.length} sequential keyframe images from video "${input.videoId}" in chronological order.\n` +
+              `Ordered Narrative Events to verify:\n` +
+              input.events.map((event, idx) => `Event ${idx + 1}: ${event}`).join('\n'),
+      },
+    ];
+
+    input.imageUrls.forEach((url, idx) => {
+      contentBlocks.push({ type: 'text', text: `Keyframe ${idx + 1}:` });
+      contentBlocks.push({ type: 'image_url', image_url: { url } });
+    });
+
+    const rawResponse = await this.callVisionChat({
+      system: [
+        'You are an expert video keyframe sequence verifier for the AI Challenge competition.',
+        'Assess whether the sequence of images matches the requested ordered narrative events in chronological order.',
+        'Score coherence from 0 to 100.',
+        'Return only JSON with the shape {"is_valid_sequence": boolean, "coherence_score": number, "reason": string}.',
+      ].join(' '),
+      prompt: 'Verify narrative coherence.',
+      imageUrl: input.imageUrls[0],
+      content: contentBlocks,
+    });
+
+    const parsed = parseJsonFromModelOutput<{ is_valid_sequence?: unknown; coherence_score?: unknown; reason?: unknown }>(rawResponse);
+    if (!parsed) return { is_valid_sequence: true, coherence_score: 70, reason: 'Failed to parse VLM response' };
+
+    const score = typeof parsed.coherence_score === 'number' && Number.isFinite(parsed.coherence_score)
+      ? Math.max(0, Math.min(100, Math.round(parsed.coherence_score)))
+      : 70;
+
+    return {
+      is_valid_sequence: typeof parsed.is_valid_sequence === 'boolean' ? parsed.is_valid_sequence : score >= 50,
+      coherence_score: score,
+      reason: typeof parsed.reason === 'string' && parsed.reason.trim() ? parsed.reason.trim() : 'Evaluated by VLM',
     };
   }
 
   private async callVisionChat(input: {
     readonly system: string;
     readonly prompt: string;
-    readonly imageUrl: string;
+    readonly imageUrl?: string;
+    readonly content?: readonly unknown[];
   }): Promise<string> {
     return this.fetchWithRetry(input, this.retries);
   }
 
   private async fetchWithRetry(
-    input: { readonly system: string; readonly prompt: string; readonly imageUrl: string },
+    input: {
+      readonly system: string;
+      readonly prompt: string;
+      readonly imageUrl?: string;
+      readonly content?: readonly unknown[];
+    },
     attemptsLeft: number,
   ): Promise<string> {
+    const userContent = input.content ?? [
+      { type: 'text', text: input.prompt },
+      ...(input.imageUrl ? [{ type: 'image_url', image_url: { url: input.imageUrl } }] : []),
+    ];
     const response = await fetch(this.endpoint, {
       method: 'POST',
       headers: {
@@ -197,10 +272,7 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
           { role: 'system', content: input.system },
           {
             role: 'user',
-            content: [
-              { type: 'text', text: input.prompt },
-              { type: 'image_url', image_url: { url: input.imageUrl } },
-            ],
+            content: userContent,
           },
         ],
         temperature: this.temperature,
@@ -240,6 +312,14 @@ export class UnavailableVisionLanguageModel implements VisionLanguageModel {
     readonly imageUrl: string;
     readonly evidenceText?: string;
   }): Promise<VlmAnswerResult> {
+    throw new Error('VLM vision service is not configured');
+  }
+
+  async verifyTemporalSequence(_input: {
+    readonly videoId: string;
+    readonly events: readonly string[];
+    readonly imageUrls: readonly string[];
+  }): Promise<VlmSequenceResult> {
     throw new Error('VLM vision service is not configured');
   }
 }

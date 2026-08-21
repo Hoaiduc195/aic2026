@@ -14,7 +14,20 @@ afterEach(() => {
 });
 
 describe('frontend MoreVQA settings', () => {
-  it('keeps the VLM API key in memory while building a VQA request config', () => {
+  it('uses a 15-second timeout by default', () => {
+    expect(DEFAULT_VLM_SETTINGS.timeout_ms).toBe(15_000);
+  });
+
+  it('migrates the previous 4-second default for existing saved settings', () => {
+    localStorage.setItem('aic.vlm.settings', JSON.stringify({
+      ...DEFAULT_VLM_SETTINGS,
+      timeout_ms: 4_000,
+    }));
+
+    expect(loadVlmSettings().timeout_ms).toBe(15_000);
+  });
+
+  it('persists the VLM API key and restores it for VQA requests', () => {
     const settings: VlmSettings = {
       ...DEFAULT_VLM_SETTINGS,
       enabled: true,
@@ -29,8 +42,8 @@ describe('frontend MoreVQA settings', () => {
     saveVlmSettings(settings);
 
     const persisted = JSON.parse(localStorage.getItem('aic.vlm.settings') ?? '{}') as Record<string, unknown>;
-    expect(persisted).not.toHaveProperty('api_key');
-    expect(loadVlmSettings()).toMatchObject({ ...settings, api_key: '' });
+    expect(persisted).toHaveProperty('api_key', settings.api_key);
+    expect(loadVlmSettings()).toMatchObject(settings);
     expect(buildVqaVlmConfig(settings)).toMatchObject({
       base_url: settings.base_url, api_key: settings.api_key, model: settings.model,
       timeout_ms: 2_000, max_tokens: 256, temperature: 0.1,

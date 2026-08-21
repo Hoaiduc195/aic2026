@@ -1,9 +1,11 @@
 import type {
   BranchName, ChannelWeights, ObjectQueryConstraints, QueryAtom, QueryViews, RetrievalExecutionPlan, SearchRequest,
 } from '../common/types';
+import { FRAME_IMAGE_QUERY, MAX_NEAR_FRAME_WINDOW_MS } from '../common/retrieval-constants';
 import { extractObjectQuery, normalizeObjectText, objectAliases } from './object-ontology';
 
 export const PLANNER_VERSION = 'deterministic-object-routing-v2';
+export { FRAME_IMAGE_QUERY } from '../common/retrieval-constants';
 
 const VIETNAMESE_PATTERN = /[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i;
 const OCR_SIGNAL = /(chữ|biển hiệu|bảng hiệu|logo|văn bản|hiển thị|\bwritten\b|\btext\b|\bsign\b|\bsubtitle\b|caption on screen)/i;
@@ -18,6 +20,13 @@ export function normalizeRetrievalText(query: string): string {
   return query.normalize('NFKC').trim().replace(/\s+/g, ' ');
 }
 
+function normalizeTrakeMainQuery(query: string): string {
+  const lines = query.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const firstEventIndex = lines.findIndex((line) => /^\d+[.)]\s*/.test(line));
+  const mainQuery = firstEventIndex > 0 ? lines.slice(0, firstEventIndex).join(' ') : query;
+  return normalizeRetrievalText(mainQuery);
+}
+
 export function detectQueryLanguage(query: string): RetrievalExecutionPlan['language'] {
   const hasVietnamese = VIETNAMESE_PATTERN.test(query);
   const hasLatin = /[a-z]/i.test(query);
@@ -28,12 +37,9 @@ export function detectQueryLanguage(query: string): RetrievalExecutionPlan['lang
 }
 
 export function buildQueryVariants(request: SearchRequest): string[] {
+  if (request.frame_query) return [FRAME_IMAGE_QUERY];
   if (request.task === 'trake') {
-    const events = request.query.split(/\r?\n/)
-      .map((line) => line.replace(/^\s*\d+[.)]\s*/, '').trim())
-      .filter(Boolean)
-      .slice(0, 20);
-    return events.length > 1 ? events : [normalizeRetrievalText(request.query)];
+    return [normalizeTrakeMainQuery(request.query)];
   }
   if (request.task === 'vqa') {
     const parts = request.query.split(/\r?\n(?:câu hỏi|question)\s*:\s*/i).map(normalizeRetrievalText).filter(Boolean);
@@ -144,9 +150,15 @@ export interface PlannerLimits {
   readonly branchK: number;
   readonly fusionK: number;
   readonly displayK: number;
+  readonly nearFrameWindowMs?: number;
   readonly latencyBudgetMs: number;
   readonly rrfK: number;
   readonly channelWeights?: ChannelWeights;
+}
+
+function selectFrameQueryBranches(registered: readonly RegisteredBranch[]): BranchName[] {
+  if (activeOrRegistered(registered, 'clip')) return ['clip'];
+  return registered[0] ? [registered[0].name] : [];
 }
 
 export function buildDeterministicPlan(
@@ -156,18 +168,21 @@ export function buildDeterministicPlan(
   registeredBranches: readonly RegisteredBranch[],
   limits: PlannerLimits,
 ): RetrievalExecutionPlan {
-  const normalized = normalizeRetrievalText(request.query);
-  const quoted = quotedPhrases(normalized);
-  const hasOcr = OCR_SIGNAL.test(normalized) || quoted.length > 0;
-  const hasAsr = ASR_SIGNAL.test(normalized);
-  const object = extractObjectQuery(normalized);
-  const negativeObjects = extractNegatedObjects(normalized, object.terms);
+  const normalized = request.frame_query
+    ? FRAME_IMAGE_QUERY
+    : request.task === 'trake' ? normalizeTrakeMainQuery(request.query) : normalizeRetrievalText(request.query);
+  const analysisQuery = request.frame_query ? '' : normalized;
+  const quoted = quotedPhrases(analysisQuery);
+  const hasOcr = OCR_SIGNAL.test(analysisQuery) || quoted.length > 0;
+  const hasAsr = ASR_SIGNAL.test(analysisQuery);
+  const object = extractObjectQuery(analysisQuery);
+  const negativeObjects = extractNegatedObjects(analysisQuery, object.terms);
   const positiveObjectTerms = object.terms.filter((term) => !negativeObjects.includes(term));
-  const temporal = request.task === 'trake' ? ['sequence'] as RetrievalExecutionPlan['temporal_relations'] : temporalRelations(normalized);
-  const ocrQuoted = signaledQuotedPhrases(normalized, /(chữ|ghi|biển|bảng|logo|written|text|sign)/i);
-  const asrQuoted = signaledQuotedPhrases(normalized, /(nói|phát biểu|said|says|speech|announce)/i);
-  const textConstraints = hasOcr ? ocrQuoted.length > 0 ? ocrQuoted : quoted.length > 0 ? quoted : [normalized] : [];
-  const audioConcepts = hasAsr ? asrQuoted.length > 0 ? asrQuoted : quoted.length > 0 ? quoted : [normalized] : [];
+  const temporal = request.frame_query ? [] : temporalRelations(analysisQuery);
+  const ocrQuoted = signaledQuotedPhrases(analysisQuery, /(chữ|ghi|biển|bảng|logo|written|text|sign)/i);
+  const asrQuoted = signaledQuotedPhrases(analysisQuery, /(nói|phát biểu|said|says|speech|announce)/i);
+  const textConstraints = hasOcr ? ocrQuoted.length > 0 ? ocrQuoted : quoted.length > 0 ? quoted : [analysisQuery] : [];
+  const audioConcepts = hasAsr ? asrQuoted.length > 0 ? asrQuoted : quoted.length > 0 ? quoted : [analysisQuery] : [];
   const objectConstraints: ObjectQueryConstraints = {
     class_filters: positiveObjectTerms,
     excluded_classes: negativeObjects,
@@ -175,7 +190,9 @@ export function buildDeterministicPlan(
     counts: object.counts,
     spatial: object.spatial,
   };
-  const branches = selectBranches(registeredBranches, hasOcr, hasAsr, positiveObjectTerms.length > 0, temporal.length > 0);
+  const branches = request.frame_query
+    ? selectFrameQueryBranches(registeredBranches)
+    : selectBranches(registeredBranches, hasOcr, hasAsr, positiveObjectTerms.length > 0, temporal.length > 0);
   const queryViews: QueryViews = {};
   const channelWeights: ChannelWeights = {};
   for (const branch of branches) {
@@ -195,12 +212,14 @@ export function buildDeterministicPlan(
   return {
     query_id: queryId,
     task: request.task,
-    language: detectQueryLanguage(normalized),
+    language: request.frame_query ? 'unknown' : detectQueryLanguage(normalized),
     original_query: normalized,
+    query_mode: request.frame_query ? 'frame_image' : 'text',
+    ...(request.frame_query ? { frame_query: request.frame_query } : {}),
     query_variants: buildQueryVariants(request),
-    concepts: extractConcepts(normalized, positiveObjectTerms),
+    concepts: extractConcepts(analysisQuery, positiveObjectTerms),
     query_atoms: buildAtoms(
-      extractConcepts(normalized, positiveObjectTerms), textConstraints, audioConcepts,
+      extractConcepts(analysisQuery, positiveObjectTerms), textConstraints, audioConcepts,
       positiveObjectTerms, temporal, negativeObjects,
     ),
     negative_concepts: negativeObjects,
@@ -216,6 +235,7 @@ export function buildDeterministicPlan(
     top_k_per_branch: Math.min(limits.branchK, 10000),
     fusion_k: Math.min(limits.fusionK, 10000),
     display_k: Math.min(limits.displayK, 1000),
+    near_frame_window_ms: Math.max(0, Math.min(limits.nearFrameWindowMs ?? 1000, MAX_NEAR_FRAME_WINDOW_MS)),
     rrf_k: Math.min(limits.rrfK, 1000),
     latency_budget_ms: limits.latencyBudgetMs,
     fallback_policy: request.task === 'vqa' ? 'expand_then_abstain' : 'expand_then_clarify',

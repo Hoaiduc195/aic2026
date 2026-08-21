@@ -29,7 +29,7 @@ import numpy as np
 import pyarrow.parquet as pq
 
 EMBEDDING_DIMENSIONS = 1024
-IMPORTER_VERSION = "refined-postgres-import-v1"
+IMPORTER_VERSION = "refined-postgres-import-v2"
 FRAME_PIPELINE_VERSION = "map-keyframes-canonical-v1"
 DEFAULT_INDEX_VERSION = "aic2026-local-v1"
 
@@ -64,6 +64,7 @@ class ImportOptions:
     video_ids: tuple[str, ...] = ()
     limit_videos: int | None = None
     include_captions: bool = True
+    include_ocr: bool = True
     include_asr: bool = True
     include_objects: bool = True
     include_embeddings: bool = True
@@ -318,6 +319,7 @@ def validate_refined(
     limit_videos: int | None = None,
     batch_size: int = 4096,
     include_captions: bool = True,
+    include_ocr: bool = True,
     include_asr: bool = True,
     include_objects: bool = True,
     include_embeddings: bool = True,
@@ -331,6 +333,8 @@ def validate_refined(
     required_paths = [videos_path, canonical_path, aliases_path]
     if include_captions:
         required_paths.append(root / "captions_en.parquet")
+    if include_ocr:
+        required_paths.append(root / "ocr.parquet")
     if include_asr:
         required_paths.append(root / "asr_spans.parquet")
     if include_objects:
@@ -424,6 +428,53 @@ def validate_refined(
             )
             caption_count += 1
         state.counts["captions"] = caption_count
+
+    if include_ocr:
+        ocr_count = 0
+        seen_ocr_keys: set[tuple[str, int, int]] = set()
+        for row in _parquet_rows(root / "ocr.parquet", batch_size=batch_size):
+            video_id = str(row["video_id"])
+            if video_id not in selected:
+                continue
+            key, _alias = _alias_for_row(state, row, keyframe_column="keyframe_no")
+            text = str(row.get("text_content", "")).strip()
+            normalized_text = str(row.get("normalized_text", "")).strip()
+            if not text or not normalized_text:
+                raise ValueError("OCR text cannot be empty")
+            if str(row.get("language", "")) != "vi":
+                raise ValueError("ocr.parquet must contain Vietnamese OCR rows")
+            confidence = _as_float(row["confidence"], "confidence")
+            if not 0 <= confidence <= 1:
+                raise ValueError("OCR confidence must be between 0 and 1")
+            detection_confidence = row.get("detection_confidence")
+            if not _is_missing(detection_confidence):
+                value = _as_float(detection_confidence, "detection_confidence")
+                if not 0 <= value <= 1:
+                    raise ValueError("OCR detection confidence must be between 0 and 1")
+            bbox = row.get("bbox")
+            if not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
+                raise ValueError("OCR bbox must contain at least four points")
+            for point in bbox:
+                if not isinstance(point, (list, tuple)) or len(point) != 2:
+                    raise ValueError("OCR bbox points must contain two values")
+                _as_float(point[0], "bbox.x")
+                _as_float(point[1], "bbox.y")
+            source_record_index = _as_int(row["source_record_index"], "source_record_index")
+            source_detection_index = _as_int(row["source_detection_index"], "source_detection_index")
+            if source_record_index < 0 or source_detection_index < 0:
+                raise ValueError("OCR source indexes must be non-negative")
+            identity = (key[0], source_record_index, source_detection_index)
+            if identity in seen_ocr_keys:
+                raise ValueError(f"duplicate OCR detection identity: {identity}")
+            seen_ocr_keys.add(identity)
+            _capture_metadata(
+                state,
+                "ocr",
+                row,
+                keys=("producer", "pipeline_version", "schema_version", "model_version"),
+            )
+            ocr_count += 1
+        state.counts["ocr"] = ocr_count
 
     if include_asr:
         asr_count = 0
@@ -562,6 +613,9 @@ def _feature_spec(
     if modality == "visual_embedding":
         model_name = str(metadata.get("model_name") or model_name or "unknown")
         model_version = str(metadata.get("model_version") or model_version or "unknown")
+    elif modality == "ocr":
+        model_name = str(metadata.get("model_name") or model_name or "PaddleOCR")
+        model_version = str(metadata.get("model_version") or model_version or "unknown")
     feature_set_id = f"{state.dataset_version}:{modality}"
     manifest_sha256, _ = _sha256_and_size(manifest_path)
     spec_metadata: dict[str, Any] = {
@@ -586,8 +640,8 @@ def _feature_spec(
         producer=producer,
         pipeline_version=pipeline_version,
         schema_version=schema_version,
-        model_name=model_name if embedding else None,
-        model_version=model_version if embedding else None,
+        model_name=model_name if embedding or modality == "ocr" else None,
+        model_version=model_version if embedding or modality == "ocr" else None,
         embedding_dimensions=EMBEDDING_DIMENSIONS if embedding else None,
         embedding_dtype="float32" if embedding else None,
         embedding_normalized=True if embedding else None,
@@ -607,6 +661,7 @@ def build_import_bundle(state: DatasetState, options: ImportOptions) -> ImportBu
 
     modality_config = (
         ("caption", options.include_captions, root / "captions_en.parquet", "legacy-captioning", "caption-import", "captions"),
+        ("ocr", options.include_ocr, root / "ocr.parquet", "paddleocr", "ocr-import", "ocr"),
         ("asr", options.include_asr, root / "asr_spans.parquet", "legacy-asr-json", "asr-import", "asr"),
         ("object", options.include_objects, root / "objects.parquet", "object-detection", "object-import", "objects"),
         (
@@ -641,6 +696,7 @@ def build_import_bundle(state: DatasetState, options: ImportOptions) -> ImportBu
             record_count=state.counts.get(count_key),
             target_table={
                 "caption": "text_evidence",
+                "ocr": "text_evidence",
                 "asr": "text_evidence",
                 "object": "object_evidence",
                 "visual_embedding": "clip_embeddings",
@@ -722,6 +778,7 @@ def run_import(options: ImportOptions) -> dict[str, Any]:
         limit_videos=options.limit_videos,
         batch_size=options.batch_size,
         include_captions=options.include_captions,
+        include_ocr=options.include_ocr,
         include_asr=options.include_asr,
         include_objects=options.include_objects,
         include_embeddings=options.include_embeddings,
@@ -751,6 +808,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--video-id", dest="video_ids", action="append", default=[])
     parser.add_argument("--limit-videos", type=_positive_int, default=None)
     parser.add_argument("--skip-captions", action="store_true")
+    parser.add_argument("--skip-ocr", action="store_true")
     parser.add_argument("--skip-asr", action="store_true")
     parser.add_argument("--skip-objects", action="store_true")
     parser.add_argument("--skip-embeddings", action="store_true")
@@ -771,6 +829,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         video_ids=tuple(args.video_ids),
         limit_videos=args.limit_videos,
         include_captions=not args.skip_captions,
+        include_ocr=not args.skip_ocr,
         include_asr=not args.skip_asr,
         include_objects=not args.skip_objects,
         include_embeddings=not args.skip_embeddings,

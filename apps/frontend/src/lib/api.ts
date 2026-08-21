@@ -1,6 +1,7 @@
 import type {
   EvidenceType,
   CandidatePage,
+  CanonicalFrameResponse,
   QualificationAnswer,
   QualificationTask,
   SearchEvidence,
@@ -19,6 +20,7 @@ import type {
   VideoPlayback,
   VideoStudioResponse,
 } from './contracts';
+import { exactFrameThumbnailUri } from './video-studio-model';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api';
 const MODALITIES = new Set(['embedding', 'visual', 'ocr', 'asr', 'caption', 'object', 'temporal', 'audio']);
@@ -114,6 +116,20 @@ export async function getVideoStudio(videoId: string, signal?: AbortSignal): Pro
   return parseVideoStudioResponse(payload);
 }
 
+export async function getVideoFrame(
+  videoId: string,
+  frameId: number,
+  signal?: AbortSignal,
+): Promise<CanonicalFrameResponse> {
+  const response = await fetch(
+    `${API_BASE}/v1/media/videos/${encodeURIComponent(videoId)}/frames/${encodeURIComponent(String(frameId))}`,
+    { signal },
+  );
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw apiError(payload, response.status, 'Không thể tải canonical frame.');
+  return parseCanonicalFrameResponse(payload);
+}
+
 export async function getCandidates(
   queryId: string,
   limit = 100,
@@ -189,6 +205,9 @@ export function parseVideoPlayback(value: unknown): VideoPlayback {
     playback_uri: playbackUri,
     duration_ms: durationMs,
     fps,
+    frame_count: value.frame_count === null || value.frame_count === undefined
+      ? null
+      : nonNegativeInteger(value.frame_count, 'frame_count'),
     mime_type: mimeType as VideoPlayback['mime_type'],
   };
 }
@@ -271,7 +290,12 @@ export function parseSearchResponse(value: unknown): SearchResponse {
   const response: SearchResponse = {
     request_id: optionalText(value.request_id),
     query_id: queryId,
-    query: optionalText(value.query),
+    query: optionalQuery(value.query),
+    query_mode: value.query_mode === undefined
+      ? undefined
+      : value.query_mode === 'text' || value.query_mode === 'frame_image'
+        ? value.query_mode
+        : (() => { throw new Error('query_mode không hợp lệ'); })(),
     session_id: value.session_id === null ? null : optionalText(value.session_id),
     task: optionalTask(value.task),
     task_executor: optionalText(value.task_executor),
@@ -296,6 +320,18 @@ export function parseQueryImprovementResponse(value: unknown): QueryImprovementR
   return {
     original_query: requiredText(value.original_query, 'original_query'),
     improved_query: requiredText(value.improved_query, 'improved_query'),
+    ...(value.original_question === undefined ? {} : {
+      original_question: requiredText(value.original_question, 'original_question'),
+    }),
+    ...(value.improved_question === undefined ? {} : {
+      improved_question: requiredText(value.improved_question, 'improved_question'),
+    }),
+    ...(value.original_events === undefined ? {} : {
+      original_events: textArray(value.original_events, 'original_events'),
+    }),
+    ...(value.improved_events === undefined ? {} : {
+      improved_events: textArray(value.improved_events, 'improved_events'),
+    }),
     changed: requiredBoolean(value.changed, 'changed'),
     producer: requiredText(value.producer, 'producer'),
     model_version: requiredText(value.model_version, 'model_version'),
@@ -414,7 +450,9 @@ function parseVideoFrame(value: unknown, index: number): VideoFrame {
   if (!isObject(value)) throw new Error(`frames[${index}] phải là object`);
   return {
     video_id: requiredText(value.video_id, `frames[${index}].video_id`),
-    keyframe_no: integer(value.keyframe_no, `frames[${index}].keyframe_no`),
+    keyframe_no: value.keyframe_no === null || value.keyframe_no === undefined
+      ? null
+      : integer(value.keyframe_no, `frames[${index}].keyframe_no`),
     original_frame_id: integer(value.original_frame_id, `frames[${index}].original_frame_id`),
     timestamp_ms: integer(value.timestamp_ms, `frames[${index}].timestamp_ms`),
     thumbnail_uri: requiredBrowserUri(value.thumbnail_uri, `frames[${index}].thumbnail_uri`),
@@ -429,11 +467,35 @@ function parseStudioFrame(value: unknown, index: number): import('./contracts').
   }
   return {
     video_id: requiredText(value.video_id, `studio.frames[${index}].video_id`),
-    keyframe_no: positiveInteger(value.keyframe_no, `studio.frames[${index}].keyframe_no`),
+    keyframe_no: value.keyframe_no === null || value.keyframe_no === undefined
+      ? null
+      : positiveInteger(value.keyframe_no, `studio.frames[${index}].keyframe_no`),
     original_frame_id: nonNegativeInteger(value.original_frame_id, `studio.frames[${index}].original_frame_id`),
     timestamp_ms: nonNegativeInteger(value.timestamp_ms, `studio.frames[${index}].timestamp_ms`),
     captions: value.captions.map((caption, captionIndex) => parseStudioCaption(caption, index, captionIndex)),
+    ocr: Array.isArray(value.ocr) ? value.ocr.map((item, ocrIndex) => parseStudioOcr(item, index, ocrIndex)) : [],
     objects: value.objects.map((object, objectIndex) => parseStudioObject(object, index, objectIndex)),
+  };
+}
+
+function parseCanonicalFrameResponse(value: unknown): CanonicalFrameResponse {
+  if (!isObject(value)) throw new Error('canonical frame response phải là object');
+  const frame = parseStudioFrame(value, 0);
+  const thumbnailUri = value.thumbnail_uri === null || value.thumbnail_uri === undefined
+    ? exactFrameThumbnailUri(frame.video_id, frame.original_frame_id)
+    : requiredBrowserUri(value.thumbnail_uri, 'canonical_frame.thumbnail_uri');
+  if (value.is_exact_frame !== true) throw new Error('canonical frame response không xác nhận exact frame');
+  const annotationSource = value.annotation_source_frame_id === null || value.annotation_source_frame_id === undefined
+    ? null
+    : nonNegativeInteger(value.annotation_source_frame_id, 'annotation_source_frame_id');
+  return {
+    ...frame,
+    thumbnail_uri: thumbnailUri,
+    is_exact_frame: true,
+    annotation_source_frame_id: annotationSource,
+    asr_spans: Array.isArray(value.asr_spans)
+      ? value.asr_spans.map((span, spanIndex) => parseStudioAsrSpan(span, spanIndex))
+      : [],
   };
 }
 
@@ -444,6 +506,16 @@ function parseStudioCaption(value: unknown, frameIndex: number, captionIndex: nu
     text: requiredText(value.text, 'studio caption text'),
     language: requiredText(value.language, 'studio caption language'),
     producer: requiredText(value.producer, 'studio caption producer'),
+  };
+}
+
+function parseStudioOcr(value: unknown, frameIndex: number, ocrIndex: number): import('./contracts').StudioOcr {
+  if (!isObject(value)) throw new Error(`studio.frames[${frameIndex}].ocr[${ocrIndex}] phải là object`);
+  return {
+    evidence_id: requiredText(value.evidence_id, 'studio OCR evidence_id'),
+    text: requiredText(value.text, 'studio OCR text'),
+    language: requiredText(value.language, 'studio OCR language'),
+    producer: requiredText(value.producer, 'studio OCR producer'),
   };
 }
 
@@ -589,6 +661,12 @@ function optionalText(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
+function optionalQuery(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') throw new Error('query phải là text');
+  return value;
+}
+
 function integer(value: unknown, field: string): number {
   if (!Number.isSafeInteger(value) || (value as number) < 0) throw new Error(`${field} phải là số nguyên không âm`);
   return value as number;
@@ -631,6 +709,13 @@ function stringArray(value: unknown, field: string): string[] {
     throw new Error(`${field} phải là array text`);
   }
   return [...new Set(value as string[])];
+}
+
+function textArray(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || !item.trim())) {
+    throw new Error(`${field} phải là array text`);
+  }
+  return (value as string[]).map((item) => item.trim());
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

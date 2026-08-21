@@ -73,6 +73,19 @@ try {
         '--data-root', $resolvedDataRoot
     )
 
+    $ocrSourcePath = Join-Path $resolvedDataRoot 'ocr_source.jsonl'
+    $ocrArtifactPath = Join-Path $resolvedDataRoot 'ocr.parquet'
+    if (-not $DryRun -and (Test-Path -LiteralPath $ocrSourcePath -PathType Leaf)) {
+        Invoke-Step `
+            -Description 'Normalize OCR into refined/ocr.parquet' `
+            -FilePath $pythonPath `
+            -ArgumentList @(
+                '-m', 'pipelines.ingestion.ocr_refined',
+                '--input', $ocrSourcePath,
+                '--output', $ocrArtifactPath
+            )
+    }
+
     if ($DryRun) {
         $importArguments += '--dry-run'
         Invoke-Step `

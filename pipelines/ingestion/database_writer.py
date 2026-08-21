@@ -361,6 +361,80 @@ def _insert_caption_evidence(
     return count
 
 
+def _insert_ocr_evidence(
+    connection: Any,
+    state: DatasetState,
+    bundle: ImportBundle,
+    options: ImportOptions,
+) -> int:
+    if not options.include_ocr:
+        return 0
+    path = state.data_root / "ocr.parquet"
+    feature_set_id = next(spec.feature_set_id for spec in bundle.feature_specs if spec.modality == "ocr")
+    artifact = bundle.primary_artifacts["ocr"]
+    count = 0
+    with connection.cursor() as cursor:
+        evidence_rows: list[Sequence[Any]] = []
+        text_rows: list[Sequence[Any]] = []
+        for row in _parquet_rows(path, batch_size=options.batch_size):
+            video_id = str(row["video_id"])
+            if video_id not in state.videos:
+                continue
+            _, alias = _alias_for_row(state, row, keyframe_column="keyframe_no")
+            source_record_index = _as_int(row["source_record_index"], "source_record_index")
+            source_detection_index = _as_int(row["source_detection_index"], "source_detection_index")
+            evidence_id = build_evidence_id(
+                "ocr",
+                video_id,
+                source_record_index,
+                source_detection_index,
+            )
+            start_ms = _as_int(alias["timestamp_ms"], "timestamp_ms")
+            evidence_rows.append(
+                (
+                    evidence_id,
+                    "ocr",
+                    video_id,
+                    feature_set_id,
+                    artifact.artifact_id,
+                    source_record_index,
+                    _as_int(alias["original_frame_id"], "original_frame_id"),
+                    start_ms,
+                    start_ms + 1,
+                    _as_float(row["confidence"], "confidence"),
+                    _json_text({
+                        "source": row.get("source"),
+                        "model_version": row.get("model_version"),
+                        "pipeline_version": row.get("pipeline_version"),
+                        "source_frame_path": row.get("source_frame_path"),
+                        "source_frame_id": row.get("source_frame_id"),
+                        "source_detection_index": source_detection_index,
+                        "detection_confidence": row.get("detection_confidence"),
+                        "bbox": row.get("bbox"),
+                        "image_width": row.get("image_width"),
+                        "image_height": row.get("image_height"),
+                    }),
+                )
+            )
+            text_rows.append(
+                (
+                    evidence_id,
+                    str(row["text_content"]),
+                    str(row["normalized_text"]),
+                    "vi",
+                )
+            )
+            count += 1
+            if len(evidence_rows) >= options.batch_size:
+                cursor.executemany(EVIDENCE_SQL, evidence_rows)
+                cursor.executemany(TEXT_EVIDENCE_SQL, text_rows)
+                evidence_rows, text_rows = [], []
+        if evidence_rows:
+            cursor.executemany(EVIDENCE_SQL, evidence_rows)
+            cursor.executemany(TEXT_EVIDENCE_SQL, text_rows)
+    return count
+
+
 def _insert_asr_evidence(
     connection: Any,
     state: DatasetState,
@@ -688,6 +762,9 @@ def import_to_database(state: DatasetState, options: ImportOptions) -> dict[str,
         )
         counts["captions"] = int(
             _run_phase(connection, lambda conn: _insert_caption_evidence(conn, state, bundle, options)) or 0
+        )
+        counts["ocr"] = int(
+            _run_phase(connection, lambda conn: _insert_ocr_evidence(conn, state, bundle, options)) or 0
         )
         counts["asr"] = int(
             _run_phase(connection, lambda conn: _insert_asr_evidence(conn, state, bundle, options)) or 0

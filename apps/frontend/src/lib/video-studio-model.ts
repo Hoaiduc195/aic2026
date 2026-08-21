@@ -15,8 +15,10 @@ export function activeAsrSpans(spans: readonly StudioAsrSpan[], timestampMs: num
   return spans.filter((span) => span.start_ms <= timestampMs && timestampMs < span.end_ms);
 }
 
-export function keyframeLabel(frame: Pick<StudioFrame, 'keyframe_no' | 'original_frame_id'>): string {
-  return `Keyframe ${frame.keyframe_no} · source frame ${frame.original_frame_id}`;
+export function keyframeLabel(frame: Pick<StudioFrame, 'keyframe_no' | 'original_frame_id'> & { is_exact_frame?: boolean }): string {
+  return frame.is_exact_frame && (frame.keyframe_no === null || frame.keyframe_no === undefined)
+    ? `Canonical frame ${frame.original_frame_id}`
+    : `Keyframe ${frame.keyframe_no} · source frame ${frame.original_frame_id}`;
 }
 
 export function timelinePercent(timestampMs: number, durationMs: number): number {
@@ -27,4 +29,13 @@ export function timelinePercent(timestampMs: number, durationMs: number): number
 
 export function frameThumbnailUri(videoId: string, originalFrameId: number): string {
   return `/api/v1/media/keyframes/${encodeURIComponent(videoId)}/by-frame/${encodeURIComponent(String(originalFrameId))}`;
+}
+
+export function exactFrameThumbnailUri(videoId: string, originalFrameId: number): string {
+  return `/api/v1/media/videos/${encodeURIComponent(videoId)}/frames/${encodeURIComponent(String(originalFrameId))}/thumbnail`;
+}
+
+export function studioFrameThumbnailUri(frame: Pick<StudioFrame, 'video_id' | 'original_frame_id' | 'is_exact_frame' | 'thumbnail_uri'>): string {
+  return frame.thumbnail_uri
+    ?? (frame.is_exact_frame ? exactFrameThumbnailUri(frame.video_id, frame.original_frame_id) : frameThumbnailUri(frame.video_id, frame.original_frame_id));
 }

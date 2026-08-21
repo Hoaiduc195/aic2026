@@ -36,6 +36,8 @@ export interface BackendConfig {
   readonly vlmQueryExpansionMaxVariants: number;
   // Plan C: auto-adjust top_k based on score variance of candidates
   readonly vlmAdaptiveTopK: boolean;
+  readonly ffmpegPath: string;
+  readonly frameDecodeTimeoutMs: number;
   readonly datasetVersion: string;
   readonly pipelineVersion: string;
   readonly indexVersion: string;
@@ -145,7 +147,7 @@ export function loadConfig(): BackendConfig {
     vlmBaseUrl: vlmBaseUrl ?? optionalEnv('VLM_BASE_URL') ?? llmBaseUrl,
     vlmApiKey: optionalEnv('VLM_API_KEY') ?? optionalEnv('LLM_API_KEY'),
     vlmModel: vlmModel ?? optionalEnv('VLM_MODEL') ?? llmModel ?? (vlmEnabled ? 'Qwen/Qwen2.5-VL-7B-Instruct' : undefined),
-    vlmTimeoutMs: positiveInteger(process.env.VLM_TIMEOUT_MS, 10_000),
+    vlmTimeoutMs: positiveInteger(process.env.VLM_TIMEOUT_MS, 15_000),
     vlmTopK: positiveInteger(process.env.VLM_TOP_K, 20),
     vlmWeight: boundedNumber(process.env.VLM_WEIGHT, 0.7, 0, 1),
     vlmConcurrency: positiveInteger(process.env.VLM_CONCURRENCY, 5),
@@ -156,6 +158,8 @@ export function loadConfig(): BackendConfig {
     vlmQueryExpansionMaxVariants: positiveInteger(process.env.VLM_QUERY_EXPANSION_MAX_VARIANTS, 3),
     // Plan C: adaptively scale top_k based on RRF score spread
     vlmAdaptiveTopK: optionalEnv('VLM_ADAPTIVE_TOP_K') === 'true',
+    ffmpegPath: optionalEnv('FFMPEG_PATH') ?? 'ffmpeg',
+    frameDecodeTimeoutMs: positiveInteger(process.env.FRAME_DECODE_TIMEOUT_MS, 15000),
     datasetVersion: optionalEnv('DATASET_VERSION') ?? 'local',
     pipelineVersion: optionalEnv('PIPELINE_VERSION') ?? 'preprocessing-artifacts',
     indexVersion,

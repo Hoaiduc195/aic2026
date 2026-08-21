@@ -24,6 +24,8 @@ artifacts/keyframes/*
 artifacts/audio/*
 artifacts/transcripts/*
 artifacts/embeddings/*
+data/embeddings/*
+data/extracted_frames/*
 artifacts/ocr/*
 artifacts/captions/*
 artifacts/objects/*
@@ -63,6 +65,8 @@ database/indexes/*.faiss
 !artifacts/audio/.gitkeep
 !artifacts/transcripts/.gitkeep
 !artifacts/embeddings/.gitkeep
+!data/embeddings/.gitkeep
+!data/extracted_frames/.gitkeep
 !artifacts/ocr/.gitkeep
 !artifacts/captions/.gitkeep
 !artifacts/objects/.gitkeep
@@ -71,3 +75,6 @@ database/indexes/*.faiss
 # Python environments
 venv/
 tmp/
+data/refined/
+*.parquet
+*.npy

@@ -3,6 +3,16 @@ import type { QueryResultRow } from 'pg';
 
 import type { DatabaseClient } from '../database/database.client';
 import type { FusedCandidate, RetrievalExecutionPlan, SearchRequest, TaskType } from '../common/types';
+import { FRAME_IMAGE_QUERY } from '../common/retrieval-constants';
+
+function persistedQueryText(request: SearchRequest): string {
+  const query = request.query.trim();
+  if (query) return query;
+  if (request.frame_query) {
+    return `${FRAME_IMAGE_QUERY} ${request.frame_query.video_id} frame ${request.frame_query.original_frame_id}`;
+  }
+  throw new Error('cannot persist retrieval run without a non-empty query');
+}
 
 export interface CandidatePage {
   readonly query_id: string;
@@ -63,7 +73,7 @@ export class PostgresRetrievalStore implements RetrievalStore {
       FROM jsonb_array_elements($8::jsonb) WITH ORDINALITY AS candidate(value, ordinality)
       CROSS JOIN inserted_run
       ON CONFLICT (query_id, rank) DO NOTHING`, [
-        plan.query_id, request.session_id ?? null, request.task, request.query, JSON.stringify(plan),
+        plan.query_id, request.session_id ?? null, request.task, persistedQueryText(request), JSON.stringify(plan),
         this.datasetVersion, plan.index_version, JSON.stringify(candidates),
       ]);
   }

@@ -1,19 +1,24 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  autoBuildTrakeAnswers,
+  autoSelectNearbyTrakeFrames,
   buildAnswer,
   buildRankedTextualSubmission,
   buildSubmission,
   displayMatchedModalities,
   formatMs,
   groupEvidence,
+  applyStudioFrameToCandidate,
+  applyCanonicalFrameToCandidate,
+  moveFrameToBoundary,
   parseFrame,
   reorderFrames,
   resultKey,
   toFrameCandidates,
   validateTrakeSequence,
 } from '@/lib/workbench-model';
-import type { FrameCandidate, SearchResponse, SearchResult } from '@/lib/contracts';
+import type { FrameCandidate, SearchResponse, SearchResult, StudioFrame } from '@/lib/contracts';
 
 const result: SearchResult = {
   video_id: 'video_01',
@@ -100,6 +105,20 @@ describe('workbench answer model', () => {
     });
   });
 
+  it('rewrites signed preview URLs to a stable media proxy', () => {
+    const normalized = toFrameCandidates({
+      query_id: 'query_01',
+      degraded: false,
+      unavailable_branches: [],
+      results: [{
+        ...result,
+        preview_uri: 'https://r2.example/frame.webp?X-Amz-Signature=expired',
+      }],
+    });
+
+    expect(normalized.frames[0].thumbnail_uri).toBe('/api/v1/media/keyframes/video_01/by-frame/385');
+  });
+
   it('groups evidence and validates a same-video increasing TRAKE sequence', () => {
     const candidate = toFrameCandidates({
       query_id: 'query_01',
@@ -108,12 +127,15 @@ describe('workbench answer model', () => {
       results: [result],
     }).frames[0];
     const next: FrameCandidate = { ...candidate, original_frame_id: 430, timestamp_ms: 17_000 };
+    const third: FrameCandidate = { ...candidate, original_frame_id: 475, timestamp_ms: 22_000 };
+    const fourth: FrameCandidate = { ...candidate, original_frame_id: 520, timestamp_ms: 28_000 };
 
     expect(groupEvidence(candidate.evidence).ocr).toHaveLength(1);
     expect(groupEvidence(candidate.evidence).asr).toHaveLength(0);
-    expect(validateTrakeSequence([candidate, next])).toBe(true);
-    expect(validateTrakeSequence([next, candidate])).toBe(false);
-    expect(validateTrakeSequence([candidate, { ...next, video_id: 'video_02' }])).toBe(false);
+    expect(validateTrakeSequence([candidate, next, third, fourth])).toBe(true);
+    expect(validateTrakeSequence([next, candidate, third, fourth])).toBe(false);
+    expect(validateTrakeSequence([candidate, next, third])).toBe(false);
+    expect(validateTrakeSequence([candidate, next, third, { ...fourth, video_id: 'video_02' }])).toBe(false);
   });
 
   it('keeps object evidence visible and filters bounded ASR to the frame timestamp', () => {
@@ -126,6 +148,60 @@ describe('workbench answer model', () => {
     expect(groups.object).toHaveLength(1);
     expect(groups.object[0].snippet).toBe('person');
     expect(groups.asr.map((item) => item.evidence_id)).toEqual(['asr-1']);
+  });
+
+  it('keeps OCR and active ASR evidence when a Studio frame replaces a search candidate', () => {
+    const candidate = toFrameCandidates({
+      query_id: 'query_01',
+      degraded: false,
+      unavailable_branches: [],
+      results: [result],
+    }).frames[0];
+    const studioFrame = {
+      video_id: 'video_01',
+      keyframe_no: 6,
+      original_frame_id: 420,
+      timestamp_ms: 16_000,
+      captions: [],
+      objects: [],
+      ocr: [{ evidence_id: 'ocr-2', text: 'GIẢM GIÁ', language: 'vi', producer: 'ocr:v1' }],
+    } as StudioFrame & { ocr: { evidence_id: string; text: string; language: string; producer: string }[] };
+
+    const selected = applyStudioFrameToCandidate(candidate, studioFrame, [{
+      evidence_id: 'asr-2', start_ms: 15_000, end_ms: 17_000,
+      text: 'Khuyến mãi hôm nay', language: 'vi', producer: 'asr:v1',
+    }]);
+
+    expect(groupEvidence(selected.evidence, selected.timestamp_ms).ocr.map((item) => item.snippet)).toEqual(['GIẢM GIÁ']);
+    expect(groupEvidence(selected.evidence, selected.timestamp_ms).asr.map((item) => item.snippet)).toEqual(['Khuyến mãi hôm nay']);
+  });
+
+  it('keeps OCR and ASR returned with a canonical frame', () => {
+    const candidate = toFrameCandidates({
+      query_id: 'query_01',
+      degraded: false,
+      unavailable_branches: [],
+      results: [result],
+    }).frames[0];
+    const selected = applyCanonicalFrameToCandidate(candidate, {
+      video_id: 'video_01',
+      original_frame_id: 421,
+      timestamp_ms: 16_500,
+      captions: [],
+      ocr: [{ evidence_id: 'ocr-3', text: 'MỞ CỬA', language: 'vi', producer: 'ocr:v1' }],
+      objects: [],
+      thumbnail_uri: '/frame/421',
+      is_exact_frame: true,
+      annotation_source_frame_id: 420,
+      asr_spans: [{
+        evidence_id: 'asr-3', start_ms: 16_000, end_ms: 17_000,
+        text: 'Cửa hàng mở cửa', language: 'vi', producer: 'asr:v1',
+      }],
+    });
+
+    const evidence = groupEvidence(selected.evidence, selected.timestamp_ms);
+    expect(evidence.ocr.map((item) => item.snippet)).toEqual(['MỞ CỬA']);
+    expect(evidence.asr.map((item) => item.snippet)).toEqual(['Cửa hàng mở cửa']);
   });
 
   it('reorders ranked frames immutably and exports only the first 100 textual answers', () => {
@@ -153,4 +229,104 @@ describe('workbench answer model', () => {
     expect(submission?.answers[0]).toEqual({ video_id: 'video_2', frame_id: 2 });
     expect(submission?.answers[99]).toEqual({ video_id: 'video_99', frame_id: 99 });
   });
+
+  it('moves a ranked frame directly to the top or bottom without mutating the input', () => {
+    const frames = Array.from({ length: 4 }, (_, index) => ({
+      result_key: `video_${index}`,
+      video_id: `video_${index}`,
+      original_frame_id: index,
+      timestamp_ms: index * 1_000,
+      thumbnail_uri: `/frame/${index}`,
+      start_ms: index * 1_000,
+      end_ms: index * 1_000 + 500,
+      score: 1 - index / 10,
+      evidence: [],
+      matched_modalities: [],
+    } satisfies FrameCandidate));
+
+    const top = moveFrameToBoundary(frames, 2, 'top');
+    const bottom = moveFrameToBoundary(frames, 1, 'bottom');
+
+    expect(top.map((frame) => frame.original_frame_id)).toEqual([2, 0, 1, 3]);
+    expect(bottom.map((frame) => frame.original_frame_id)).toEqual([0, 2, 3, 1]);
+    expect(moveFrameToBoundary(frames, 0, 'top')).toEqual(frames);
+    expect(frames.map((frame) => frame.original_frame_id)).toEqual([0, 1, 2, 3]);
+  });
+
+  it('auto-selects four chronological frames for TRAKE around an anchor', () => {
+    const anchor: FrameCandidate = {
+      result_key: 'video_01\u0000200',
+      video_id: 'video_01',
+      original_frame_id: 200,
+      timestamp_ms: 8_000,
+      thumbnail_uri: '/frame/200',
+      start_ms: 8_000,
+      end_ms: 8_500,
+      score: 0.9,
+      evidence: [],
+      matched_modalities: [],
+    };
+
+    const available: FrameCandidate[] = [
+      { ...anchor, original_frame_id: 100, timestamp_ms: 4_000 },
+      anchor,
+      { ...anchor, original_frame_id: 300, timestamp_ms: 12_000 },
+      { ...anchor, original_frame_id: 400, timestamp_ms: 16_000 },
+      { ...anchor, original_frame_id: 500, timestamp_ms: 20_000 },
+    ];
+
+    const selected = autoSelectNearbyTrakeFrames(anchor, available);
+    expect(selected).toHaveLength(4);
+    expect(validateTrakeSequence(selected)).toBe(true);
+    expect(selected.map((f) => f.original_frame_id)).toEqual([200, 300, 400, 500]);
+  });
+
+  it('auto-builds batch TRAKE answers from ranked retrieval frames', () => {
+    const ranked: FrameCandidate[] = [
+      {
+        result_key: 'video_01\u0000100',
+        video_id: 'video_01',
+        original_frame_id: 100,
+        timestamp_ms: 4_000,
+        thumbnail_uri: '/frame/100',
+        start_ms: 4_000,
+        end_ms: 4_500,
+        score: 0.95,
+        evidence: [],
+        matched_modalities: [],
+      },
+      {
+        result_key: 'video_01\u0000200',
+        video_id: 'video_01',
+        original_frame_id: 200,
+        timestamp_ms: 8_000,
+        thumbnail_uri: '/frame/200',
+        start_ms: 8_000,
+        end_ms: 8_500,
+        score: 0.90,
+        evidence: [],
+        matched_modalities: [],
+      },
+      {
+        result_key: 'video_02\u000050',
+        video_id: 'video_02',
+        original_frame_id: 50,
+        timestamp_ms: 2_000,
+        thumbnail_uri: '/frame/50',
+        start_ms: 2_000,
+        end_ms: 2_500,
+        score: 0.85,
+        evidence: [],
+        matched_modalities: [],
+      },
+    ];
+
+    const answers = autoBuildTrakeAnswers(ranked, 10);
+    expect(answers).toHaveLength(2);
+    expect(answers[0].video_id).toBe('video_01');
+    expect(answers[0].frame_ids).toHaveLength(4);
+    expect(answers[1].video_id).toBe('video_02');
+    expect(answers[1].frame_ids).toHaveLength(4);
+  });
 });
+

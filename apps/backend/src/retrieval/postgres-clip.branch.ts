@@ -11,6 +11,7 @@ interface ClipRow extends QueryResultRow {
   readonly video_object_key: string | null;
   readonly keyframe_no: number | null;
   readonly original_frame_id: number | null;
+  readonly timestamp_ms: number | null;
   readonly start_ms: number;
   readonly end_ms: number;
   readonly preview_object_key: string | null;
@@ -21,12 +22,19 @@ export class PostgresClipBranch implements RetrievalBranch {
   readonly name = 'clip' as const;
   readonly available = true;
 
-  constructor(private readonly database: DatabaseClient, private readonly encoder: QueryEmbeddingProvider) {}
+  constructor(
+    private readonly database: DatabaseClient,
+    private readonly encoder: QueryEmbeddingProvider,
+    private readonly fixedEmbedding?: readonly number[],
+  ) {}
 
   async search(query: string, plan: RetrievalExecutionPlan, signal?: AbortSignal): Promise<BranchResult> {
-    const embedding = await this.encoder.embedText(query);
+    const embedding = this.fixedEmbedding ?? await this.encoder.embedText(query);
     if (embedding.length !== this.encoder.dimensions) {
       throw new Error(`CLIP query embedding must have ${this.encoder.dimensions} dimensions`);
+    }
+    if (embedding.some((value) => typeof value !== 'number' || !Number.isFinite(value))) {
+      throw new Error('CLIP query embedding must contain finite numbers');
     }
     const vector = `[${embedding.join(',')}]`;
     const result = await this.database.query<ClipRow>(`
@@ -37,6 +45,7 @@ export class PostgresClipBranch implements RetrievalBranch {
         LIMIT $4
       )
       SELECT e.evidence_id, e.video_id, v.object_key AS video_object_key, f.keyframe_no, e.original_frame_id,
+             f.timestamp_ms,
              e.start_ms, e.end_ms, f.thumbnail_object_key AS preview_object_key,
              tc.rank_score
       FROM top_clips tc
@@ -66,7 +75,9 @@ export class PostgresClipBranch implements RetrievalBranch {
         ...(row.video_object_key ? { video_object_key: row.video_object_key } : {}),
         rank: index + 1, raw_score: Number(row.rank_score),
         keyframe_no: row.keyframe_no,
-        original_frame_id: row.original_frame_id, start_ms: Number(row.start_ms), end_ms: Number(row.end_ms),
+        original_frame_id: row.original_frame_id,
+        ...(row.timestamp_ms === null || row.timestamp_ms === undefined ? {} : { timestamp_ms: Number(row.timestamp_ms) }),
+        start_ms: Number(row.start_ms), end_ms: Number(row.end_ms),
         preview_uri: row.preview_object_key ? `r2://media/${row.preview_object_key}` : undefined,
         evidence_ids: [row.evidence_id],
       })),

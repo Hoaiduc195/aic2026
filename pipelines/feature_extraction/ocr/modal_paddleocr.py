@@ -1084,6 +1084,30 @@ def _vlm_box(task: CropTask, text: str) -> dict[str, Any] | None:
     }
 
 
+def build_detection_options(
+    *,
+    model_name: str,
+    engine: str | None,
+    enable_hpi: bool,
+    use_tensorrt: bool,
+    precision: str,
+    threshold: float,
+) -> dict[str, Any]:
+    """Build options supported by PaddleOCR 3.7 TextDetection."""
+    return {
+        "model_name": model_name,
+        "limit_side_len": None,
+        "limit_type": None,
+        "thresh": threshold,
+        "box_thresh": threshold,
+        "device": "gpu:0",
+        "engine": engine,
+        "enable_hpi": enable_hpi,
+        "use_tensorrt": use_tensorrt,
+        "precision": precision,
+    }
+
+
 if modal is not None:
     model_cache = modal.Volume.from_name(
         "aic-paddleocr-model-cache",
@@ -1169,6 +1193,14 @@ if modal is not None:
             self._engine = self.engine or None
             self._executor_workers = max(1, int(self.cpu_workers))
 
+            self.detector = TextDetection(**build_detection_options(
+                model_name=self.detection_model,
+                engine=self._engine,
+                enable_hpi=bool(self.enable_hpi),
+                use_tensorrt=bool(self.use_tensorrt),
+                precision=self.precision,
+                threshold=self._detection_threshold,
+            ))
             common_options = {
                 "device": "gpu:0",
                 "engine": self._engine,
@@ -1176,15 +1208,6 @@ if modal is not None:
                 "use_tensorrt": bool(self.use_tensorrt),
                 "precision": self.precision,
             }
-            self.detector = TextDetection(
-                model_name=self.detection_model,
-                limit_side_len=None,
-                limit_type=None,
-                max_side_limit=None,
-                thresh=self._detection_threshold,
-                box_thresh=self._detection_threshold,
-                **common_options,
-            )
             self.recognizer = TextRecognition(
                 model_name=self.recognition_model,
                 **common_options,

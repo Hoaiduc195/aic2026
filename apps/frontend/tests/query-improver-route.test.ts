@@ -43,6 +43,56 @@ describe('query improver proxy route', () => {
     });
   });
 
+  it('forwards the separate Q&A question to the backend improver', async () => {
+    process.env.BACKEND_API_URL = 'http://backend.internal';
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
+      original_query: 'Một cửa hàng trên phố', improved_query: 'A shop on a street.',
+      original_question: 'Người phụ nữ đang cầm gì?', improved_question: 'What is the woman holding?',
+      changed: true, producer: 'test', model_version: 'model', warning: null,
+    }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await POST(new NextRequest('http://localhost/api/v1/query/improve', {
+      method: 'POST',
+      body: JSON.stringify({
+        query: 'Một cửa hàng trên phố', question: 'Người phụ nữ đang cầm gì?', task: 'vqa',
+      }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({
+      query: 'Một cửa hàng trên phố', question: 'Người phụ nữ đang cầm gì?', task: 'vqa',
+    });
+  });
+
+  it('forwards the TRAKE overview and events as separate fields', async () => {
+    process.env.BACKEND_API_URL = 'http://backend.internal';
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
+      original_query: 'Một người đi qua cửa hàng rồi rời đi',
+      improved_query: 'A person crosses a shop and then leaves',
+      original_events: ['Người bước vào cửa hàng', 'Người rời khỏi cửa hàng'],
+      improved_events: ['The person enters the shop', 'The person leaves the shop'],
+      changed: true, producer: 'test', model_version: 'model', warning: null,
+    }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await POST(new NextRequest('http://localhost/api/v1/query/improve', {
+      method: 'POST',
+      body: JSON.stringify({
+        query: 'Một người đi qua cửa hàng rồi rời đi',
+        events: ['Người bước vào cửa hàng', 'Người rời khỏi cửa hàng'],
+        task: 'trake',
+      }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({
+      query: 'Một người đi qua cửa hàng rồi rời đi',
+      events: ['Người bước vào cửa hàng', 'Người rời khỏi cửa hàng'],
+      task: 'trake',
+    });
+  });
+
   it('rejects an unsafe model endpoint before contacting backend', async () => {
     process.env.BACKEND_API_URL = 'http://backend.internal';
     const fetchMock = vi.fn();

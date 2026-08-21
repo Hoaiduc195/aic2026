@@ -44,17 +44,27 @@ export interface SearchRequest {
   session_id?: string;
   embedding?: SearchEmbeddingConfig;
   retrieval?: SearchRetrievalConfig;
+  frame_query?: {
+    video_id: string;
+    original_frame_id: number;
+  };
 }
 
 export interface QueryImprovementRequest {
   query: string;
   task: QueryImproverTask;
+  question?: string;
+  events?: readonly string[];
   llm?: VqaLlmConfig;
 }
 
 export interface QueryImprovementResponse {
   original_query: string;
   improved_query: string;
+  original_question?: string;
+  improved_question?: string;
+  original_events?: readonly string[];
+  improved_events?: readonly string[];
   changed: boolean;
   producer: string;
   model_version: string;
@@ -79,6 +89,7 @@ export interface SearchRetrievalConfig {
   display_k: number;
   branch_k: number;
   fusion_k: number;
+  near_frame_window_ms?: number;
   rrf_k?: number;
   channel_weights?: Partial<Record<SearchRrfBranch, number>>;
   vlm_rerank?: VlmRerankConfig;
@@ -142,6 +153,7 @@ export interface SearchResponse {
   request_id?: string;
   query_id: string;
   query?: string;
+  query_mode?: 'text' | 'frame_image';
   session_id?: string | null;
   task?: SearchTask;
   task_executor?: string;
@@ -219,7 +231,7 @@ export interface FrameCandidate {
 
 export interface VideoFrame {
   video_id: string;
-  keyframe_no: number;
+  keyframe_no?: number | null;
   original_frame_id: number;
   timestamp_ms: number;
   thumbnail_uri: string;
@@ -239,6 +251,13 @@ export interface StudioCaption {
   producer: string;
 }
 
+export interface StudioOcr {
+  evidence_id: string;
+  text: string;
+  language: string;
+  producer: string;
+}
+
 export interface StudioObject {
   evidence_id: string;
   label: string;
@@ -249,11 +268,15 @@ export interface StudioObject {
 
 export interface StudioFrame {
   video_id: string;
-  keyframe_no: number;
+  keyframe_no?: number | null;
   original_frame_id: number;
   timestamp_ms: number;
   captions: StudioCaption[];
+  ocr?: StudioOcr[];
   objects: StudioObject[];
+  thumbnail_uri?: string;
+  is_exact_frame?: boolean;
+  annotation_source_frame_id?: number | null;
 }
 
 export interface StudioAsrSpan {
@@ -276,7 +299,15 @@ export interface VideoPlayback {
   playback_uri: string;
   duration_ms: number;
   fps: number;
+  frame_count?: number | null;
   mime_type: 'video/mp4' | 'video/webm' | 'video/ogg';
+}
+
+export interface CanonicalFrameResponse extends StudioFrame {
+  thumbnail_uri: string;
+  is_exact_frame: true;
+  annotation_source_frame_id: number | null;
+  asr_spans?: StudioAsrSpan[];
 }
 
 export interface QualificationEventInput {

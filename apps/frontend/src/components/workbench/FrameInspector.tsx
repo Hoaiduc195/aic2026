@@ -1,10 +1,8 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
-  useEffect,
   useMemo,
   useRef,
   useState,
@@ -15,10 +13,7 @@ import type {
   QualificationEventInput,
   QualificationTask,
   SearchEvidence,
-  VideoFrame,
-  VideoFramesResponse,
 } from '../../lib/contracts';
-import { keyframeLabel } from '../../lib/video-studio-model';
 import { displayMatchedModalities, formatMs, groupEvidence } from '../../lib/workbench-model';
 
 export const DEFAULT_INSPECTOR_WIDTH = 410;
@@ -34,16 +29,15 @@ interface Props {
   events: readonly QualificationEventInput[];
   assignedFrames: readonly (FrameCandidate | null)[];
   qaAnswer: string;
-  loadFrames: (videoId: string, centerFrameId: number, limit: number) => Promise<VideoFramesResponse>;
   onClose: () => void;
   onOpenStudio: () => void;
   onInspectorWidthChange: (width: number) => void;
-  onFrameSelect: (frame: VideoFrame) => void;
   onQaAnswerChange: (value: string) => void;
   onSuggestVqaAnswer?: () => void;
   vqaAnswerLoading?: boolean;
   onAddAnswer: () => void;
-  onAssignEvent: (index: number) => void;
+  onSelectAssignedFrame: (index: number) => void;
+  onAutoSelectNearbyFrames?: () => void;
 }
 
 const EVIDENCE_LABELS: ReadonlyArray<{
@@ -65,18 +59,16 @@ export function FrameInspector({
   events,
   assignedFrames,
   qaAnswer,
-  loadFrames,
   onClose,
   onOpenStudio,
   onInspectorWidthChange,
-  onFrameSelect,
   onQaAnswerChange,
   onSuggestVqaAnswer,
   vqaAnswerLoading = false,
   onAddAnswer,
-  onAssignEvent,
+  onSelectAssignedFrame,
+  onAutoSelectNearbyFrames,
 }: Props) {
-  const [showFrames, setShowFrames] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartRef = useRef<{ clientX: number; width: number } | null>(null);
   const evidence = useMemo(
@@ -84,21 +76,6 @@ export function FrameInspector({
     [active.evidence, active.timestamp_ms],
   );
   const modalityLabel = displayMatchedModalities(active.matched_modalities);
-
-  const framesQuery = useQuery({
-    queryKey: ['video-frames', anchor.video_id, anchor.original_frame_id],
-    queryFn: () => loadFrames(anchor.video_id, anchor.original_frame_id, 25),
-    enabled: false,
-  });
-
-  useEffect(() => {
-    setShowFrames(false);
-  }, [anchor.result_key]);
-
-  function requestFrames() {
-    setShowFrames(true);
-    void framesQuery.refetch();
-  }
 
   function beginResize(event: ReactPointerEvent<HTMLDivElement>) {
     event.preventDefault();
@@ -180,36 +157,7 @@ export function FrameInspector({
         <button type="button" className="secondary-button" onClick={onOpenStudio}>
           Xem video studio
         </button>
-        <button type="button" className="secondary-button" disabled={framesQuery.isFetching} onClick={requestFrames}>
-          {framesQuery.isFetching ? 'Đang tải frame…' : 'Xem các frame cùng video'}
-        </button>
       </div>
-      {framesQuery.error && (
-        <p className="inline-error" role="alert">
-          {readError(framesQuery.error)}
-        </p>
-      )}
-
-      {showFrames && framesQuery.data && (
-        <section className="filmstrip" aria-label="Các frame cùng video">
-          <div className="filmstrip-track">
-            {framesQuery.data.frames.map((frame) => (
-              <button
-                type="button"
-                key={`${frame.video_id}-${frame.original_frame_id}`}
-                aria-label={`Chọn ${keyframeLabel(frame).toLowerCase()}`}
-                aria-pressed={active.original_frame_id === frame.original_frame_id}
-                onClick={() => onFrameSelect(frame)}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={frame.thumbnail_uri} alt={`${keyframeLabel(frame)} của ${frame.video_id}`} loading="lazy" />
-                <span>#{frame.keyframe_no}</span>
-                <small>Source frame {frame.original_frame_id} · {formatMs(frame.timestamp_ms)}</small>
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
 
       <section className="answer-builder">
         <h3>{task === 'trake' ? 'Gán chuỗi sự kiện' : 'Tạo đáp án'}</h3>
@@ -225,26 +173,56 @@ export function FrameInspector({
             />
           </label>
         )}
-        {task === 'qa' && (
-          <button
-            type="button"
-            className="secondary-button full-width"
-            disabled={!onSuggestVqaAnswer || vqaAnswerLoading}
-            onClick={() => onSuggestVqaAnswer?.()}
-          >
-            {vqaAnswerLoading ? 'Đang hỏi LLM…' : 'Gợi ý answer bằng LLM'}
-          </button>
-        )}
-        {task === 'trake' ? (
-          <div className="event-assignments">
-            {events.map((event, index) => (
-              <div key={event.event_id}>
-                <span><b>{index + 1}</b>{event.description}</span>
-                <button type="button" onClick={() => onAssignEvent(index)}>
-                  {assignedFrames[index] ? `Frame ${assignedFrames[index]?.original_frame_id}` : 'Gán frame hiện tại'}
+        {task === 'qa' ? (
+          <div className="answer-builder-actions">
+            <button
+              type="button"
+              className="secondary-button full-width"
+              disabled={!onSuggestVqaAnswer || vqaAnswerLoading}
+              onClick={() => onSuggestVqaAnswer?.()}
+            >
+              {vqaAnswerLoading ? 'Đang hỏi LLM…' : 'Gợi ý answer bằng LLM'}
+            </button>
+            <button type="button" className="primary-button full-width" onClick={onAddAnswer}>
+              Thêm vào đáp án
+            </button>
+          </div>
+        ) : task === 'trake' ? (
+          <div className="trake-frame-selection">
+            <div className="trake-selection-header">
+              <p className="muted-copy">Chọn đủ 4 frame trong Video Studio hoặc tự động gán frame lân cận.</p>
+              {onAutoSelectNearbyFrames && (
+                <button
+                  type="button"
+                  className="secondary-button full-width"
+                  style={{ marginBottom: '8px' }}
+                  onClick={onAutoSelectNearbyFrames}
+                >
+                  ⚡ Tự động chọn 4 frame lân cận
                 </button>
-              </div>
-            ))}
+              )}
+            </div>
+            <div className="trake-frame-slots" aria-label="Bốn frame TRAKE đã chọn">
+              {assignedFrames.map((frame, index) => {
+                const objects = frame ? groupEvidence(frame.evidence, frame.timestamp_ms).object : [];
+                return frame ? (
+                  <article className="trake-frame-slot is-filled" key={`${index}-${frame.original_frame_id}`}>
+                    <button type="button" className="trake-frame-slot-main" onClick={() => onSelectAssignedFrame(index)} aria-label={`Xem frame TRAKE ${index + 1}, frame ${frame.original_frame_id}`}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={frame.thumbnail_uri} alt={`Frame ${frame.original_frame_id} của ${frame.video_id}`} loading="lazy" decoding="async" />
+                      <span><b>Frame {index + 1}</b> · {frame.original_frame_id} · {formatMs(frame.timestamp_ms)}</span>
+                      <small>{objects.length > 0 ? objects.map((object) => object.snippet).join(', ') : 'Không có object detection'}</small>
+                    </button>
+                  </article>
+                ) : (
+                  <div className="trake-frame-slot is-empty" key={`empty-${index}`}>
+                    <b>Frame {index + 1}</b>
+                    <small>Chưa chọn</small>
+                  </div>
+                );
+              })}
+            </div>
+            <span className="trake-frame-count">{assignedFrames.filter(Boolean).length}/4 frame đã chọn</span>
             <button type="button" className="primary-button full-width" onClick={onAddAnswer}>
               Thêm chuỗi vào đáp án
             </button>
@@ -279,8 +257,4 @@ function EvidenceBlock({ label, items }: { label: string; items: readonly Search
       ))}
     </div>
   );
-}
-
-function readError(error: unknown): string {
-  return error instanceof Error ? error.message : 'Không thể tải dữ liệu media.';
 }

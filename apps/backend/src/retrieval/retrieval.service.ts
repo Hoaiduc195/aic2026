@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 
@@ -15,6 +15,7 @@ import type {
 } from '../common/types';
 import type { BackendConfig } from '../common/config';
 import { candidateKey, fuseBranchResults } from './fusion';
+import { filterNearbyCandidates } from './temporal-filter';
 import type { RetrievalBranch } from './branch';
 import { buildDeterministicPlan, queryForBranch } from './query-planner';
 import type { TaskExecutorInput } from '../tasks/task-executor';
@@ -24,6 +25,7 @@ import type { EvidenceRepository, EvidenceView } from './evidence.repository';
 import type { ObjectStorage } from '../storage/object-storage';
 import { signPreviewUris, withPreviewReferences } from '../storage/preview-url';
 import type { EmbeddingService } from '../embedding_services/embedding.service';
+import { MediaService } from '../media/media.service';
 import type { VlmRerankerService } from './vlm-reranker.service';
 import type { VlmQueryExpanderService } from './vlm-query-expander.service';
 
@@ -64,6 +66,7 @@ export class RetrievalService {
     @Optional() @Inject(OBJECT_STORAGE) private readonly storage?: ObjectStorage,
     @Optional() @Inject(EMBEDDING_SERVICE) private readonly embeddingService?: EmbeddingService,
     @Optional() @Inject(VLM_RERANKER) private readonly vlmReranker?: VlmRerankerService,
+    @Optional() @Inject(MediaService) private readonly mediaService?: MediaService,
     @Optional() @Inject(VLM_QUERY_EXPANDER) private readonly vlmQueryExpander?: VlmQueryExpanderService,
   ) {}
 
@@ -87,6 +90,7 @@ export class RetrievalService {
         branchK,
         fusionK,
         displayK,
+        nearFrameWindowMs: request.retrieval?.near_frame_window_ms ?? 1000,
         latencyBudgetMs: request.retrieval?.latency_budget_ms ?? 5000,
         rrfK: request.retrieval?.rrf_k ?? DEFAULT_RRF_K,
         channelWeights: request.retrieval?.channel_weights,
@@ -97,7 +101,8 @@ export class RetrievalService {
   }
 
   async search(request: SearchRequest): Promise<SearchResponse> {
-    const branches = this.resolveBranches(request);
+    const frameEmbedding = await this.resolveFrameQueryEmbedding(request);
+    const branches = this.resolveBranches(request, frameEmbedding);
     let plan = this.createPlanForBranches(request, branches);
 
     // Plan B: VLM query expansion — patch plan with additional English variants before branching
@@ -106,7 +111,6 @@ export class RetrievalService {
       plan = { ...plan, query_variants: vlmVariants };
       this.logger.debug(JSON.stringify({ event: 'vlm_query_expansion_applied', original: request.query, variants: vlmVariants }));
     }
-
     const startedAt = performance.now();
     const branchResults = await Promise.all(
       branches
@@ -114,18 +118,18 @@ export class RetrievalService {
         .map((branch) => this.runBranchVariants(branch, plan)),
     );
     const fusedCandidates = fuseBranchResults(branchResults, plan);
-    const persistedCandidates = withPreviewReferences(fusedCandidates);
+    const persistedReferences = withPreviewReferences(fusedCandidates);
     const warnings: string[] = [];
-    let responseCandidates = persistedCandidates;
+    let responseCandidates = persistedReferences;
     if (this.storage?.isConfigured) {
       try {
-        responseCandidates = await signPreviewUris(persistedCandidates, this.storage);
+        responseCandidates = await signPreviewUris(persistedReferences, this.storage);
       } catch (error) {
         this.logger.warn(`preview signing failed: ${error instanceof Error ? error.message : 'unknown error'}`);
         warnings.push('preview_signing_failed');
       }
     }
-    if (this.vlmReranker) {
+    if (this.vlmReranker && !request.frame_query) {
       try {
         responseCandidates = await this.vlmReranker.rerank(
           request.query,
@@ -138,6 +142,20 @@ export class RetrievalService {
       }
     }
 
+    const filteredCandidates = filterNearbyCandidates(responseCandidates, plan.near_frame_window_ms ?? 1000);
+    const previewByCandidate = new Map(
+      persistedReferences.map((candidate) => [
+        candidateKey(candidate.video_id, candidate.original_frame_id, candidate.start_ms, candidate.end_ms),
+        candidate.preview_uri,
+      ]),
+    );
+    const persistedCandidates = filteredCandidates.map((candidate) => ({
+      ...candidate,
+      ...(previewByCandidate.get(candidateKey(candidate.video_id, candidate.original_frame_id, candidate.start_ms, candidate.end_ms))
+        ? { preview_uri: previewByCandidate.get(candidateKey(candidate.video_id, candidate.original_frame_id, candidate.start_ms, candidate.end_ms)) }
+        : {}),
+    }));
+    responseCandidates = filteredCandidates;
 
     let evidenceById: ReadonlyMap<string, EvidenceView> = new Map();
     try {
@@ -169,8 +187,32 @@ export class RetrievalService {
       : response;
   }
 
-  private resolveBranches(request: SearchRequest): readonly RetrievalBranch[] {
-    return this.embeddingService?.resolveBranches(this.branches, request) ?? this.branches;
+  private resolveBranches(request: SearchRequest, queryEmbedding?: readonly number[]): readonly RetrievalBranch[] {
+    return this.embeddingService?.resolveBranches(this.branches, request, queryEmbedding) ?? this.branches;
+  }
+
+  private async resolveFrameQueryEmbedding(request: SearchRequest): Promise<readonly number[] | undefined> {
+    const frameQuery = request.frame_query;
+    if (!frameQuery) return undefined;
+    if (!this.embeddingService) {
+      throw new ServiceUnavailableException('frame image query embedding is not configured');
+    }
+
+    const indexed = await this.embeddingService.findIndexedFrameEmbedding(
+      frameQuery.video_id,
+      frameQuery.original_frame_id,
+      this.config.indexVersion,
+    );
+    if (indexed) return indexed;
+    if (!this.mediaService) {
+      throw new ServiceUnavailableException('exact frame image service is not configured');
+    }
+
+    const thumbnail = await this.mediaService.getFrameThumbnail(
+      frameQuery.video_id,
+      frameQuery.original_frame_id,
+    );
+    return this.embeddingService.embedImage(thumbnail.bytes, thumbnail.mime_type, request);
   }
 
   /**

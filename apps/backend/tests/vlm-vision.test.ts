@@ -49,6 +49,23 @@ function config(overrides: Partial<BackendConfig> = {}): BackendConfig {
 }
 
 describe('OpenAI-compatible vision model', () => {
+  it('uses a 15-second timeout when no timeout is configured', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({
+        answer_status: 'answered', answer: 'một cái chai', normalized_answer: 'một cái chai',
+        confidence: { level: 'high', score: 0.9 },
+      }) } }],
+    }), { status: 200 })));
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(new AbortController().signal);
+
+    await new OpenAICompatibleVisionClient({
+      baseUrl: 'https://vision.test/v1',
+      model: 'vision-v1',
+    }).answerVisualQuestion({ question: 'Có gì trong ảnh?', imageUrl: 'https://signed.test/frame.jpg' });
+
+    expect(timeoutSpy).toHaveBeenCalledWith(15_000);
+  });
+
   it('sends text and image_url content with bearer authentication', async () => {
     vi.stubGlobal(
       'fetch',
@@ -90,6 +107,10 @@ describe('OpenAI-compatible vision model', () => {
     expect(body.messages[0].content).toContain('primary source');
     expect(body.messages[0].content).toContain('supporting context');
     expect(body.messages[0].content).toContain('do not let it override');
+    expect(body.messages[0].content).toContain('Always answer in Vietnamese');
+    expect(body.messages[0].content).toContain('one short noun phrase or one short sentence');
+    expect(body.messages[0].content).toContain('Không biết');
+    expect(body.messages[0].content).toContain('non-empty string answer');
     expect(body.messages[1].content).toEqual([
       expect.objectContaining({ type: 'text' }),
       { type: 'image_url', image_url: { url: 'https://signed.test/frame.jpg' } },
@@ -121,7 +142,12 @@ describe('OpenAI-compatible vision model', () => {
         question: 'What is shown?',
         imageUrl: 'https://signed.test/frame.jpg',
       }),
-    ).resolves.toMatchObject({ answer_status: 'abstained', confidence: { level: 'low' } });
+    ).resolves.toMatchObject({
+      answer_status: 'abstained',
+      answer: 'Không biết',
+      normalized_answer: 'Không biết',
+      confidence: { level: 'low' },
+    });
   });
 
   it('verifies image relevance with scoring and reason', async () => {

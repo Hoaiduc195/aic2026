@@ -15,12 +15,13 @@ export const DEFAULT_VLM_SETTINGS: VlmSettings = {
   base_url: '',
   api_key: '',
   model: '',
-  timeout_ms: 4_000,
+  timeout_ms: 15_000,
   max_tokens: 256,
   temperature: 0,
 };
 
 const STORAGE_KEY = 'aic.vlm.settings';
+const LEGACY_DEFAULT_VLM_TIMEOUT_MS = 4_000;
 
 function numberValue(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
@@ -33,12 +34,15 @@ export function loadVlmSettings(): VlmSettings {
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { ...DEFAULT_VLM_SETTINGS };
     const value = parsed as Record<string, unknown>;
+    const storedTimeoutMs = numberValue(value.timeout_ms, DEFAULT_VLM_SETTINGS.timeout_ms);
     return {
       enabled: value.enabled === true,
       base_url: typeof value.base_url === 'string' ? value.base_url : '',
-      api_key: '',
+      api_key: typeof value.api_key === 'string' ? value.api_key : '',
       model: typeof value.model === 'string' ? value.model : '',
-      timeout_ms: numberValue(value.timeout_ms, DEFAULT_VLM_SETTINGS.timeout_ms),
+      timeout_ms: storedTimeoutMs === LEGACY_DEFAULT_VLM_TIMEOUT_MS
+        ? DEFAULT_VLM_SETTINGS.timeout_ms
+        : storedTimeoutMs,
       max_tokens: numberValue(value.max_tokens, DEFAULT_VLM_SETTINGS.max_tokens),
       temperature: numberValue(value.temperature, DEFAULT_VLM_SETTINGS.temperature),
     };
@@ -48,8 +52,7 @@ export function loadVlmSettings(): VlmSettings {
 }
 
 export function saveVlmSettings(settings: VlmSettings): void {
-  const { api_key: _apiKey, ...persisted } = settings;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...settings }));
 }
 
 export function validateVlmSettings(settings: VlmSettings): string | null {

@@ -98,6 +98,23 @@ class OcrPlanningTests(unittest.TestCase):
         )
         self.assertEqual(ocr.RECOGNITION_BATCH_SIZE, 64)
 
+    def test_detection_options_match_paddleocr_37_api(self) -> None:
+        options = ocr.build_detection_options(
+            model_name="PP-OCRv6_small_det",
+            engine=None,
+            enable_hpi=False,
+            use_tensorrt=False,
+            precision="fp32",
+            threshold=0.3,
+        )
+
+        self.assertEqual(options["model_name"], "PP-OCRv6_small_det")
+        self.assertIsNone(options["limit_side_len"])
+        self.assertIsNone(options["limit_type"])
+        self.assertEqual(options["thresh"], 0.3)
+        self.assertEqual(options["box_thresh"], 0.3)
+        self.assertNotIn("max_side_limit", options)
+
     def test_modal_image_bootstraps_pyyaml_before_paddleocr(self) -> None:
         self.assertEqual(ocr.PYYAML_REQUIREMENT, "PyYAML>=6.0,<7")
         self.assertEqual(ocr.PYYAML_BOOTSTRAP_OPTIONS, "--ignore-installed")

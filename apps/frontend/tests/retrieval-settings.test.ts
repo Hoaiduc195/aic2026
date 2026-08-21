@@ -19,6 +19,7 @@ describe('retrieval settings', () => {
       display_k: 40,
       branch_k: 150,
       fusion_k: 600,
+      near_frame_window_ms: 1000,
       vlm_rerank: { enabled: true, top_k: 10, weight: 0.7 },
     };
 
@@ -30,6 +31,7 @@ describe('retrieval settings', () => {
       display_k: 40,
       branch_k: 150,
       fusion_k: 600,
+      near_frame_window_ms: 1000,
       vlm_rerank: { enabled: true, top_k: 10, weight: 0.7 },
     });
   });
@@ -52,5 +54,16 @@ describe('retrieval settings', () => {
       ...DEFAULT_RETRIEVAL_SETTINGS,
       vlm_rerank: { enabled: true, top_k: 0, weight: 0.6 },
     })).toContain('VLM');
+  });
+
+  it('accepts a 100-second near-frame window but rejects values above it', () => {
+    expect(validateRetrievalSettings({
+      ...DEFAULT_RETRIEVAL_SETTINGS,
+      near_frame_window_ms: 100_000,
+    })).toBeNull();
+    expect(validateRetrievalSettings({
+      ...DEFAULT_RETRIEVAL_SETTINGS,
+      near_frame_window_ms: 100_001,
+    })).not.toBeNull();
   });
 });

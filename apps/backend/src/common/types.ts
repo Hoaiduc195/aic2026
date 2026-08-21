@@ -47,6 +47,7 @@ export interface RetrievalOverrides {
   readonly branch_k?: number;
   readonly fusion_k?: number;
   readonly display_k?: number;
+  readonly near_frame_window_ms?: number;
   readonly latency_budget_ms?: number;
   readonly rrf_k?: number;
   readonly channel_weights?: ChannelWeights;
@@ -59,6 +60,13 @@ export interface EmbeddingRequestConfig {
   readonly timeout_ms: number;
 }
 
+export type QueryMode = 'text' | 'frame_image';
+
+export interface FrameQuery {
+  readonly video_id: string;
+  readonly original_frame_id: number;
+}
+
 export interface SearchRequest {
   readonly query: string;
   readonly task: TaskType;
@@ -66,6 +74,7 @@ export interface SearchRequest {
   readonly session_id?: string;
   readonly retrieval?: RetrievalOverrides;
   readonly embedding?: EmbeddingRequestConfig;
+  readonly frame_query?: FrameQuery;
 }
 
 export interface RetrievalExecutionPlan {
@@ -73,6 +82,8 @@ export interface RetrievalExecutionPlan {
   readonly task: TaskType;
   readonly language: 'vi' | 'en' | 'mixed' | 'unknown';
   readonly original_query: string;
+  readonly query_mode?: QueryMode;
+  readonly frame_query?: FrameQuery;
   readonly query_variants: string[];
   readonly concepts: string[];
   readonly query_atoms: QueryAtom[];
@@ -89,6 +100,7 @@ export interface RetrievalExecutionPlan {
   readonly top_k_per_branch: number;
   readonly fusion_k: number;
   readonly display_k: number;
+  readonly near_frame_window_ms?: number;
   readonly rrf_k: number;
   readonly latency_budget_ms: number;
   readonly fallback_policy: 'none' | 'expand_then_clarify' | 'expand_then_abstain' | 'clarify_then_abstain';
@@ -106,11 +118,13 @@ export interface BranchCandidate {
   readonly raw_score: number;
   readonly keyframe_no?: number | null;
   readonly original_frame_id?: number | null;
+  readonly timestamp_ms?: number | null;
   readonly start_ms?: number;
   readonly end_ms?: number;
   readonly preview_uri?: string;
   readonly evidence_ids: string[];
   readonly matched_terms?: string[];
+  readonly variant_scores?: Readonly<Record<number, number>>;
 }
 
 export interface BranchDiagnostics {
@@ -143,6 +157,7 @@ export interface FusionTraceEntry {
   readonly occurrence_count: number;
   readonly evidence_ids: string[];
   readonly matched_terms: string[];
+  readonly variant_scores?: Readonly<Record<number, number>>;
   readonly vlm_score?: number;
   readonly vlm_reason?: string;
 }
@@ -152,12 +167,14 @@ export interface FusedCandidate {
   readonly video_object_key?: string | null;
   readonly keyframe_no?: number | null;
   readonly original_frame_id?: number | null;
+  readonly timestamp_ms?: number | null;
   readonly start_ms: number;
   readonly end_ms: number;
   readonly preview_uri?: string;
   readonly score: number;
   readonly evidence_ids: string[];
   readonly matched_modalities: string[];
+  readonly variant_scores?: Readonly<Record<number, number>>;
   readonly fusion_trace: FusionTraceEntry[];
 }
 
@@ -184,6 +201,7 @@ export interface SearchResponse {
   readonly request_id: string;
   readonly query_id: string;
   readonly query: string;
+  readonly query_mode?: QueryMode;
   readonly session_id: string | null;
   readonly task: TaskType;
   readonly task_executor: string;

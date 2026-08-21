@@ -7,6 +7,10 @@ import type { QueryImprovementRequest } from './query-improver.request';
 export interface QueryImprovementResponse {
   readonly original_query: string;
   readonly improved_query: string;
+  readonly original_question?: string;
+  readonly improved_question?: string;
+  readonly original_events?: readonly string[];
+  readonly improved_events?: readonly string[];
   readonly changed: boolean;
   readonly producer: string;
   readonly model_version: string;
@@ -15,6 +19,11 @@ export interface QueryImprovementResponse {
 
 interface QueryImprovementModelOutput {
   readonly improved_query?: unknown;
+  readonly improved_question?: unknown;
+  readonly improved_events?: unknown;
+  readonly query?: unknown;
+  readonly question?: unknown;
+  readonly events?: unknown;
 }
 
 const MAX_QUERY_LENGTH = 2000;
@@ -49,30 +58,157 @@ function normalizeQuery(value: string): string {
   return value.trim().replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ');
 }
 
-function eventLines(value: string): string[] {
-  return value.split('\n')
-    .map((line) => line.replace(/^\s*\d+[.)]\s*/, '').trim())
+function stringList(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || !item.trim())) return null;
+  return value.map((item) => (item as string).trim());
+}
+
+interface TrakeQueryParts {
+  readonly overview: string | null;
+  readonly events: string[];
+}
+
+interface TrakeSeparateOutput {
+  readonly improvedQuery: string;
+  readonly improvedEvents: string[];
+}
+
+function parseTrakePlainTextOutput(value: string): TrakeSeparateOutput | null {
+  let currentField: 'query' | 'events' | null = null;
+  let queryLines: string[] = [];
+  const events: string[] = [];
+
+  for (const line of stripCodeFence(value).split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const queryLabel = trimmed.match(/^(?:\*\*\s*)?(?:improved\s+)?query\s*(?:\*\*)?\s*[:\-]\s*(.*)$/i);
+    if (queryLabel) {
+      currentField = 'query';
+      queryLines = queryLabel[1] ? [queryLabel[1].trim()] : [];
+      continue;
+    }
+    const eventsLabel = trimmed.match(/^(?:\*\*\s*)?(?:improved\s+)?events?\s*(?:\*\*)?\s*[:\-]?\s*(.*)$/i);
+    if (eventsLabel) {
+      currentField = 'events';
+      if (eventsLabel[1]) {
+        const inlineEvent = eventsLabel[1].replace(/^\d+[.)]\s*/, '').trim();
+        if (inlineEvent) events.push(inlineEvent);
+      }
+      continue;
+    }
+    if (currentField === 'query') {
+      queryLines = [...queryLines, trimmed];
+    } else if (currentField === 'events') {
+      const event = trimmed.replace(/^\d+[.)]\s*/, '').trim();
+      if (event) events.push(event);
+    }
+  }
+
+  const improvedQuery = queryLines.join('\n').trim();
+  return improvedQuery && events.length > 0 ? { improvedQuery, improvedEvents: events } : null;
+}
+
+function parseTrakeSeparateOutput(value: string): TrakeSeparateOutput | null {
+  const parsed = parseModelOutput(value);
+  const improvedQuery = typeof parsed?.improved_query === 'string'
+    ? parsed.improved_query
+    : typeof parsed?.query === 'string'
+      ? parsed.query
+      : null;
+  const improvedEvents = stringList(parsed?.improved_events ?? parsed?.events);
+  if (improvedQuery && improvedEvents) return { improvedQuery, improvedEvents };
+  return parseTrakePlainTextOutput(value);
+}
+
+function parseTrakeQuery(value: string): TrakeQueryParts | null {
+  const lines = value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const firstEventIndex = lines.findIndex((line) => /^\d+[.)]\s*/.test(line));
+  if (firstEventIndex < 0) return null;
+
+  const overview = firstEventIndex === 0 ? null : lines.slice(0, firstEventIndex).join('\n').trim();
+  const eventLines = lines.slice(firstEventIndex);
+  if (eventLines.some((line) => !/^\d+[.)]\s*/.test(line))) return null;
+  const events = eventLines
+    .map((line) => line.replace(/^\d+[.)]\s*/, '').trim())
     .filter(Boolean);
+  return events.length > 0 ? { overview, events } : null;
+}
+
+function plainTextImprovedQuery(
+  value: string,
+  task: QueryImprovementRequest['task'],
+): string | null {
+  const candidate = stripCodeFence(value);
+  if (!candidate || candidate.startsWith('{') || candidate.startsWith('[')) return null;
+  if (task === 'trake' && !parseTrakeQuery(candidate)) return null;
+  return candidate;
+}
+
+interface VqaPlainTextOutput {
+  readonly improvedQuery: string;
+  readonly improvedQuestion: string;
+}
+
+type VqaOutputField = 'improvedQuery' | 'improvedQuestion';
+
+function vqaOutputField(line: string): { readonly field: VqaOutputField; readonly value: string } | null {
+  const label = line.match(/^\s*(?:\*\*\s*)?(?:improved\s+)?(query|description|truy\s*vấn|question|câu\s*hỏi)(?:\s*\*\*)?\s*[:\-]?\s*(.*)$/i);
+  if (!label) return null;
+  const field = /^(query|description|truy\s*vấn)$/i.test(label[1])
+    ? 'improvedQuery'
+    : 'improvedQuestion';
+  return { field, value: label[2].trim() };
+}
+
+function parseVqaPlainTextOutput(value: string): VqaPlainTextOutput | null {
+  const values: Partial<Record<VqaOutputField, string[]>> = {};
+  let currentField: VqaOutputField | null = null;
+
+  for (const line of stripCodeFence(value).split(/\r?\n/)) {
+    const labeled = vqaOutputField(line);
+    if (labeled) {
+      currentField = labeled.field;
+      values[currentField] = labeled.value ? [labeled.value] : [];
+    } else if (currentField && line.trim()) {
+      values[currentField] = [...(values[currentField] ?? []), line.trim()];
+    }
+  }
+
+  const improvedQuery = values.improvedQuery?.join('\n').trim();
+  const improvedQuestion = values.improvedQuestion?.join('\n').trim();
+  return improvedQuery && improvedQuestion ? { improvedQuery, improvedQuestion } : null;
 }
 
 function normalizeTrakeQuery(original: string, improved: string): string | null {
-  const originalEvents = eventLines(original);
-  const improvedEvents = eventLines(improved);
-  if (originalEvents.length === 0 || originalEvents.length !== improvedEvents.length) return null;
-  return improvedEvents.map((event, index) => `${index + 1}. ${event}`).join('\n');
+  const originalParts = parseTrakeQuery(original);
+  const improvedParts = parseTrakeQuery(improved);
+  if (!originalParts || !improvedParts || originalParts.events.length !== improvedParts.events.length) return null;
+  if (originalParts.overview !== null && improvedParts.overview === null) return null;
+
+  return [
+    ...(improvedParts.overview === null ? [] : [improvedParts.overview]),
+    ...improvedParts.events.map((event, index) => `${index + 1}. ${event}`),
+  ].join('\n');
 }
 
-function systemPrompt(task: QueryImprovementRequest['task']): string {
+function systemPrompt(task: QueryImprovementRequest['task'], hasSeparateTrakeEvents: boolean): string {
   const trakeInstruction = task === 'trake'
-    ? 'For TRAKE, preserve the number of event lines and their order. Return one improved English event per numbered line.'
+    ? hasSeparateTrakeEvents
+      ? 'For TRAKE, improve the overall query and each event independently. Preserve the number and order of events. Prefer JSON with exactly two fields: {"improved_query":"...","improved_events":["...", "..."]}. If JSON mode is unavailable, return exactly the labels Improved query: ... and Improved events:, followed by one numbered event per input event. Do not add commentary.'
+      : 'For TRAKE, preserve the overall query before the numbered lines, then preserve the number and order of event lines. Return one improved English overall query first and one improved English event per numbered line. If JSON mode is unavailable, return exactly that structured text without markdown or commentary.'
     : 'Return one improved query, not a list of alternatives.';
+  const outputInstruction = task === 'vqa'
+    ? 'For VQA, improve the event query and the question independently. Prefer JSON with exactly two fields: {"improved_query":"...","improved_question":"..."}. If JSON mode is unavailable, return exactly two labeled lines: Improved query: ... and Improved question: ... . Do not add commentary.'
+    : task === 'trake' && hasSeparateTrakeEvents
+      ? 'The improved_events array must contain exactly one item for each input event.'
+      : 'Prefer JSON with exactly one field: {"improved_query":"..."}. If JSON mode is unavailable, return only the improved query text in the required structure, without JSON or commentary.';
   return [
     'You are a video retrieval query improver.',
     'Read the Vietnamese query and rewrite it into precise, natural English for video keyframe retrieval.',
     'Preserve every fact and temporal relation from the original query; never invent details.',
     'Emphasize visually useful characteristics such as people, actions, objects, colors, appearance, locations, visible text, spoken content, and temporal relations.',
     trakeInstruction,
-    'Return JSON only with exactly one field: {"improved_query":"..."}.',
+    outputInstruction,
   ].join(' ');
 }
 
@@ -84,6 +220,14 @@ function fallback(
   return {
     original_query: request.query,
     improved_query: request.query,
+    ...(request.question === undefined ? {} : {
+      original_question: request.question,
+      improved_question: request.question,
+    }),
+    ...(request.events === undefined ? {} : {
+      original_events: [...request.events],
+      improved_events: [...request.events],
+    }),
     changed: false,
     producer: 'query-improver-fallback',
     model_version: modelVersion,
@@ -114,22 +258,76 @@ export class QueryImproverService {
     let rawOutput: string;
     try {
       rawOutput = await model.complete({
-        system: systemPrompt(request.task),
-        prompt: `Task: ${request.task}\nOriginal Vietnamese query:\n${request.query}`,
+        system: systemPrompt(request.task, request.events !== undefined),
+        prompt: [
+          `Task: ${request.task}`,
+          `Original Vietnamese query:\n${request.query}`,
+          ...(request.task === 'vqa' ? [`Original Vietnamese question:\n${request.question ?? ''}`] : []),
+          ...(request.task === 'trake' && request.events !== undefined
+            ? [`Original Vietnamese events:\n${request.events.map((event, index) => `${index + 1}. ${event}`).join('\n')}`]
+            : []),
+        ].join('\n'),
       });
     } catch (error) {
       this.logger.warn(`query improvement failed: ${error instanceof Error ? error.message : 'unknown error'}`);
       return fallback(request, model.modelName, 'query_improver_failed');
     }
 
+    if (request.task === 'trake' && request.events !== undefined) {
+      const separateOutput = parseTrakeSeparateOutput(rawOutput);
+      const improvedQuery = separateOutput ? normalizeQuery(separateOutput.improvedQuery) : null;
+      const improvedEvents = separateOutput?.improvedEvents.map(normalizeQuery) ?? null;
+      if (!improvedQuery || !improvedEvents || improvedEvents.length !== request.events.length
+        || improvedQuery.length > MAX_QUERY_LENGTH
+        || improvedEvents.some((event) => !event || event.length > MAX_QUERY_LENGTH)) {
+        return fallback(request, model.modelName, 'query_improver_invalid_output');
+      }
+
+      return {
+        original_query: request.query,
+        improved_query: improvedQuery,
+        original_events: [...request.events],
+        improved_events: improvedEvents,
+        changed: improvedQuery !== request.query
+          || improvedEvents.some((event, index) => event !== request.events?.[index]),
+        producer: 'query-improver-openai-compatible',
+        model_version: model.modelName,
+        warning: null,
+      };
+    }
+
     const parsed = parseModelOutput(rawOutput);
-    if (typeof parsed?.improved_query !== 'string') {
+    const plainVqaOutput = request.task === 'vqa' ? parseVqaPlainTextOutput(rawOutput) : null;
+    const rawImprovedValue = typeof parsed?.improved_query === 'string'
+      ? parsed.improved_query
+      : request.task === 'vqa' && typeof parsed?.query === 'string'
+        ? parsed.query
+        : plainVqaOutput?.improvedQuery
+          ?? (request.task === 'vqa' ? null : plainTextImprovedQuery(rawOutput, request.task));
+    if (rawImprovedValue === null) {
       return fallback(request, model.modelName, 'query_improver_invalid_output');
     }
 
-    const rawImproved = parsed.improved_query.trim();
+    const rawImproved = stripCodeFence(rawImprovedValue);
     if (!rawImproved || rawImproved.length > MAX_QUERY_LENGTH) {
       return fallback(request, model.modelName, 'query_improver_invalid_output');
+    }
+
+    let improvedQuestion: string | undefined;
+    if (request.task === 'vqa') {
+      const rawImprovedQuestionValue = typeof parsed?.improved_question === 'string'
+        ? parsed.improved_question
+        : typeof parsed?.question === 'string'
+          ? parsed.question
+          : plainVqaOutput?.improvedQuestion;
+      if (!request.question || typeof rawImprovedQuestionValue !== 'string') {
+        return fallback(request, model.modelName, 'query_improver_invalid_output');
+      }
+      const rawImprovedQuestion = rawImprovedQuestionValue.trim();
+      improvedQuestion = normalizeQuery(rawImprovedQuestion);
+      if (!improvedQuestion || improvedQuestion.length > MAX_QUERY_LENGTH) {
+        return fallback(request, model.modelName, 'query_improver_invalid_output');
+      }
     }
 
     const improved = request.task === 'trake'
@@ -142,7 +340,11 @@ export class QueryImproverService {
     return {
       original_query: request.query,
       improved_query: improved,
-      changed: improved !== request.query,
+      ...(request.question === undefined || improvedQuestion === undefined ? {} : {
+        original_question: request.question,
+        improved_question: improvedQuestion,
+      }),
+      changed: improved !== request.query || (request.question !== undefined && improvedQuestion !== request.question),
       producer: 'query-improver-openai-compatible',
       model_version: model.modelName,
       warning: null,

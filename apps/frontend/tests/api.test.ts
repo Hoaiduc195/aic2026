@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createSubmissionPreview,
+  getVideoFrame,
   getVideoFrames,
   getVideoPlayback,
   getVideoStudio,
   improveQuery,
+  parseQueryImprovementResponse,
   parseSearchResponse,
   parseVideoStudioResponse,
   saveSelection,
@@ -61,6 +63,23 @@ describe('search API boundary', () => {
     expect(fetch).toHaveBeenCalledWith('/api/v1/query/improve', expect.objectContaining({ method: 'POST' }));
   });
 
+  it('parses separate ordered TRAKE improvement fields', () => {
+    expect(parseQueryImprovementResponse({
+      original_query: 'Một người đi qua cửa hàng',
+      improved_query: 'A person crosses a shop',
+      original_events: ['Người bước vào'],
+      improved_events: ['The person enters'],
+      changed: true,
+      producer: 'query-improver-openai-compatible',
+      model_version: 'model-a',
+      warning: null,
+    })).toMatchObject({
+      improved_query: 'A person crosses a shop',
+      original_events: ['Người bước vào'],
+      improved_events: ['The person enters'],
+    });
+  });
+
   it('accepts signed R2 preview URLs with query parameters', () => {
     const parsed = parseSearchResponse({
       ...validResponse,
@@ -73,6 +92,14 @@ describe('search API boundary', () => {
     });
 
     expect(parsed.results[0].preview_uri).toContain('?X-Amz-Algorithm=');
+  });
+
+  it('parses the frame-image query mode returned by the backend', () => {
+    expect(parseSearchResponse({ ...validResponse, query: '', query_mode: 'frame_image' })).toMatchObject({
+      query: '',
+      query_mode: 'frame_image',
+    });
+    expect(() => parseSearchResponse({ ...validResponse, query_mode: 'unknown' })).toThrow('query_mode');
   });
 
   it('normalizes legacy timestamp aliases and validates response versions', () => {
@@ -301,7 +328,7 @@ describe('search API boundary', () => {
         task: 'textual_kis',
         answer_count: 1,
         answers: [{ video_id: 'video_01', frame_id: 385 }],
-        csv: 'video_id,frame_id\r\nvideo_01,385\r\n',
+        csv: 'video_01,385\r\n',
         submittable: false,
         warnings: ['preview_only'],
       }), { status: 200 }),
@@ -406,6 +433,47 @@ describe('search API boundary', () => {
       frames: [{ ...studio.frames[0], objects: [{ ...studio.frames[0].objects[0], normalized_bbox: [0, 0, 2, 1] }] }],
       asr_spans: studio.asr_spans,
     })).toThrow('normalized_bbox');
+  });
+
+  it('loads and validates an exact canonical frame contract', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      video_id: 'video_01',
+      keyframe_no: null,
+      original_frame_id: 386,
+      timestamp_ms: 12_867,
+      thumbnail_uri: '/api/v1/media/videos/video_01/frames/386/thumbnail',
+      is_exact_frame: true,
+      annotation_source_frame_id: 385,
+      captions: [],
+      objects: [],
+    }), { status: 200 }));
+
+    await expect(getVideoFrame('video_01', 386)).resolves.toMatchObject({
+      original_frame_id: 386,
+      is_exact_frame: true,
+      annotation_source_frame_id: 385,
+    });
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/media/videos/video_01/frames/386', { signal: undefined });
+  });
+
+  it('falls back to the exact-frame thumbnail endpoint when an original frame is not a keyframe', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      video_id: 'video_01',
+      keyframe_no: null,
+      original_frame_id: 386,
+      timestamp_ms: 12_867,
+      thumbnail_uri: null,
+      is_exact_frame: true,
+      annotation_source_frame_id: 385,
+      captions: [],
+      objects: [],
+    }), { status: 200 }));
+
+    await expect(getVideoFrame('video_01', 386)).resolves.toMatchObject({
+      original_frame_id: 386,
+      thumbnail_uri: '/api/v1/media/videos/video_01/frames/386/thumbnail',
+      is_exact_frame: true,
+    });
   });
 
   it('rejects malformed playback and frame-context responses', async () => {

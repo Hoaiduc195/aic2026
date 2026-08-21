@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { LanguageModel } from '../src/compute/model-ports';
+import type { QueryImprovementRequest } from '../src/query-improver/query-improver.request';
 import { QueryImproverService } from '../src/query-improver/query-improver.service';
 
 function model(output: string): LanguageModel {
@@ -43,6 +44,136 @@ describe('QueryImproverService', () => {
 
     expect(result.improved_query).toBe('1. A person opens a door\n2. The person enters the room');
     expect(languageModel.complete).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves the TRAKE overview before the ordered event lines', async () => {
+    const languageModel = model(JSON.stringify({
+      improved_query: 'A person crosses a shop and then leaves\n1. The person enters the shop\n2. The person leaves the shop',
+    }));
+    const service = new QueryImproverService(languageModel);
+
+    const result = await service.improve({
+      query: 'Một người đi qua cửa hàng rồi rời đi\n1. Người bước vào cửa hàng\n2. Người rời khỏi cửa hàng',
+      task: 'trake',
+    });
+
+    expect(result.improved_query).toBe(
+      'A person crosses a shop and then leaves\n1. The person enters the shop\n2. The person leaves the shop',
+    );
+  });
+
+  it('improves a TRAKE overview and events sent as separate fields', async () => {
+    const languageModel = model(JSON.stringify({
+      improved_query: 'A person crosses a shop and then leaves',
+      improved_events: ['The person enters the shop', 'The person leaves the shop'],
+    }));
+    const service = new QueryImproverService(languageModel);
+    const request = {
+      query: 'Một người đi qua cửa hàng rồi rời đi',
+      events: ['Người bước vào cửa hàng', 'Người rời khỏi cửa hàng'],
+      task: 'trake',
+    } as QueryImprovementRequest;
+
+    const result = await service.improve(request);
+
+    expect(result).toMatchObject({
+      original_query: 'Một người đi qua cửa hàng rồi rời đi',
+      improved_query: 'A person crosses a shop and then leaves',
+      original_events: ['Người bước vào cửa hàng', 'Người rời khỏi cửa hàng'],
+      improved_events: ['The person enters the shop', 'The person leaves the shop'],
+      changed: true,
+      warning: null,
+    });
+    expect(languageModel.complete).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining('Original Vietnamese events'),
+    }));
+  });
+
+  it('accepts a plain structured TRAKE response when JSON mode is ignored', async () => {
+    const languageModel = model(
+      'A person crosses a shop and then leaves\n1. The person enters the shop\n2. The person leaves the shop',
+    );
+    const service = new QueryImproverService(languageModel);
+
+    const result = await service.improve({
+      query: 'Một người đi qua cửa hàng rồi rời đi\n1. Người bước vào cửa hàng\n2. Người rời khỏi cửa hàng',
+      task: 'trake',
+    });
+
+    expect(result).toMatchObject({
+      improved_query: 'A person crosses a shop and then leaves\n1. The person enters the shop\n2. The person leaves the shop',
+      changed: true,
+      warning: null,
+    });
+  });
+
+  it('improves the event query and question separately for VQA', async () => {
+    const languageModel = model(JSON.stringify({
+      improved_query: 'A shop on a street.',
+      improved_question: 'What is the woman holding?',
+    }));
+    const service = new QueryImproverService(languageModel);
+
+    const result = await service.improve({
+      query: 'Một cửa hàng trên phố',
+      question: 'Người phụ nữ đang cầm gì?',
+      task: 'vqa',
+    });
+
+    expect(result).toMatchObject({
+      improved_query: 'A shop on a street.',
+      improved_question: 'What is the woman holding?',
+      original_question: 'Người phụ nữ đang cầm gì?',
+      changed: true,
+    });
+    expect(languageModel.complete).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining('Original Vietnamese question'),
+    }));
+  });
+
+  it('accepts a labeled VQA response when the provider ignores JSON mode', async () => {
+    const languageModel = model([
+      'Improved query: A shop on a street.',
+      'Improved question: What is the woman holding?',
+    ].join('\n'));
+    const service = new QueryImproverService(languageModel);
+
+    const result = await service.improve({
+      query: 'Một cửa hàng trên phố',
+      question: 'Người phụ nữ đang cầm gì?',
+      task: 'vqa',
+    });
+
+    expect(result).toMatchObject({
+      improved_query: 'A shop on a street.',
+      improved_question: 'What is the woman holding?',
+      changed: true,
+      warning: null,
+    });
+    expect(languageModel.complete).toHaveBeenCalledWith(expect.objectContaining({
+      system: expect.stringContaining('Improved question:'),
+    }));
+  });
+
+  it('accepts common query and question JSON aliases for VQA', async () => {
+    const languageModel = model(JSON.stringify({
+      query: 'A shop on a street.',
+      question: 'What is the woman holding?',
+    }));
+    const service = new QueryImproverService(languageModel);
+
+    const result = await service.improve({
+      query: 'Một cửa hàng trên phố',
+      question: 'Người phụ nữ đang cầm gì?',
+      task: 'vqa',
+    });
+
+    expect(result).toMatchObject({
+      improved_query: 'A shop on a street.',
+      improved_question: 'What is the woman holding?',
+      changed: true,
+      warning: null,
+    });
   });
 
   it('falls back to the original query when the model is unavailable', async () => {
