@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "aic-evidence": {
+      "command": "node",
+      "args": ["D:/workspace/aic/src/mcp_server/dist/main.js"],
+      "env": {
+        "AIC_BACKEND_URL": "http://localhost:4000",
+        "MCP_EMBEDDING_SERVICE_URL": "http://127.0.0.1:8001/embed",
+        "MCP_EMBEDDING_SERVICE_TOKEN": "",
+        "MCP_EMBEDDING_TIMEOUT_MS": "5000",
+        "MCP_MAX_LOOP_ITERATIONS": "5",
+        "MCP_MAX_LOOP_TOOL_CALLS": "30",
+        "MCP_LOOP_TIME_BUDGET_MS": "60000"
+      }
+    }
+  }
+}

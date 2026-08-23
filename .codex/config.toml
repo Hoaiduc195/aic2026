@@ -1,0 +1,48 @@
+[mcp_servers.aic_evidence]
+command = "node"
+args = ["D:/workspace/aic/src/mcp_server/dist/main.js"]
+startup_timeout_sec = 20
+tool_timeout_sec = 150
+
+env = {
+    AIC_BACKEND_URL = "http://localhost:4000",
+    MCP_REQUEST_TIMEOUT_MS = "15000",
+    MCP_MAX_RESULTS = "20",
+    MCP_MAX_NEARBY_FRAMES = "25",
+    MCP_MAX_LOOP_ITERATIONS = "5",
+    MCP_MAX_LOOP_TOOL_CALLS = "30",
+    MCP_LOOP_TIME_BUDGET_MS = "60000",
+    MCP_EMBEDDING_SERVICE_URL = "http://127.0.0.1:8001/embed",
+    MCP_EMBEDDING_SERVICE_TOKEN = "",
+    MCP_EMBEDDING_TIMEOUT_MS = "5000"
+}
+
+[mcp_servers.aic_evidence.tools.search_loop]
+approval_mode = "approve"
+
+[mcp_servers.aic_evidence.tools.trace_answer]
+approval_mode = "approve"
+
+[mcp_servers.aic_evidence.tools.get_frame_context_batch]
+approval_mode = "approve"
+
+[mcp_servers.aic_evidence.tools.rank_frames]
+approval_mode = "approve"
+
+[mcp_servers.aic_evidence.tools.get_frame_evidence]
+approval_mode = "approve"
+
+[mcp_servers.aic_evidence.tools.get_backend_health]
+approval_mode = "approve"
+
+[mcp_servers.aic_evidence.tools.improve_query]
+approval_mode = "approve"
+
+[mcp_servers.aic_evidence.tools.check_trake_sequence]
+approval_mode = "approve"
+
+[mcp_servers.aic_evidence.tools.suggest_vqa_answer]
+approval_mode = "approve"
+
+[mcp_servers.aic_evidence.tools.plan_search]
+approval_mode = "approve"
