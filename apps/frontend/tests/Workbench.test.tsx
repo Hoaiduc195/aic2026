@@ -1,11 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ComponentProps } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { Workbench } from '@/components/Workbench';
 import type {
   CanonicalFrameResponse,
+  ExactFrameSearchRequest,
   FrameCandidate,
   QueryImprovementResponse,
   SearchResponse,
@@ -134,11 +136,8 @@ const trakeStudio: VideoStudioResponse = {
   ],
 };
 
-function renderWorkbench({
-  searchResponse = response,
-  search = vi.fn(async () => searchResponse),
-  loadStudio = vi.fn(async () => studio),
-  loadFrame = vi.fn(async (_videoId: string, frameId: number): Promise<CanonicalFrameResponse> => ({
+function createInspectorFrameLoader() {
+  return vi.fn(async (_videoId: string, frameId: number): Promise<CanonicalFrameResponse> => ({
     video_id: 'video_01',
     keyframe_no: null,
     original_frame_id: frameId,
@@ -153,6 +152,31 @@ function renderWorkbench({
     thumbnail_uri: `/api/v1/media/videos/video_01/frames/${frameId}/thumbnail`,
     is_exact_frame: true,
     annotation_source_frame_id: 385,
+  }));
+}
+
+type RenderWorkbenchOptions = Partial<ComponentProps<typeof Workbench>> & {
+  readonly searchResponse?: SearchResponse;
+};
+
+function renderWorkbench({
+  searchResponse = response,
+  search = vi.fn(async () => searchResponse),
+  exactFrameSearch = vi.fn(async () => searchResponse),
+  loadStudio = vi.fn(async () => studio),
+  loadFrame,
+  loadKeyframe = vi.fn(async (_videoId: string, keyframeNo: number): Promise<CanonicalFrameResponse> => ({
+    video_id: 'video_01',
+    keyframe_no: keyframeNo,
+    original_frame_id: 385,
+    timestamp_ms: 12_833,
+    captions: [],
+    ocr: [],
+    objects: [],
+    asr_spans: [],
+    thumbnail_uri: '/api/v1/media/videos/video_01/frames/385/thumbnail',
+    is_exact_frame: true,
+    annotation_source_frame_id: null,
   })),
   saveSelection = vi.fn(async (): Promise<SelectionRevision> => ({
     selection_id: 'selection_01', query_id: 'query_0001', revision: 1, task: 'textual_kis',
@@ -170,13 +194,15 @@ function renderWorkbench({
     model_version: 'test-model',
     warning: null,
   })),
-} = {}) {
+}: RenderWorkbenchOptions = {}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = render(
     <QueryClientProvider client={queryClient}>
       <Workbench
         search={search}
+        exactFrameSearch={exactFrameSearch}
         loadFrame={loadFrame}
+        loadKeyframe={loadKeyframe}
         loadStudio={loadStudio}
         saveSelection={saveSelection}
         createPreview={createPreview}
@@ -185,10 +211,243 @@ function renderWorkbench({
       />
     </QueryClientProvider>,
   );
-  return { ...view, search, loadFrame, loadStudio, saveSelection, createPreview };
+  return { ...view, search, exactFrameSearch, loadFrame, loadKeyframe, loadStudio, saveSelection, createPreview };
 }
 
 describe('qualification frame-first workbench', () => {
+  it('looks up an exact source frame by video ID and frame ID', async () => {
+    const user = userEvent.setup();
+    const exactFrameSearch = vi.fn(async (_request: ExactFrameSearchRequest) => ({
+      ...response,
+      query: 'Exact frame lookup',
+      query_mode: 'exact_frames' as const,
+    }));
+    renderWorkbench({ exactFrameSearch });
+
+    await user.type(screen.getByLabelText('Video ID'), 'video_01');
+    await user.selectOptions(screen.getByLabelText('Loại ID frame'), 'original_frame_id');
+    await user.type(screen.getByLabelText('ID frame'), '385');
+    await user.click(screen.getByRole('button', { name: 'Tra cứu frame' }));
+
+    await waitFor(() => expect(exactFrameSearch).toHaveBeenCalledWith({
+      task: 'textual_kis',
+      frames: [{ video_id: 'video_01', original_frame_id: 385 }],
+      session_id: expect.any(String),
+    }));
+  });
+
+  it('resolves a keyframe ordinal before running exact frame lookup', async () => {
+    const user = userEvent.setup();
+    const exactFrameSearch = vi.fn(async () => ({
+      ...response,
+      query: 'Exact frame lookup',
+      query_mode: 'exact_frames' as const,
+    }));
+    const { loadKeyframe } = renderWorkbench({ exactFrameSearch });
+
+    await user.type(screen.getByLabelText('Video ID'), 'video_01');
+    await user.selectOptions(screen.getByLabelText('Loại ID frame'), 'keyframe_no');
+    await user.type(screen.getByLabelText('ID frame'), '7');
+    await user.click(screen.getByRole('button', { name: 'Tra cứu frame' }));
+
+    await waitFor(() => expect(loadKeyframe).toHaveBeenCalledWith('video_01', 7));
+    expect(exactFrameSearch).toHaveBeenLastCalledWith(expect.objectContaining({
+      frames: [{ video_id: 'video_01', original_frame_id: 385 }],
+    }));
+  });
+
+  it('imports answer CSV, reloads its exact frames, and restores the answer queue', async () => {
+    const user = userEvent.setup();
+    const exactFrameSearch = vi.fn(async () => ({
+      ...response,
+      query: 'Exact frame lookup',
+      query_mode: 'exact_frames' as const,
+    }));
+    renderWorkbench({ exactFrameSearch });
+
+    const file = new File(['video_01,385\r\n'], 'answers.csv', { type: 'text/csv' });
+    await user.upload(screen.getByLabelText('Import CSV đáp án'), file);
+
+    await waitFor(() => expect(exactFrameSearch).toHaveBeenCalledWith(expect.objectContaining({
+      task: 'textual_kis',
+      frames: [{ video_id: 'video_01', original_frame_id: 385 }],
+    })));
+    expect(await screen.findByRole('button', { name: 'Đáp án (1)' })).toBeInTheDocument();
+  });
+
+  it('restores imported VQA answers in CSV order and shows each answer', async () => {
+    const user = userEvent.setup();
+    const secondResult = {
+      ...vqaResponse.results[0],
+      video_id: 'video_02',
+      original_frame_id: 420,
+      representative_frame: {
+        ...vqaResponse.results[0].representative_frame!,
+        original_frame_id: 420,
+        timestamp_ms: 14_000,
+      },
+    };
+    const exactFrameSearch = vi.fn(async () => ({
+      ...vqaResponse,
+      query_id: 'query-vqa-import',
+      query_mode: 'exact_frames' as const,
+      results: [secondResult, vqaResponse.results[0]],
+    }));
+    renderWorkbench({ exactFrameSearch });
+
+    await user.click(screen.getByRole('tab', { name: 'Hỏi & Đáp' }));
+    await user.upload(
+      screen.getByLabelText('Import CSV đáp án'),
+      new File([
+        'video_01,385,"Câu trả lời thứ nhất"\r\nvideo_02,420,"Câu trả lời thứ hai"\r\n',
+      ], 'vqa-answers.csv', { type: 'text/csv' }),
+    );
+
+    await waitFor(() => expect(exactFrameSearch).toHaveBeenCalledWith(expect.objectContaining({
+      task: 'vqa',
+      frames: [
+        { video_id: 'video_01', original_frame_id: 385 },
+        { video_id: 'video_02', original_frame_id: 420 },
+      ],
+    })));
+    const frameButtons = await screen.findAllByRole('button', { name: /Chọn frame/ });
+    expect(frameButtons.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Chọn frame video_01 · 385',
+      'Chọn frame video_02 · 420',
+    ]);
+    await user.click(screen.getByRole('button', { name: 'Đáp án (2)' }));
+
+    const drawer = screen.getByRole('dialog', { name: 'Hàng đợi đáp án' });
+    const rows = within(drawer).getAllByRole('article');
+    expect(rows[0]).toHaveTextContent('video_01 · frame 385');
+    expect(rows[0]).toHaveTextContent('Câu trả lời thứ nhất');
+    expect(rows[1]).toHaveTextContent('video_02 · frame 420');
+    expect(rows[1]).toHaveTextContent('Câu trả lời thứ hai');
+  });
+
+  it('shows only the first frame of each imported TRAKE answer in the result object list', async () => {
+    const user = userEvent.setup();
+    const importedFrameIds = [385, 386, 450, 500];
+    const trakeResponse: SearchResponse = {
+      ...response,
+      task: 'trake',
+      query: 'TRAKE exact frame lookup',
+      query_mode: 'exact_frames',
+      results: importedFrameIds.map((frameId, index) => ({
+        ...response.results[0],
+        original_frame_id: frameId,
+        start_ms: 10_000 + index * 1_000,
+        end_ms: 16_000 + index * 1_000,
+        representative_frame: {
+          ...response.results[0].representative_frame,
+          original_frame_id: frameId,
+          timestamp_ms: 12_800 + index * 1_000,
+        },
+        evidence_ids: [`object-${frameId}`],
+        evidence: [{
+          evidence_id: `object-${frameId}`,
+          type: 'object',
+          snippet: `object-${frameId}`,
+          producer: 'object:test',
+        }],
+      })),
+    };
+    const exactFrameSearch = vi.fn(async () => trakeResponse);
+    renderWorkbench({ exactFrameSearch });
+
+    await user.click(screen.getByRole('tab', { name: 'TRAKE' }));
+    const file = new File(['video_01,385,386,450,500\r\n'], 'trake-answers.csv', { type: 'text/csv' });
+    await user.upload(screen.getByLabelText('Import CSV đáp án'), file);
+
+    await waitFor(() => expect(exactFrameSearch).toHaveBeenCalledWith(expect.objectContaining({
+      task: 'trake',
+      frames: importedFrameIds.map((original_frame_id) => ({ video_id: 'video_01', original_frame_id })),
+    })));
+    expect(await screen.findByRole('button', { name: 'Chọn frame video_01 · 385' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Chọn frame video_01 · 386' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Chọn frame video_01 · 450' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Chọn frame video_01 · 500' })).not.toBeInTheDocument();
+    expect(screen.getByText('Đang chọn: 385 → 386 → 450 → 500')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Chọn frame video_01 · 385' }));
+    expect(screen.getByText('4/4 frame đã chọn')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Xem frame TRAKE 1, frame 385' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Xem frame TRAKE 4, frame 500' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Đáp án (1)' }));
+    expect(screen.getByText('Frame 385 → 386 → 450 → 500')).toBeInTheDocument();
+  });
+
+  it('batches oversized TRAKE CSV imports into exact-frame requests of at most 100 frames', async () => {
+    const user = userEvent.setup();
+    const csv = Array.from({ length: 26 }, (_, rowIndex) => {
+      const firstFrameId = rowIndex * 4 + 1;
+      return ['video_01', firstFrameId, firstFrameId + 1, firstFrameId + 2, firstFrameId + 3].join(',');
+    }).join('\r\n');
+    const exactFrameSearch = vi.fn(async (request: ExactFrameSearchRequest): Promise<SearchResponse> => {
+      if (request.frames.length > 100) {
+        throw new Error('Yêu cầu exact-frame không hợp lệ.');
+      }
+
+      return {
+        ...response,
+        task: 'trake',
+        query: 'TRAKE exact frame lookup',
+        query_id: `query-batch-${request.frames[0]?.original_frame_id ?? 'empty'}`,
+        query_mode: 'exact_frames',
+        results: request.frames.map(({ video_id, original_frame_id }) => {
+          const timestampMs = original_frame_id * 1_000;
+          return {
+            ...response.results[0],
+            video_id,
+            original_frame_id,
+            start_ms: timestampMs,
+            end_ms: timestampMs + 500,
+            representative_frame: {
+              ...response.results[0].representative_frame,
+              original_frame_id,
+              timestamp_ms: timestampMs + 250,
+            },
+          };
+        }),
+      };
+    });
+    renderWorkbench({ exactFrameSearch });
+
+    await user.click(screen.getByRole('tab', { name: 'TRAKE' }));
+    await user.upload(
+      screen.getByLabelText('Import CSV đáp án'),
+      new File([`${csv}\r\n`], 'trake-many-rows.csv', { type: 'text/csv' }),
+    );
+
+    await waitFor(() => expect(exactFrameSearch).toHaveBeenCalledTimes(2));
+    expect(exactFrameSearch.mock.calls.map(([request]) => request.frames.length)).toEqual([100, 4]);
+    expect(await screen.findByRole('button', { name: 'Đáp án (26)' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('automatically hides successful notices after a few seconds', () => {
+    vi.useFakeTimers();
+    try {
+      renderWorkbench();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Lưu cấu hình RRF' }));
+      expect(screen.getByRole('status')).toHaveTextContent('Đã lưu cấu hình RRF cho frontend.');
+
+      act(() => {
+        vi.advanceTimersByTime(3_999);
+      });
+      expect(screen.getByRole('status')).toBeInTheDocument();
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps a separate workspace when switching between tasks', async () => {
     const user = userEvent.setup();
     renderWorkbench();
@@ -378,8 +637,8 @@ describe('qualification frame-first workbench', () => {
     const improveQuery = vi.fn(async (): Promise<QueryImprovementResponse> => ({
       original_query: 'Một người đi qua cửa hàng rồi rời đi',
       improved_query: 'A person crosses a shop and then leaves',
-      original_events: ['Người bước vào cửa hàng', 'Người rời khỏi cửa hàng'],
-      improved_events: ['The person enters the shop', 'The person leaves the shop'],
+      original_events: ['Người bước vào cửa hàng', 'Người rời khỏi cửa hàng', 'Người cầm túi', 'Người đi ra đường'],
+      improved_events: ['The person enters the shop', 'The person leaves the shop', 'The person carries a bag', 'The person walks outside'],
       changed: true,
       producer: 'test-query-improver',
       model_version: 'test-model',
@@ -390,19 +649,22 @@ describe('qualification frame-first workbench', () => {
     await user.click(screen.getByRole('tab', { name: 'TRAKE' }));
     await user.type(screen.getByLabelText('Truy vấn chính'), 'Một người đi qua cửa hàng rồi rời đi');
     await user.type(screen.getByLabelText('Mô tả sự kiện 1'), 'Người bước vào cửa hàng');
-    await user.click(screen.getByRole('button', { name: 'Thêm sự kiện' }));
     await user.type(screen.getByLabelText('Mô tả sự kiện 2'), 'Người rời khỏi cửa hàng');
+    await user.type(screen.getByLabelText('Mô tả sự kiện 3'), 'Người cầm túi');
+    await user.type(screen.getByLabelText('Mô tả sự kiện 4'), 'Người đi ra đường');
     await user.click(screen.getByLabelText('Bật Query Improver'));
     await user.click(screen.getByRole('button', { name: 'Cải thiện query & các event' }));
 
     expect(improveQuery).toHaveBeenCalledWith(expect.objectContaining({
       task: 'trake',
       query: 'Một người đi qua cửa hàng rồi rời đi',
-      events: ['Người bước vào cửa hàng', 'Người rời khỏi cửa hàng'],
+      events: ['Người bước vào cửa hàng', 'Người rời khỏi cửa hàng', 'Người cầm túi', 'Người đi ra đường'],
     }));
     expect(screen.getByLabelText('Truy vấn chính')).toHaveValue('A person crosses a shop and then leaves');
     expect(screen.getByLabelText('Mô tả sự kiện 1')).toHaveValue('The person enters the shop');
     expect(screen.getByLabelText('Mô tả sự kiện 2')).toHaveValue('The person leaves the shop');
+    expect(screen.getByLabelText('Mô tả sự kiện 3')).toHaveValue('The person carries a bag');
+    expect(screen.getByLabelText('Mô tả sự kiện 4')).toHaveValue('The person walks outside');
   });
 
   it('sends the TRAKE overview and ordered events separately to Query Improver', async () => {
@@ -410,8 +672,8 @@ describe('qualification frame-first workbench', () => {
     const improveQuery = vi.fn(async () => ({
       original_query: 'Một người đi qua cửa hàng rồi rời đi',
       improved_query: 'A person crosses a shop and then leaves',
-      original_events: ['Người bước vào cửa hàng', 'Người rời khỏi cửa hàng'],
-      improved_events: ['The person enters the shop', 'The person leaves the shop'],
+      original_events: ['Người bước vào cửa hàng', 'Người rời khỏi cửa hàng', 'Người cầm túi', 'Người đi ra đường'],
+      improved_events: ['The person enters the shop', 'The person leaves the shop', 'The person carries a bag', 'The person walks outside'],
       changed: true,
       producer: 'test-query-improver',
       model_version: 'test-model',
@@ -422,19 +684,22 @@ describe('qualification frame-first workbench', () => {
     await user.click(screen.getByRole('tab', { name: 'TRAKE' }));
     await user.type(screen.getByLabelText('Truy vấn chính'), 'Một người đi qua cửa hàng rồi rời đi');
     await user.type(screen.getByLabelText('Mô tả sự kiện 1'), 'Người bước vào cửa hàng');
-    await user.click(screen.getByRole('button', { name: 'Thêm sự kiện' }));
     await user.type(screen.getByLabelText('Mô tả sự kiện 2'), 'Người rời khỏi cửa hàng');
+    await user.type(screen.getByLabelText('Mô tả sự kiện 3'), 'Người cầm túi');
+    await user.type(screen.getByLabelText('Mô tả sự kiện 4'), 'Người đi ra đường');
     await user.click(screen.getByLabelText('Bật Query Improver'));
     await user.click(screen.getByRole('button', { name: 'Cải thiện query & các event' }));
 
     expect(improveQuery).toHaveBeenCalledWith(expect.objectContaining({
       task: 'trake',
       query: 'Một người đi qua cửa hàng rồi rời đi',
-      events: ['Người bước vào cửa hàng', 'Người rời khỏi cửa hàng'],
+      events: ['Người bước vào cửa hàng', 'Người rời khỏi cửa hàng', 'Người cầm túi', 'Người đi ra đường'],
     }));
     expect(screen.getByLabelText('Truy vấn chính')).toHaveValue('A person crosses a shop and then leaves');
     expect(screen.getByLabelText('Mô tả sự kiện 1')).toHaveValue('The person enters the shop');
     expect(screen.getByLabelText('Mô tả sự kiện 2')).toHaveValue('The person leaves the shop');
+    expect(screen.getByLabelText('Mô tả sự kiện 3')).toHaveValue('The person carries a bag');
+    expect(screen.getByLabelText('Mô tả sự kiện 4')).toHaveValue('The person walks outside');
   });
 
   it('keeps task input in the left sidebar and exposes task-specific fields', async () => {
@@ -450,9 +715,8 @@ describe('qualification frame-first workbench', () => {
 
     await user.click(screen.getByRole('tab', { name: 'TRAKE' }));
     expect(screen.getByLabelText('Truy vấn chính')).toBeInTheDocument();
-    expect(screen.getByLabelText('Mô tả sự kiện 1')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Thêm sự kiện' }));
-    expect(screen.getByLabelText('Mô tả sự kiện 2')).toBeInTheDocument();
+    expect(screen.getAllByRole('textbox', { name: /Mô tả sự kiện [1-4]/ })).toHaveLength(4);
+    expect(screen.queryByRole('button', { name: 'Thêm sự kiện' })).not.toBeInTheDocument();
   });
 
   it('submits only the TRAKE overview query for retrieval', async () => {
@@ -462,29 +726,31 @@ describe('qualification frame-first workbench', () => {
     await user.click(screen.getByRole('tab', { name: 'TRAKE' }));
     await user.type(screen.getByLabelText('Truy vấn chính'), 'Một người đi qua cửa hàng rồi rời đi');
     await user.type(screen.getByLabelText('Mô tả sự kiện 1'), 'Người bước vào cửa hàng');
-    await user.click(screen.getByRole('button', { name: 'Thêm sự kiện' }));
     await user.type(screen.getByLabelText('Mô tả sự kiện 2'), 'Người rời khỏi cửa hàng');
+    await user.type(screen.getByLabelText('Mô tả sự kiện 3'), 'Người cầm túi');
+    await user.type(screen.getByLabelText('Mô tả sự kiện 4'), 'Người đi ra đường');
     await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
 
     await waitFor(() => expect(search).toHaveBeenCalledWith(expect.objectContaining({
       task: 'trake',
       query: 'Một người đi qua cửa hàng rồi rời đi',
     })));
+    const request = (vi.mocked(search).mock.calls[0] as unknown[] | undefined)?.[0];
+    expect(request).not.toHaveProperty('events');
   });
 
   it('opens frame evidence and lazily loads only the video studio', async () => {
     const user = userEvent.setup();
-    const { loadStudio } = renderWorkbench({
-      loadFrame: vi.fn().mockRejectedValue(new Error('no frame')),
-    });
+    const loadFrame = createInspectorFrameLoader();
+    const { loadStudio } = renderWorkbench({ loadFrame });
 
     await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
     await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
     await user.click(await screen.findByRole('button', { name: 'Chọn frame video_01 · 385' }));
 
     expect(screen.queryByText(/embedding/)).not.toBeInTheDocument();
-    expect(screen.getByText('Cửa hàng tạp hóa')).toBeInTheDocument();
-    expect(screen.getByText('rẽ phải rồi đi thẳng')).toBeInTheDocument();
+    expect(await screen.findByText('MỞ CỬA')).toBeInTheDocument();
+    expect(await screen.findByText('rẽ phải rồi đi thẳng')).toBeInTheDocument();
     expect(loadStudio).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Xem các frame cùng video' })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Các frame cùng video' })).not.toBeInTheDocument();
@@ -496,7 +762,8 @@ describe('qualification frame-first workbench', () => {
 
   it('hydrates Inspector with OCR and ASR context for a selected search frame', async () => {
     const user = userEvent.setup();
-    const { loadFrame } = renderWorkbench();
+    const loadFrame = createInspectorFrameLoader();
+    renderWorkbench({ loadFrame });
 
     await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
     await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
@@ -575,6 +842,7 @@ describe('qualification frame-first workbench', () => {
 
   it('renders object evidence and only ASR overlapping the active frame', async () => {
     const user = userEvent.setup();
+    const loadFrame = createInspectorFrameLoader();
     const evidenceResponse: SearchResponse = {
       ...response,
       results: [{
@@ -587,18 +855,15 @@ describe('qualification frame-first workbench', () => {
         matched_modalities: ['object', 'asr'],
       }],
     };
-    renderWorkbench({
-      searchResponse: evidenceResponse,
-      loadFrame: vi.fn().mockRejectedValue(new Error('no frame')),
-    });
+    renderWorkbench({ searchResponse: evidenceResponse, loadFrame });
 
     await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
     await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
     await user.click(await screen.findByRole('button', { name: 'Chọn frame video_01 · 385' }));
 
-    expect(screen.getByText('Object detection')).toBeInTheDocument();
-    expect(screen.getByText('person')).toBeInTheDocument();
-    expect(screen.getByText('đang đi')).toBeInTheDocument();
+    expect(await screen.findByText('Object detection')).toBeInTheDocument();
+    expect(await screen.findByText('person')).toBeInTheDocument();
+    expect(await screen.findByText('rẽ phải rồi đi thẳng')).toBeInTheDocument();
     expect(screen.queryByText('đã rẽ')).not.toBeInTheDocument();
   });
 
@@ -651,7 +916,7 @@ describe('qualification frame-first workbench', () => {
     expect(screen.queryByRole('dialog', { name: 'Hàng đợi đáp án' })).not.toBeInTheDocument();
   });
 
-  it('reorders result frames and exports the ranked textual top 100', async () => {
+  it('reorders result frames and fills the ranked textual queue', async () => {
     const user = userEvent.setup();
     const rankedResponse: SearchResponse = {
       ...response,
@@ -691,33 +956,32 @@ describe('qualification frame-first workbench', () => {
     ]);
     expect(document.activeElement).toHaveAttribute('aria-label', 'Chọn frame video_01 · 385');
 
-    const createObjectURL = vi.fn((_blob: Blob) => 'blob:ranked-json');
-    const revokeObjectURL = vi.fn();
-    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
-    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
-    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    expect(screen.queryByRole('button', { name: 'Xuất JSON top 100' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Lấy top 100 frame vào hàng đợi (0/100)' }));
+    await user.click(screen.getByRole('button', { name: 'Đáp án (3)' }));
 
-    await user.click(screen.getByRole('button', { name: 'Xuất JSON top 100' }));
+    expect(screen.getByText('video_02 · frame 410')).toBeInTheDocument();
+    expect(screen.getByText('video_01 · frame 385')).toBeInTheDocument();
+    expect(screen.getByText('video_03 · frame 530')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Export JSON' })).toBeInTheDocument();
+  });
 
-    const blob = createObjectURL.mock.calls[0][0] as Blob;
-    const blobText = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result));
-      reader.onerror = () => reject(reader.error);
-      reader.readAsText(blob);
-    });
-    expect(JSON.parse(blobText)).toEqual({
-      query_id: 'query_0001',
-      task: 'textual_kis',
-      answers: [
-        { video_id: 'video_02', frame_id: 410 },
-        { video_id: 'video_01', frame_id: 385 },
-        { video_id: 'video_03', frame_id: 530 },
-      ],
-    });
-    expect(click).toHaveBeenCalledOnce();
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:ranked-json');
-    click.mockRestore();
+  it('clears the answer queue before executing a new textual query', async () => {
+    const user = userEvent.setup();
+    const search = vi.fn(async () => response);
+    renderWorkbench({ search });
+
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Query đầu tiên');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+    await user.click(screen.getByRole('button', { name: 'Lấy top 100 frame vào hàng đợi (0/100)' }));
+    expect(screen.getByRole('button', { name: 'Đáp án (1)' })).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText('Mô tả sự kiện'));
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Query thứ hai');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('button', { name: 'Đáp án (0)' })).toBeInTheDocument();
   });
 
   it('moves a result frame directly to the top or bottom with boundary actions', async () => {
@@ -922,7 +1186,7 @@ describe('qualification frame-first workbench', () => {
     await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
     await user.type(screen.getByLabelText('Câu hỏi'), 'Người phụ nữ đang cầm gì?');
     await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
-    await user.click(screen.getByRole('button', { name: 'Fill hàng đợi (0/100)' }));
+    await user.click(screen.getByRole('button', { name: 'Lấy top 100 frame vào hàng đợi (0/100)' }));
 
     expect(screen.getByRole('button', { name: 'Đáp án (3)' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Đáp án (3)' }));
@@ -951,7 +1215,7 @@ describe('qualification frame-first workbench', () => {
       reader.readAsText(blob);
     });
     expect(blob.type).toBe('text/csv;charset=utf-8');
-    expect(blobText).toBe('video_01,385,một chiếc chai\r\nvideo_02,411,một chiếc chai\r\nvideo_03,530,một chiếc chai\r\n');
+    expect(blobText).toBe('video_01,385,"một chiếc chai"\r\nvideo_02,411,"một chiếc chai"\r\nvideo_03,530,"một chiếc chai"\r\n');
     expect(click).toHaveBeenCalledOnce();
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:vqa-csv');
     click.mockRestore();
@@ -1263,8 +1527,9 @@ describe('qualification frame-first workbench', () => {
     await user.click(screen.getByRole('tab', { name: 'TRAKE' }));
     await user.type(screen.getByLabelText('Truy vấn chính'), 'Một người đi qua cửa hàng rồi rời đi');
     await user.type(screen.getByLabelText('Mô tả sự kiện 1'), 'Người bước vào cửa hàng');
-    await user.click(screen.getByRole('button', { name: 'Thêm sự kiện' }));
     await user.type(screen.getByLabelText('Mô tả sự kiện 2'), 'Người rời khỏi quầy');
+    await user.type(screen.getByLabelText('Mô tả sự kiện 3'), 'Người cầm túi');
+    await user.type(screen.getByLabelText('Mô tả sự kiện 4'), 'Người đi ra đường');
     await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
     await user.click(await screen.findByRole('button', { name: 'Chọn frame video_01 · 385' }));
 
@@ -1284,7 +1549,7 @@ describe('qualification frame-first workbench', () => {
     await user.click(screen.getByRole('button', { name: 'Thêm chuỗi vào đáp án' }));
 
     await user.click(screen.getByRole('button', { name: 'Đáp án (1)' }));
-    expect(screen.getByText('video_01 · frame 385 → 411 → 450 → 500')).toBeInTheDocument();
+    expect(screen.getByText('Frame 385 → 411 → 450 → 500')).toBeInTheDocument();
   });
 
   it('keeps the TRAKE four-frame selection isolated per object result', async () => {
@@ -1310,6 +1575,9 @@ describe('qualification frame-first workbench', () => {
     await user.click(screen.getByRole('tab', { name: 'TRAKE' }));
     await user.type(screen.getByLabelText('Truy vấn chính'), 'Một người đi qua cửa hàng');
     await user.type(screen.getByLabelText('Mô tả sự kiện 1'), 'Người đi qua cửa hàng');
+    await user.type(screen.getByLabelText('Mô tả sự kiện 2'), 'Người dừng lại');
+    await user.type(screen.getByLabelText('Mô tả sự kiện 3'), 'Người nhìn vào quầy');
+    await user.type(screen.getByLabelText('Mô tả sự kiện 4'), 'Người rời khỏi cửa hàng');
     await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
     await user.click(await screen.findByRole('button', { name: 'Chọn frame video_01 · 385' }));
     await user.click(screen.getByRole('button', { name: 'Xem video studio' }));
@@ -1333,6 +1601,30 @@ describe('qualification frame-first workbench', () => {
     expect(screen.getByText('0/4 frame đã chọn')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Chọn (?:keyframe )?video_01/ }));
     expect(screen.getByText('4/4 frame đã chọn')).toBeInTheDocument();
+  });
+
+  it('queues TRAKE retrieval anchors before completing missing four-frame answers', async () => {
+    const user = userEvent.setup();
+    const loadStudio = vi.fn(async () => trakeStudio);
+    renderWorkbench({ loadStudio });
+
+    await user.click(screen.getByRole('tab', { name: 'TRAKE' }));
+    await user.type(screen.getByLabelText('Truy vấn chính'), 'Một người đi qua cửa hàng');
+    await user.type(screen.getByLabelText('Mô tả sự kiện 1'), 'Người bước vào cửa hàng');
+    await user.type(screen.getByLabelText('Mô tả sự kiện 2'), 'Người dừng lại');
+    await user.type(screen.getByLabelText('Mô tả sự kiện 3'), 'Người nhìn vào quầy');
+    await user.type(screen.getByLabelText('Mô tả sự kiện 4'), 'Người rời khỏi cửa hàng');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+
+    await user.click(screen.getByRole('button', { name: 'Lấy top 100 retrieval frame vào hàng đợi (0/100)' }));
+    await user.click(screen.getByRole('button', { name: 'Đáp án (1)' }));
+    expect(screen.getByText('video_01 · anchor frame 385')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Chọn 4 frame cho các câu trả lời đang thiếu' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Chọn 4 frame cho các câu trả lời đang thiếu' }));
+    await waitFor(() => expect(loadStudio).toHaveBeenCalledWith('video_01'));
+    expect(screen.queryByRole('button', { name: 'Chọn 4 frame cho các câu trả lời đang thiếu' })).not.toBeInTheDocument();
+    expect(screen.getByText('Frame 385 → 411 → 450 → 500')).toBeInTheDocument();
   });
 
   it('moves both selection and focus when navigating frame results with arrow keys', async () => {

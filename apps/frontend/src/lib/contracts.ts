@@ -10,6 +10,8 @@ export type SearchTask =
   | 'trake'
   | 'kisc';
 
+export type SearchQueryMode = 'text' | 'frame_image' | 'exact_frames';
+
 export type QueryImproverTask = 'textual_kis' | 'vqa' | 'trake';
 
 export const SEARCH_RRF_BRANCHES = [
@@ -48,6 +50,12 @@ export interface SearchRequest {
     video_id: string;
     original_frame_id: number;
   };
+}
+
+export interface ExactFrameSearchRequest {
+  task: SearchTask;
+  frames: Array<{ video_id: string; original_frame_id: number }>;
+  session_id?: string;
 }
 
 export interface QueryImprovementRequest {
@@ -153,7 +161,7 @@ export interface SearchResponse {
   request_id?: string;
   query_id: string;
   query?: string;
-  query_mode?: 'text' | 'frame_image';
+  query_mode?: SearchQueryMode;
   session_id?: string | null;
   task?: SearchTask;
   task_executor?: string;
@@ -227,6 +235,8 @@ export interface FrameCandidate {
   score: number;
   evidence: SearchEvidence[];
   matched_modalities: string[];
+  is_exact_frame?: boolean;
+  annotation_source_frame_id?: number | null;
 }
 
 export interface VideoFrame {

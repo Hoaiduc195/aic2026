@@ -579,7 +579,8 @@ textarea:focus-visible,
   font-weight: 700;
 }
 
-.sidebar-panel input {
+.sidebar-panel input,
+.sidebar-panel select {
   width: 100%;
   height: 36px;
   padding: 0 9px;
@@ -587,6 +588,17 @@ textarea:focus-visible,
   border-radius: 7px;
   background: #fff;
   font-size: 12px;
+}
+
+.exact-frame-form {
+  display: grid;
+  gap: 10px;
+}
+
+.sidebar-panel input[type="file"] {
+  height: auto;
+  padding: 7px;
+  font-size: 11px;
 }
 
 .rrf-weight-grid,
@@ -710,7 +722,8 @@ textarea:focus-visible,
   gap: 10px;
 }
 
-.vqa-result-toolbar {
+.vqa-result-toolbar,
+.result-queue-toolbar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -1003,6 +1016,11 @@ textarea:focus-visible,
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.frame-card-body .trake-selection-summary {
+  color: var(--accent);
+  font-weight: 750;
 }
 
 .frame-card-controls {

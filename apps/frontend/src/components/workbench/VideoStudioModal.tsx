@@ -25,6 +25,15 @@ interface Props {
   loadExactFrame?: (frameId: number, signal?: AbortSignal) => Promise<CanonicalFrameResponse>;
 }
 
+const FRAME_INDEX_EPSILON = 1e-6;
+
+function sourceFrameIdAtTime(timestampSeconds: number, fps: number, lastFrameId: number): number {
+  if (!Number.isFinite(timestampSeconds) || timestampSeconds <= 0 || !Number.isFinite(fps) || fps <= 0) {
+    return 0;
+  }
+  return Math.max(0, Math.min(lastFrameId, Math.floor((timestampSeconds * fps) + FRAME_INDEX_EPSILON)));
+}
+
 export function VideoStudioModal({
   studio,
   initialFrameId,
@@ -45,6 +54,7 @@ export function VideoStudioModal({
   const dialogRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const pendingExactFrameSeekRef = useRef<number | null>(null);
   const initialFrame = useMemo(
     () => studio.frames.find((frame) => frame.original_frame_id === initialFrameId)
       ?? nearestStudioFrame(studio.frames, initialTimestampMs),
@@ -85,10 +95,7 @@ export function VideoStudioModal({
     : Math.max(0, studio.video.frame_count - 1);
   const currentVideoFrameId = Math.max(
     0,
-    Math.min(
-      lastFrameId,
-      Math.round((currentTimeMs / 1000) * Math.max(0, studio.video.fps)),
-    ),
+    sourceFrameIdAtTime(currentTimeMs / 1000, studio.video.fps, lastFrameId),
   );
   const activeSpans = useMemo(
     () => activeAsrSpans(studio.asr_spans, currentTimeMs),
@@ -120,6 +127,7 @@ export function VideoStudioModal({
     setExactFrame(null);
     setSelectedFrameOverride(null);
     setExactFrameError(null);
+    pendingExactFrameSeekRef.current = null;
   }, [initialFrame?.original_frame_id, initialFrame?.timestamp_ms, initialFrameId]);
 
   useEffect(() => {
@@ -169,6 +177,7 @@ export function VideoStudioModal({
   function seek(timestampMs: number, clearExact = true) {
     const clamped = Math.max(0, Math.min(studio.video.duration_ms, timestampMs));
     if (clearExact) {
+      pendingExactFrameSeekRef.current = null;
       setExactFrame(null);
       setSelectedFrameOverride(null);
     }
@@ -190,7 +199,11 @@ export function VideoStudioModal({
   function handleTimeUpdate() {
     const timestampMs = Math.round((videoRef.current?.currentTime ?? 0) * 1000);
     setCurrentTimeMs(timestampMs);
-    if (!exactFrame || Math.abs(timestampMs - exactFrame.timestamp_ms) > 50) {
+    const isPendingExactFrameSeek = exactFrame !== null
+      && pendingExactFrameSeekRef.current === exactFrame.original_frame_id;
+    if (isPendingExactFrameSeek) {
+      pendingExactFrameSeekRef.current = null;
+    } else if (!exactFrame || Math.abs(timestampMs - exactFrame.timestamp_ms) > 50) {
       setExactFrame(null);
       setSelectedFrameOverride(null);
     }
@@ -204,6 +217,7 @@ export function VideoStudioModal({
     setExactFrameError(null);
     try {
       const frame = await loadExactFrame(frameId);
+      pendingExactFrameSeekRef.current = frame.original_frame_id;
       setExactFrame(frame);
       setSelectedFrameOverride(null);
       setSelectedFrameId(frame.original_frame_id);
@@ -220,7 +234,13 @@ export function VideoStudioModal({
 
   async function chooseCurrentVideoFrame() {
     if (!loadExactFrame) return;
-    const frame = await loadCurrentVideoFrame(currentVideoFrameId);
+    const video = videoRef.current;
+    let playheadTimeSeconds = currentTimeMs / 1000;
+    if (video && video.readyState >= 1 && Number.isFinite(video.currentTime)) {
+      playheadTimeSeconds = video.currentTime;
+    }
+    const frameId = sourceFrameIdAtTime(playheadTimeSeconds, studio.video.fps, lastFrameId);
+    const frame = await loadCurrentVideoFrame(frameId);
     if (!frame) return;
     if (!isMultiSelect) {
       onSelectFrame?.(frame);

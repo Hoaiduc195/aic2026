@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseSearchRequest } from '../src/common/request-validation';
+import { parseExactFrameSearchRequest, parseSearchRequest } from '../src/common/request-validation';
 
 describe('parseSearchRequest', () => {
   it('accepts the three preliminary-round tasks and retrieval overrides', () => {
@@ -106,5 +106,33 @@ describe('parseSearchRequest', () => {
       task: 'textual_kis',
       embedding: { base_url: 'http://embedding.local/embed', timeout_ms: 50 },
     })).toThrow('embedding.timeout_ms');
+  });
+});
+
+describe('parseExactFrameSearchRequest', () => {
+  it('accepts bounded exact frame references for batch lookup', () => {
+    expect(parseExactFrameSearchRequest({
+      task: 'textual_kis',
+      session_id: 'session-1',
+      frames: [
+        { video_id: 'video_01', original_frame_id: 385 },
+        { video_id: 'video_02', original_frame_id: 17 },
+      ],
+    })).toEqual({
+      task: 'textual_kis',
+      session_id: 'session-1',
+      frames: [
+        { video_id: 'video_01', original_frame_id: 385 },
+        { video_id: 'video_02', original_frame_id: 17 },
+      ],
+    });
+  });
+
+  it('rejects an empty or oversized exact frame batch', () => {
+    expect(() => parseExactFrameSearchRequest({ task: 'textual_kis', frames: [] })).toThrow('frames');
+    expect(() => parseExactFrameSearchRequest({
+      task: 'textual_kis',
+      frames: Array.from({ length: 101 }, (_, index) => ({ video_id: 'v', original_frame_id: index })),
+    })).toThrow('1-100 items');
   });
 });

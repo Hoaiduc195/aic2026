@@ -3,11 +3,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { GET as getCandidates } from '@/app/api/v1/queries/[queryId]/candidates/route';
 import { GET as getSelection, PUT as putSelection } from '@/app/api/v1/queries/[queryId]/selection/route';
+import { POST as searchExactFrames } from '@/app/api/v1/search/exact-frames/route';
 import { POST as createPreview } from '@/app/api/v1/submissions/preview/route';
+import { GET as getVideoKeyframe } from '@/app/api/v1/videos/[videoId]/keyframes/[keyframeNo]/route';
 
 afterEach(() => {
   delete process.env.BACKEND_API_URL;
   delete process.env.BACKEND_OPERATOR_TOKEN;
+  delete process.env.AIC_ALLOW_UNAUTHENTICATED_MEDIA;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -75,5 +78,55 @@ describe('manual BFF routes', () => {
 
     expect(response.status).toBe(400);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('validates and proxies an exact-frame batch request', async () => {
+    process.env.BACKEND_API_URL = 'http://backend.internal';
+    process.env.BACKEND_OPERATOR_TOKEN = 'server-only-secret';
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(new Headers(init?.headers).get('x-operator-token')).toBe('server-only-secret');
+      expect(JSON.parse(String(init?.body))).toEqual({
+        task: 'textual_kis',
+        frames: [{ video_id: 'video_01', original_frame_id: 385 }],
+        session_id: 'session_01',
+      });
+      return new Response(JSON.stringify({ query_id: 'query_01', results: [] }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await searchExactFrames(new NextRequest('http://localhost/api/v1/search/exact-frames', {
+      method: 'POST',
+      body: JSON.stringify({
+        task: 'textual_kis',
+        frames: [{ video_id: 'video_01', original_frame_id: 385 }],
+        session_id: 'session_01',
+      }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves a keyframe ordinal through the protected media BFF route', async () => {
+    process.env.BACKEND_API_URL = 'http://backend.internal';
+    process.env.AIC_ALLOW_UNAUTHENTICATED_MEDIA = 'true';
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      video_id: 'video_01',
+      keyframe_no: 7,
+      original_frame_id: 385,
+      timestamp_ms: 12_833,
+    }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await getVideoKeyframe(
+      new NextRequest('http://localhost/api/v1/videos/video_01/keyframes/7'),
+      { params: Promise.resolve({ videoId: 'video_01', keyframeNo: '7' }) },
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      original_frame_id: 385,
+      thumbnail_uri: '/api/v1/media/videos/video_01/frames/385/thumbnail',
+    });
   });
 });

@@ -20,11 +20,13 @@ describe('backend HTTP API', () => {
   let app: INestApplication;
   const retrieval = {
     search: vi.fn(async (input) => ({ query_id: 'q-1', query: input.query, results: [] })),
+    searchExactFrames: vi.fn(async (input) => ({ query_id: 'q-exact', query_mode: 'exact_frames', task: input.task, results: [] })),
     createPlan: vi.fn((input) => ({ query_id: 'q-plan', original_query: input.query })),
   };
   const media = {
     getPlayback: vi.fn(async (videoId) => ({ video_id: videoId, playback_uri: 'https://signed/video', duration_ms: 10, fps: 25, mime_type: 'video/mp4' })),
     getFrames: vi.fn(async (videoId, centerFrameId) => ({ video_id: videoId, center_frame_id: centerFrameId, frames: [] })),
+    getFrameByKeyframe: vi.fn(async (videoId, keyframeNo) => ({ video_id: videoId, keyframe_no: keyframeNo, original_frame_id: 385 })),
   };
   const store = {
     listCandidates: vi.fn(async (queryId, limit, offset) => ({ query_id: queryId, total: 0, limit, offset, candidates: [] })),
@@ -82,6 +84,23 @@ describe('backend HTTP API', () => {
       .expect(({ body }) => expect(body.query).toBe('bike'));
     await request(app.getHttpServer()).post('/v1/search').set('x-operator-token', 'operator-secret')
       .send({ query: '', task: 'textual_kis' }).expect(400);
+  });
+
+  it('supports authenticated exact-frame batch and keyframe lookup routes', async () => {
+    await request(app.getHttpServer()).post('/v1/search/exact-frames')
+      .set('x-operator-token', 'operator-secret')
+      .send({ task: 'textual_kis', frames: [{ video_id: 'video-1', original_frame_id: 385 }] })
+      .expect(201)
+      .expect(({ body }) => expect(body).toMatchObject({ query_id: 'q-exact', query_mode: 'exact_frames' }));
+    expect(retrieval.searchExactFrames).toHaveBeenCalledWith({
+      task: 'textual_kis',
+      frames: [{ video_id: 'video-1', original_frame_id: 385 }],
+      session_id: undefined,
+    });
+
+    await request(app.getHttpServer()).get('/v1/videos/video-1/keyframes/7')
+      .set('x-operator-token', 'operator-secret').expect(200)
+      .expect(({ body }) => expect(body).toMatchObject({ video_id: 'video-1', keyframe_no: 7 }));
   });
 
   it('serves playback/frame context and rejects unsafe identifiers', async () => {

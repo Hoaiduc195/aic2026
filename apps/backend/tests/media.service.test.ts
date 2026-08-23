@@ -16,6 +16,10 @@ const repository: MediaRepository = {
     timestamp_ms: 2000, thumbnail_object_key: 'keyframes/video-1/000050.jpg',
   }]),
   findFrame: vi.fn(async () => null),
+  findFrameByKeyframe: vi.fn(async () => ({
+    video_id: 'video-1', keyframe_no: 2, original_frame_id: 50,
+    timestamp_ms: 2000, thumbnail_object_key: 'keyframes/video-1/000050.jpg',
+  })),
   findNearestStudioFrame: vi.fn(async () => ({
     video_id: 'video-1', keyframe_no: 2, original_frame_id: 50, timestamp_ms: 2000,
     captions: [{ evidence_id: 'caption-1', text: 'a person', language: 'en', producer: 'caption:v1' }],
@@ -102,6 +106,16 @@ describe('MediaService', () => {
       ocr: [{ text: 'SALE 50%' }],
       asr_spans: [{ text: 'Xin chào', start_ms: 1000, end_ms: 3000 }],
     });
+  });
+
+  it('resolves a keyframe ordinal to the exact source frame', async () => {
+    const service = new MediaService(repository, storage);
+
+    await expect(service.getFrameByKeyframe('video-1', 2)).resolves.toMatchObject({
+      keyframe_no: 2,
+      original_frame_id: 50,
+    });
+    expect(repository.findFrameByKeyframe).toHaveBeenCalledWith('video-1', 2);
   });
 
   it('preserves the stored keyframe image content type for exact sparse frames', async () => {

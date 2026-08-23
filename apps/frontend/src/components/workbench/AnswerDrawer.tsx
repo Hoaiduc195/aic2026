@@ -10,6 +10,11 @@ import type {
 } from '../../lib/contracts';
 import { buildSubmissionCsv } from '../../lib/submission-csv';
 import { buildSubmission } from '../../lib/workbench-model';
+import {
+  incompleteTrakeQueueCount,
+  isCompleteTrakeQueueItem,
+  type TrakeQueueItem,
+} from '../../lib/trake-queue-model';
 import type { VqaQueueItem } from '../../lib/vqa-queue-model';
 
 interface Props {
@@ -26,6 +31,11 @@ interface Props {
   onRemoveVqaQueueItem?: (key: string) => void;
   onMoveVqaQueueItem?: (from: number, to: number) => void;
   onApplyAnswerToPending?: (answer: string) => void;
+  trakeQueue?: readonly TrakeQueueItem[];
+  onRemoveTrakeQueueItem?: (key: string) => void;
+  onMoveTrakeQueueItem?: (from: number, to: number) => void;
+  onCompleteMissingTrakeQueue?: () => void;
+  trakeQueueLoading?: boolean;
 }
 
 export function AnswerDrawer({
@@ -42,6 +52,11 @@ export function AnswerDrawer({
   onRemoveVqaQueueItem,
   onMoveVqaQueueItem,
   onApplyAnswerToPending,
+  trakeQueue = [],
+  onRemoveTrakeQueueItem,
+  onMoveTrakeQueueItem,
+  onCompleteMissingTrakeQueue,
+  trakeQueueLoading = false,
 }: Props) {
   const [copied, setCopied] = useState(false);
   const [exported, setExported] = useState(false);
@@ -55,8 +70,11 @@ export function AnswerDrawer({
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
   const isVqa = task === 'qa';
-  const queueCount = isVqa ? vqaQueue.length : answers.length;
+  const isTrake = task === 'trake';
+  const queueCount = isVqa ? vqaQueue.length : isTrake ? trakeQueue.length : answers.length;
   const pendingCount = isVqa ? vqaQueue.filter((item) => item.status !== 'answered').length : 0;
+  const missingTrakeCount = isTrake ? incompleteTrakeQueueCount(trakeQueue) : 0;
+  const completeTrakeCount = isTrake ? trakeQueue.filter(isCompleteTrakeQueueItem).length : 0;
 
   useEffect(() => {
     if (!open) return;
@@ -210,7 +228,26 @@ export function AnswerDrawer({
                 <button type="button" aria-label={`Xóa frame ${item.frame_id}`} onClick={() => onRemoveVqaQueueItem?.(item.key)}>×</button>
               </div>
             </article>
-          )) : answers.map((answer, index) => (
+          )) : isTrake ? trakeQueue.map((item, index) => {
+            const complete = isCompleteTrakeQueueItem(item);
+            const frameLabel = complete
+              ? item.frames.map((frame) => frame.original_frame_id).join(' → ')
+              : 'Chưa chọn đủ 4 frame';
+            return (
+              <article className={`answer-row answer-row--${complete ? 'complete' : 'missing'}`} key={item.key}>
+                <span className="answer-rank">{String(index + 1).padStart(2, '0')}</span>
+                <div>
+                  <strong>{item.anchor.video_id} · anchor frame {item.anchor.original_frame_id}</strong>
+                  <small>{complete ? `Frame ${frameLabel}` : frameLabel}</small>
+                </div>
+                <div className="answer-actions">
+                  <button type="button" aria-label={`Đưa chuỗi TRAKE ${index + 1} lên`} disabled={index === 0} onClick={() => onMoveTrakeQueueItem?.(index, index - 1)}>↑</button>
+                  <button type="button" aria-label={`Đưa chuỗi TRAKE ${index + 1} xuống`} disabled={index === trakeQueue.length - 1} onClick={() => onMoveTrakeQueueItem?.(index, index + 1)}>↓</button>
+                  <button type="button" aria-label={`Xóa chuỗi TRAKE ${index + 1}`} onClick={() => onRemoveTrakeQueueItem?.(item.key)}>×</button>
+                </div>
+              </article>
+            );
+          }) : answers.map((answer, index) => (
             <article className="answer-row" key={`${index}-${answer.video_id}`}>
               <span className="answer-rank">{String(index + 1).padStart(2, '0')}</span>
               <div>
@@ -240,10 +277,23 @@ export function AnswerDrawer({
               </div>
             </div>
           )}
+          {isTrake && onCompleteMissingTrakeQueue && missingTrakeCount > 0 && (
+            <div className="bulk-answer-panel">
+              <p>Đang thiếu 4 frame ở {missingTrakeCount} câu trả lời TRAKE.</p>
+              <button
+                type="button"
+                className="secondary-button full-width"
+                disabled={trakeQueueLoading}
+                onClick={onCompleteMissingTrakeQueue}
+              >
+                {trakeQueueLoading ? 'Đang chọn frame…' : 'Chọn 4 frame cho các câu trả lời đang thiếu'}
+              </button>
+            </div>
+          )}
         </div>
 
         <footer>
-          <span>{queueCount}/100 item · {answers.length} đã trả lời</span>
+          <span>{queueCount}/100 item · {isTrake ? `${completeTrakeCount} đã đủ frame` : `${answers.length} đã trả lời`}</span>
           <div className="answer-sync-actions">
             <button type="button" className="secondary-button" disabled={!answers.length || saving || previewing} onClick={saveAnswers}>
               {saving ? 'Đang lưu…' : 'Lưu đáp án'}

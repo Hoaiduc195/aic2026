@@ -7,6 +7,7 @@ import type { EmbeddingService } from '../src/embedding_services/embedding.servi
 import type { MediaService } from '../src/media/media.service';
 import { RetrievalService } from '../src/retrieval/retrieval.service';
 import type { RetrievalBranch } from '../src/retrieval/branch';
+import type { RetrievalStore } from '../src/retrieval/retrieval.store';
 import { TaskExecutorRegistry } from '../src/tasks/task-registry';
 import { TextualKisExecutor } from '../src/tasks/textual-kis/textual-kis.executor';
 import { TrakeExecutor } from '../src/tasks/trake/trake.executor';
@@ -40,6 +41,38 @@ function completedBranch(name: RetrievalBranch['name'], candidates: BranchResult
 }
 
 describe('RetrievalService', () => {
+  it('returns and persists an ordered exact-frame batch without semantic retrieval', async () => {
+    const store = {
+      saveRun: vi.fn(async () => undefined),
+    } as unknown as RetrievalStore;
+    const mediaService = {
+      getFrame: vi.fn(async (_videoId: string, frameId: number) => ({
+        video_id: 'video-1', keyframe_no: frameId === 20 ? 2 : 1, original_frame_id: frameId,
+        timestamp_ms: frameId * 40, captions: [], ocr: [], objects: [], asr_spans: [],
+        thumbnail_uri: null, is_exact_frame: true as const, annotation_source_frame_id: null,
+      })),
+    } as unknown as MediaService;
+    const service = new RetrievalService(
+      loadConfig(), [], createRegistry(), store, undefined, undefined, undefined, undefined, mediaService,
+    );
+
+    const response = await service.searchExactFrames({
+      task: 'textual_kis',
+      frames: [
+        { video_id: 'video-1', original_frame_id: 10 },
+        { video_id: 'video-1', original_frame_id: 20 },
+      ],
+    });
+
+    expect(response.query_mode).toBe('exact_frames');
+    expect(response.results.map((result) => result.original_frame_id)).toEqual([10, 20]);
+    expect(store.saveRun).toHaveBeenCalledWith(
+      expect.objectContaining({ query: 'Exact frame lookup', task: 'textual_kis' }),
+      expect.objectContaining({ query_mode: 'exact_frames' }),
+      expect.any(Array),
+    );
+  });
+
   it('uses a bounded default branch candidate limit', () => {
     const service = new RetrievalService(loadConfig(), [completedBranch('object', [])], createRegistry());
 

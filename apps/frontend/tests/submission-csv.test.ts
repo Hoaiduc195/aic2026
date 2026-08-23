@@ -16,6 +16,13 @@ describe('buildSubmissionCsv', () => {
     ])).toBe('video-01,12,"Có, ""đúng""\nnhư vậy"\r\n');
   });
 
+  it('quotes answers containing spaces so each answer remains one CSV field', () => {
+    expect(buildSubmissionCsv('qa', [
+      { video_id: 'video-01', frame_id: 12, answer: 'Màu đỏ' },
+      { video_id: 'video-02', frame_id: 34, answer: 'Năm người' },
+    ])).toBe('video-01,12,"Màu đỏ"\r\nvideo-02,34,"Năm người"\r\n');
+  });
+
   it('neutralizes spreadsheet formulas in free-form answers', () => {
     expect(buildSubmissionCsv('qa', [
       { video_id: 'video-01', frame_id: 12, answer: '=HYPERLINK("bad")' },

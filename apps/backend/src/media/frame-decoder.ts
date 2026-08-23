@@ -59,7 +59,6 @@ function decodeAttempt(
     let child: Pick<ChildProcess, 'stdout' | 'stderr' | 'once' | 'kill'>;
     try {
       child = spawnProcess(ffmpegPath, [
-        '-hide_banner',
         '-loglevel', 'error',
         '-i', input.video_url,
         '-vf', `select=eq(n\\,${input.original_frame_id}),scale=${profile.max_dimension}:${profile.max_dimension}:force_original_aspect_ratio=decrease`,

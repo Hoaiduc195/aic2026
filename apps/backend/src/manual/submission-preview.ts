@@ -59,7 +59,11 @@ function validateAnswer(task: TaskType, answer: Answer, index: number): Record<s
 function csvCell(value: unknown): string {
   const rawValue = String(value);
   const stringValue = /^[=+\-@]/.test(rawValue) ? `'${rawValue}` : rawValue;
-  return /[",\r\n]/.test(stringValue) ? `"${stringValue.replaceAll('"', '""')}"` : stringValue;
+  // Quote whitespace-bearing text too, so free-form answers remain one field
+  // in spreadsheet and CSV readers with less capable parsing.
+  return /[",\r\n\s]/.test(stringValue)
+    ? `"${stringValue.replaceAll('"', '""')}"`
+    : stringValue;
 }
 
 function csv(task: TaskType, answers: readonly Record<string, unknown>[]): string {

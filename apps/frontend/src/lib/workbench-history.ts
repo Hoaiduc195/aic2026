@@ -6,6 +6,7 @@ import type {
   SearchResponse,
 } from './contracts';
 import type { VqaQueueItem } from './vqa-queue-model';
+import type { TrakeQueueItem } from './trake-queue-model';
 
 export const WORKBENCH_SESSION_STORAGE_KEY = 'aic.workbench.session-id';
 export const WORKBENCH_HISTORY_STORAGE_KEY = 'aic.workbench.history.v1';
@@ -25,6 +26,7 @@ export interface WorkbenchSnapshot {
   readonly answers: readonly QualificationAnswer[];
   readonly qaAnswer: string;
   readonly vqaQueue: readonly VqaQueueItem[];
+  readonly trakeQueue?: readonly TrakeQueueItem[];
 }
 
 export interface WorkbenchHistoryEntry extends WorkbenchSnapshot {
@@ -48,7 +50,7 @@ function randomId(prefix: string): string {
 
 function snapshotLabel(snapshot: WorkbenchSnapshot): string {
   const firstEvent = snapshot.events.find((event) => event.description.trim())?.description.trim();
-  if (snapshot.response?.query_mode === 'frame_image') {
+  if (snapshot.response?.query_mode === 'frame_image' || snapshot.response?.query_mode === 'exact_frames') {
     const result = snapshot.response.results[0];
     return result
       ? `Frame ${result.video_id} · ${result.original_frame_id ?? result.start_ms}`
@@ -70,6 +72,15 @@ function isAssignedFramesByResult(value: unknown): boolean {
   return Object.values(value).every((frames) => Array.isArray(frames));
 }
 
+function isTrakeQueue(value: unknown): boolean {
+  return Array.isArray(value) && value.every((item) => (
+    isRecord(item)
+    && typeof item.key === 'string'
+    && isRecord(item.anchor)
+    && Array.isArray(item.frames)
+  ));
+}
+
 function isHistoryEntry(value: unknown): value is WorkbenchHistoryEntry {
   if (!value || typeof value !== 'object') return false;
   const entry = value as Partial<WorkbenchHistoryEntry>;
@@ -87,7 +98,22 @@ function isHistoryEntry(value: unknown): value is WorkbenchHistoryEntry {
     && (entry.assignedFramesByResult === undefined || isAssignedFramesByResult(entry.assignedFramesByResult))
     && Array.isArray(entry.answers)
     && typeof entry.qaAnswer === 'string'
-    && Array.isArray(entry.vqaQueue);
+    && Array.isArray(entry.vqaQueue)
+    && (entry.trakeQueue === undefined || isTrakeQueue(entry.trakeQueue));
+}
+
+function sortHistoryEntriesByRecency(entries: readonly WorkbenchHistoryEntry[]): WorkbenchHistoryEntry[] {
+  return entries
+    .map((entry, index) => ({ entry, index, timestamp: Date.parse(entry.created_at) }))
+    .sort((left, right) => {
+      const leftValid = Number.isFinite(left.timestamp);
+      const rightValid = Number.isFinite(right.timestamp);
+      if (!leftValid && !rightValid) return left.index - right.index;
+      if (!leftValid) return 1;
+      if (!rightValid) return -1;
+      return right.timestamp - left.timestamp || left.index - right.index;
+    })
+    .map(({ entry }) => entry);
 }
 
 export function getOrCreateWorkbenchSessionId(storage?: Storage): string {
@@ -124,6 +150,15 @@ export function createWorkbenchHistoryEntry(
       : {}),
     answers: snapshot.answers.map((answer) => ({ ...answer })),
     vqaQueue: snapshot.vqaQueue.map((item) => ({ ...item })),
+    ...(snapshot.trakeQueue
+      ? {
+        trakeQueue: snapshot.trakeQueue.map((item) => ({
+          key: item.key,
+          anchor: { ...item.anchor },
+          frames: item.frames.map((frame) => ({ ...frame })),
+        })),
+      }
+      : {}),
     history_id: historyId,
     created_at: createdAt.toISOString(),
     label: snapshotLabel(snapshot),
@@ -138,7 +173,9 @@ export function loadWorkbenchHistory(storage?: Storage): WorkbenchHistoryEntry[]
     const raw = target.getItem(WORKBENCH_HISTORY_STORAGE_KEY);
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter(isHistoryEntry) : [];
+    return Array.isArray(parsed)
+      ? sortHistoryEntriesByRecency(parsed.filter(isHistoryEntry)).slice(0, MAX_WORKBENCH_HISTORY_ENTRIES)
+      : [];
   } catch {
     return [];
   }

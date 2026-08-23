@@ -77,4 +77,6 @@ venv/
 tmp/
 data/refined/
 *.parquet
-*.npy
+*.npy
+*.dump
+*.sql

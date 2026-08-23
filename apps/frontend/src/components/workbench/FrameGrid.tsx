@@ -29,13 +29,13 @@ interface Props {
   onMoveToTop?: (frame: FrameCandidate) => void;
   onMoveToBottom?: (frame: FrameCandidate) => void;
   onQueryFrame?: (frame: FrameCandidate) => void;
-  onExport?: () => void;
-  onFillTrakeQueue?: () => void;
   onExportTrakeCsv?: () => void;
+  trakeFrameSelections?: Readonly<Record<string, readonly FrameCandidate[]>>;
   queueKeys?: ReadonlySet<string>;
   queueCount?: number;
   onAddToQueue?: (frame: FrameCandidate) => void;
   onFillQueue?: () => void;
+  queueLabel?: string;
   batchTopK?: string;
   onBatchTopKChange?: (value: string) => void;
   onRunBatchVqa?: () => void;
@@ -64,13 +64,13 @@ export function FrameGrid({
   onMoveToTop,
   onMoveToBottom,
   onQueryFrame,
-  onExport,
-  onFillTrakeQueue,
   onExportTrakeCsv,
+  trakeFrameSelections = {},
   queueKeys = new Set<string>(),
   queueCount = 0,
   onAddToQueue,
   onFillQueue,
+  queueLabel,
   batchTopK = '10',
   onBatchTopKChange,
   onRunBatchVqa,
@@ -315,27 +315,47 @@ export function FrameGrid({
           <span className="result-summary">
             {loading ? 'Đang tìm' : searched ? `${frames.length} frame` : 'Chưa tìm kiếm'}
           </span>
-          {onExport && searched && (
-            <button
-              type="button"
-              className="secondary-button result-export-button"
-              disabled={frames.length === 0}
-              onClick={onExport}
-            >
-              Xuất JSON top 100
-            </button>
-          )}
-          {(onFillTrakeQueue || onExportTrakeCsv) && searched && (
-            <div className="trake-result-toolbar" aria-label="Công cụ hàng đợi TRAKE">
-              {onFillTrakeQueue && (
+          {(onFillQueue || onExportTrakeCsv) && searched && (
+            <div className={onRunBatchVqa ? 'vqa-result-toolbar' : 'result-queue-toolbar'} aria-label="Công cụ hàng đợi">
+              {onFillQueue && (
                 <button
                   type="button"
                   className="secondary-button"
                   disabled={frames.length === 0}
-                  onClick={onFillTrakeQueue}
+                  onClick={onFillQueue}
                 >
-                  ⚡ Fill 100 chuỗi TRAKE
+                  {queueLabel ?? `Lấy top 100 frame vào hàng đợi (${queueCount}/100)`}
                 </button>
+              )}
+              {onRunBatchVqa && (
+                <>
+                  <label className="batch-k-control">
+                    <span>Top-K</span>
+                    <input
+                      aria-label="Số frame batch VQA"
+                      type="number"
+                      min="1"
+                      max="100"
+                      inputMode="numeric"
+                      value={batchTopK}
+                      onChange={(event) => onBatchTopKChange?.(event.target.value)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    disabled={frames.length === 0}
+                    onClick={batchVqaLoading ? onStopBatchVqa : onRunBatchVqa}
+                  >
+                    {batchVqaLoading ? 'Dừng batch' : 'LLM trả lời Top-K'}
+                  </button>
+                  {batchVqaProgress && (
+                    <span className="batch-progress" role="status">
+                      {batchVqaProgress.completed}/{batchVqaProgress.total}
+                      {batchVqaProgress.failed > 0 ? ` · lỗi ${batchVqaProgress.failed}` : ''}
+                    </span>
+                  )}
+                </>
               )}
               {onExportTrakeCsv && (
                 <button
@@ -346,44 +366,6 @@ export function FrameGrid({
                 >
                   Xuất CSV top 100
                 </button>
-              )}
-            </div>
-          )}
-          {onFillQueue && searched && (
-            <div className="vqa-result-toolbar" aria-label="Công cụ hàng đợi VQA">
-              <button
-                type="button"
-                className="secondary-button"
-                disabled={frames.length === 0}
-                onClick={onFillQueue}
-              >
-                Fill hàng đợi ({queueCount}/100)
-              </button>
-              <label className="batch-k-control">
-                <span>Top-K</span>
-                <input
-                  aria-label="Số frame batch VQA"
-                  type="number"
-                  min="1"
-                  max="100"
-                  inputMode="numeric"
-                  value={batchTopK}
-                  onChange={(event) => onBatchTopKChange?.(event.target.value)}
-                />
-              </label>
-              <button
-                type="button"
-                className="primary-button"
-                disabled={frames.length === 0}
-                onClick={batchVqaLoading ? onStopBatchVqa : onRunBatchVqa}
-              >
-                {batchVqaLoading ? 'Dừng batch' : 'LLM trả lời Top-K'}
-              </button>
-              {batchVqaProgress && (
-                <span className="batch-progress" role="status">
-                  {batchVqaProgress.completed}/{batchVqaProgress.total}
-                  {batchVqaProgress.failed > 0 ? ` · lỗi ${batchVqaProgress.failed}` : ''}
-                </span>
               )}
             </div>
           )}
@@ -448,6 +430,7 @@ export function FrameGrid({
           const modalityLabel = displayMatchedModalities(frame.matched_modalities);
           const resultLabel = frameCandidateLabel(frame);
           const displayLabel = frameCandidateDisplayLabel(frame);
+          const selectedTrakeFrames = trakeFrameSelections[frame.result_key] ?? [];
           return (
             <li
               className={`frame-card frame-list-item frame-list-item--spacious${entry.dragging ? ' frame-list-item--dragging' : ''}${selected ? ' selected' : ''}`}
@@ -488,6 +471,11 @@ export function FrameGrid({
                     <strong>{frame.video_id}</strong>
                     <span>{displayLabel} · {formatMs(frame.timestamp_ms)}</span>
                     <small>{modalityLabel || '—'}</small>
+                    {selectedTrakeFrames.length > 0 && (
+                      <small className="trake-selection-summary">
+                        Đang chọn: {selectedTrakeFrames.map((selectedFrame) => selectedFrame.original_frame_id).join(' → ')}
+                      </small>
+                    )}
                   </div>
                 </button>
               </div>

@@ -1,5 +1,6 @@
 import type {
   EvidenceType,
+  ExactFrameSearchRequest,
   CandidatePage,
   CanonicalFrameResponse,
   QualificationAnswer,
@@ -23,7 +24,7 @@ import type {
 import { exactFrameThumbnailUri } from './video-studio-model';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api';
-const MODALITIES = new Set(['embedding', 'visual', 'ocr', 'asr', 'caption', 'object', 'temporal', 'audio']);
+const MODALITIES = new Set(['embedding', 'visual', 'ocr', 'asr', 'caption', 'object', 'temporal', 'audio', 'clip', 'vlm', 'vlm_rerank']);
 const EVIDENCE_TYPES = new Set<EvidenceType>(['frame', 'ocr', 'asr', 'caption', 'object', 'track', 'audio', 'temporal']);
 const TASKS = new Set<SearchTask>(['textual_kis', 'video_kis', 'avs', 'vqa', 'trake', 'kisc']);
 
@@ -54,6 +55,21 @@ export async function searchMedia(
     throw new ApiError(message, response.status);
   }
 
+  return parseSearchResponse(payload);
+}
+
+export async function searchExactFrames(
+  request: ExactFrameSearchRequest,
+  signal?: AbortSignal,
+): Promise<SearchResponse> {
+  const response = await fetch(`${API_BASE}/v1/search/exact-frames`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(request),
+    signal,
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw apiError(payload, response.status, 'Không thể tải các frame exact.');
   return parseSearchResponse(payload);
 }
 
@@ -127,6 +143,20 @@ export async function getVideoFrame(
   );
   const payload = await response.json().catch(() => null);
   if (!response.ok) throw apiError(payload, response.status, 'Không thể tải canonical frame.');
+  return parseCanonicalFrameResponse(payload);
+}
+
+export async function getVideoKeyframe(
+  videoId: string,
+  keyframeNo: number,
+  signal?: AbortSignal,
+): Promise<CanonicalFrameResponse> {
+  const response = await fetch(
+    `${API_BASE}/v1/videos/${encodeURIComponent(videoId)}/keyframes/${encodeURIComponent(String(keyframeNo))}`,
+    { signal },
+  );
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw apiError(payload, response.status, 'Không thể tải keyframe.');
   return parseCanonicalFrameResponse(payload);
 }
 
@@ -293,7 +323,7 @@ export function parseSearchResponse(value: unknown): SearchResponse {
     query: optionalQuery(value.query),
     query_mode: value.query_mode === undefined
       ? undefined
-      : value.query_mode === 'text' || value.query_mode === 'frame_image'
+      : value.query_mode === 'text' || value.query_mode === 'frame_image' || value.query_mode === 'exact_frames'
         ? value.query_mode
         : (() => { throw new Error('query_mode không hợp lệ'); })(),
     session_id: value.session_id === null ? null : optionalText(value.session_id),
@@ -465,6 +495,13 @@ function parseStudioFrame(value: unknown, index: number): import('./contracts').
   if (!Array.isArray(value.captions) || !Array.isArray(value.objects)) {
     throw new Error(`studio.frames[${index}] annotations không hợp lệ`);
   }
+  const thumbnailUri = value.thumbnail_uri === null || value.thumbnail_uri === undefined
+    ? undefined
+    : requiredBrowserUri(value.thumbnail_uri, `studio.frames[${index}].thumbnail_uri`);
+  const isExactFrame = value.is_exact_frame === true ? true : undefined;
+  const annotationSource = value.annotation_source_frame_id === null || value.annotation_source_frame_id === undefined
+    ? undefined
+    : nonNegativeInteger(value.annotation_source_frame_id, `studio.frames[${index}].annotation_source_frame_id`);
   return {
     video_id: requiredText(value.video_id, `studio.frames[${index}].video_id`),
     keyframe_no: value.keyframe_no === null || value.keyframe_no === undefined
@@ -475,6 +512,9 @@ function parseStudioFrame(value: unknown, index: number): import('./contracts').
     captions: value.captions.map((caption, captionIndex) => parseStudioCaption(caption, index, captionIndex)),
     ocr: Array.isArray(value.ocr) ? value.ocr.map((item, ocrIndex) => parseStudioOcr(item, index, ocrIndex)) : [],
     objects: value.objects.map((object, objectIndex) => parseStudioObject(object, index, objectIndex)),
+    ...(thumbnailUri ? { thumbnail_uri: thumbnailUri } : {}),
+    ...(isExactFrame ? { is_exact_frame: true } : {}),
+    ...(annotationSource === undefined ? {} : { annotation_source_frame_id: annotationSource }),
   };
 }
 

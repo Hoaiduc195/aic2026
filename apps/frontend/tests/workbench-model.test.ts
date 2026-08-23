@@ -17,6 +17,7 @@ import {
   resultKey,
   toFrameCandidates,
   validateTrakeSequence,
+  normalizeFrameCandidate,
 } from '@/lib/workbench-model';
 import type { FrameCandidate, SearchResponse, SearchResult, StudioFrame } from '@/lib/contracts';
 
@@ -102,6 +103,22 @@ describe('workbench answer model', () => {
       keyframe_no: 5,
       timestamp_ms: 15_400,
       thumbnail_uri: '/api/v1/media/keyframes/video_01/by-frame/385',
+    });
+  });
+
+  it('uses the exact-frame thumbnail proxy for manually looked-up non-keyframes', () => {
+    const normalized = toFrameCandidates({
+      query_id: 'query_exact',
+      query_mode: 'exact_frames',
+      degraded: false,
+      unavailable_branches: [],
+      results: [result],
+    });
+
+    expect(normalized.frames[0]).toMatchObject({
+      thumbnail_uri: '/api/v1/media/videos/video_01/frames/385/thumbnail',
+      is_exact_frame: true,
+      annotation_source_frame_id: null,
     });
   });
 
@@ -281,6 +298,36 @@ describe('workbench answer model', () => {
     expect(selected.map((f) => f.original_frame_id)).toEqual([200, 300, 400, 500]);
   });
 
+  it('does not fabricate frame IDs when nearby real frames are insufficient', () => {
+    const anchor: FrameCandidate = {
+      result_key: 'video_01\\u0000200',
+      video_id: 'video_01',
+      original_frame_id: 200,
+      timestamp_ms: 8_000,
+      thumbnail_uri: '/frame/200',
+      start_ms: 8_000,
+      end_ms: 8_500,
+      score: 0.9,
+      evidence: [],
+      matched_modalities: [],
+    };
+
+    expect(autoSelectNearbyTrakeFrames(anchor, [anchor])).toEqual([]);
+  });
+
+  it('preserves the exact-frame thumbnail route when normalizing a manually selected frame', () => {
+    const exact: FrameCandidate = {
+      ...resultToCandidate(),
+      is_exact_frame: true,
+      thumbnail_uri: '/api/v1/media/videos/video_01/frames/386/thumbnail',
+      original_frame_id: 386,
+    };
+
+    expect(normalizeFrameCandidate(exact).thumbnail_uri).toBe(
+      '/api/v1/media/videos/video_01/frames/386/thumbnail',
+    );
+  });
+
   it('auto-builds batch TRAKE answers from ranked retrieval frames', () => {
     const ranked: FrameCandidate[] = [
       {
@@ -308,6 +355,30 @@ describe('workbench answer model', () => {
         matched_modalities: [],
       },
       {
+        result_key: 'video_01\u0000300',
+        video_id: 'video_01',
+        original_frame_id: 300,
+        timestamp_ms: 12_000,
+        thumbnail_uri: '/frame/300',
+        start_ms: 12_000,
+        end_ms: 12_500,
+        score: 0.88,
+        evidence: [],
+        matched_modalities: [],
+      },
+      {
+        result_key: 'video_01\u0000400',
+        video_id: 'video_01',
+        original_frame_id: 400,
+        timestamp_ms: 16_000,
+        thumbnail_uri: '/frame/400',
+        start_ms: 16_000,
+        end_ms: 16_500,
+        score: 0.87,
+        evidence: [],
+        matched_modalities: [],
+      },
+      {
         result_key: 'video_02\u000050',
         video_id: 'video_02',
         original_frame_id: 50,
@@ -322,11 +393,25 @@ describe('workbench answer model', () => {
     ];
 
     const answers = autoBuildTrakeAnswers(ranked, 10);
-    expect(answers).toHaveLength(2);
+    expect(answers).toHaveLength(1);
     expect(answers[0].video_id).toBe('video_01');
     expect(answers[0].frame_ids).toHaveLength(4);
-    expect(answers[1].video_id).toBe('video_02');
-    expect(answers[1].frame_ids).toHaveLength(4);
+    expect(answers[0].frame_ids).toEqual([100, 200, 300, 400]);
   });
 });
+
+function resultToCandidate(): FrameCandidate {
+  return {
+    result_key: 'video_01\\u0000385',
+    video_id: 'video_01',
+    original_frame_id: 385,
+    timestamp_ms: 15_400,
+    thumbnail_uri: '/frame/385',
+    start_ms: 12_000,
+    end_ms: 18_000,
+    score: 0.93,
+    evidence: [],
+    matched_modalities: [],
+  };
+}
 

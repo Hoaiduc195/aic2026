@@ -22,10 +22,24 @@ describe('media repositories', () => {
     expect(frames.map((frame) => frame.original_frame_id)).toEqual([10, 20]);
   });
 
+  it('finds a canonical frame by its keyframe ordinal', async () => {
+    const database = db([{
+      video_id: 'v', keyframe_no: 7, original_frame_id: 385, timestamp_ms: 12_833,
+      thumbnail_object_key: 'keyframes/v/007.jpg',
+    }] as never[]);
+    const repository = new PostgresMediaRepository(database);
+
+    await expect(repository.findFrameByKeyframe('v', 7)).resolves.toMatchObject({
+      video_id: 'v', original_frame_id: 385, keyframe_no: 7,
+    });
+    expect(vi.mocked(database.query).mock.calls[0][1]).toEqual(['v', 7]);
+  });
+
   it('returns clear not-found failures', async () => {
     await expect(new PostgresMediaRepository(db([])).findVideo('missing')).rejects.toThrow('not found');
     const unavailable = new UnavailableMediaRepository();
     await expect(unavailable.findVideo('v')).rejects.toThrow('not configured');
     await expect(unavailable.findFramesAround('v', 1, 1)).rejects.toThrow('not configured');
+    await expect(unavailable.findFrameByKeyframe('v', 1)).rejects.toThrow('not configured');
   });
 });

@@ -5,9 +5,11 @@ import { Workbench } from '../components/Workbench';
 import {
   createSubmissionPreview,
   getVideoFrame,
+  getVideoKeyframe,
   getVideoStudio,
   improveQuery,
   saveSelection,
+  searchExactFrames,
   searchMedia,
   suggestVqaAnswer,
 } from '../lib/api';
@@ -17,7 +19,9 @@ export default function HomePage() {
     <Providers>
       <Workbench
         search={searchMedia}
+        exactFrameSearch={searchExactFrames}
         loadFrame={getVideoFrame}
+        loadKeyframe={getVideoKeyframe}
         loadStudio={getVideoStudio}
         saveSelection={saveSelection}
         createPreview={createSubmissionPreview}

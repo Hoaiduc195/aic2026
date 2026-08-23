@@ -84,5 +84,9 @@ function videoFilename(value: string): string {
 function csvCell(value: string | number): string {
   const rawText = String(value);
   const text = /^[=+\-@]/.test(rawText) ? `'${rawText}` : rawText;
-  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+  // Quote whitespace-bearing text as well as delimiter characters. The
+  // competition accepts unquoted simple answers, but quoting these values
+  // keeps the answer in one field for spreadsheet and CSV readers that
+  // handle free-form text inconsistently.
+  return /[",\r\n\s]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }

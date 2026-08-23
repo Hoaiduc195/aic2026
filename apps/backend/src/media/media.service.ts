@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 
 import { FRAME_DECODER, IMAGE_COMPRESSOR, MEDIA_REPOSITORY, OBJECT_STORAGE } from '../common/tokens';
 import type { ObjectStorage } from '../storage/object-storage';
@@ -163,6 +163,13 @@ export class MediaService {
       is_exact_frame: true,
       annotation_source_frame_id: annotation?.original_frame_id ?? null,
     };
+  }
+
+  async getFrameByKeyframe(videoId: string, keyframeNo: number): Promise<ExactFrameResponse> {
+    const frame = await this.repository.findFrameByKeyframe(videoId, keyframeNo);
+    if (!frame) throw new NotFoundException(`keyframe ${keyframeNo} was not found`);
+    const exact = await this.getFrame(videoId, frame.original_frame_id);
+    return { ...exact, keyframe_no: frame.keyframe_no };
   }
 
   async getFrameThumbnail(videoId: string, originalFrameId: number): Promise<FrameThumbnail> {

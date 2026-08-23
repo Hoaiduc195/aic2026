@@ -8,6 +8,7 @@ import {
   loadWorkbenchHistory,
   removeWorkbenchHistoryEntry,
   saveWorkbenchHistoryEntry,
+  WORKBENCH_HISTORY_STORAGE_KEY,
   type WorkbenchSnapshot,
 } from '@/lib/workbench-history';
 
@@ -51,6 +52,19 @@ describe('workbench history persistence', () => {
 
     expect(loadWorkbenchHistory().map((item) => item.history_id)).toEqual(['history-new', 'history-old']);
     expect(loadWorkbenchHistory()[0].description).toBe('A red car near a building');
+  });
+
+  it('loads the most recent queries first even when persisted order is stale', () => {
+    const older = createWorkbenchHistoryEntry(snapshot, new Date('2026-08-19T08:00:00.000Z'), 'history-old');
+    const newer = createWorkbenchHistoryEntry(
+      { ...snapshot, description: 'A red car near a building' },
+      new Date('2026-08-19T09:00:00.000Z'),
+      'history-new',
+    );
+
+    localStorage.setItem(WORKBENCH_HISTORY_STORAGE_KEY, JSON.stringify([older, newer]));
+
+    expect(loadWorkbenchHistory().map((item) => item.history_id)).toEqual(['history-new', 'history-old']);
   });
 
   it('keeps only the 50 newest entries and supports deletion', () => {

@@ -13,7 +13,7 @@ describe('submission preview', () => {
 
     expect(preview.submittable).toBe(false);
     expect(preview.answer_count).toBe(1);
-    expect(preview.csv).toBe('video-1,42,màu đỏ\r\n');
+    expect(preview.csv).toBe('video-1,42,"màu đỏ"\r\n');
   });
 
   it('quotes CSV values and preserves TRAKE frame order', () => {

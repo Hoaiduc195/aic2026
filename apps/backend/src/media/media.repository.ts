@@ -70,6 +70,7 @@ export interface VideoStudioRecord {
 export interface MediaRepository {
   findVideo(videoId: string): Promise<VideoRecord>;
   findFrame(videoId: string, originalFrameId: number): Promise<FrameRecord | null>;
+  findFrameByKeyframe(videoId: string, keyframeNo: number): Promise<FrameRecord | null>;
   findFramesAround(videoId: string, centerFrameId: number, limit: number): Promise<FrameRecord[]>;
   findNearestStudioFrame(videoId: string, centerFrameId: number): Promise<StudioFrameRecord | null>;
   findAsrSpansAt(videoId: string, timestampMs: number): Promise<readonly StudioAsrSpanRecord[]>;
@@ -122,6 +123,14 @@ export class PostgresMediaRepository implements MediaRepository {
       SELECT video_id, keyframe_no, original_frame_id, timestamp_ms, thumbnail_object_key
       FROM frames
       WHERE video_id = $1 AND original_frame_id = $2`, [videoId, originalFrameId]);
+    return result.rows[0] ?? null;
+  }
+
+  async findFrameByKeyframe(videoId: string, keyframeNo: number): Promise<FrameRecord | null> {
+    const result = await this.database.query<FrameRow>(`
+      SELECT video_id, keyframe_no, original_frame_id, timestamp_ms, thumbnail_object_key
+      FROM frames
+      WHERE video_id = $1 AND keyframe_no = $2`, [videoId, keyframeNo]);
     return result.rows[0] ?? null;
   }
 
@@ -391,6 +400,10 @@ export class UnavailableMediaRepository implements MediaRepository {
   }
 
   async findFrame(_videoId: string, _originalFrameId: number): Promise<FrameRecord | null> {
+    throw new NotFoundException('media catalog is not configured');
+  }
+
+  async findFrameByKeyframe(_videoId: string, _keyframeNo: number): Promise<FrameRecord | null> {
     throw new NotFoundException('media catalog is not configured');
   }
 

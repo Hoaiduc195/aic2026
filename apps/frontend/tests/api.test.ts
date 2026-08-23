@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createSubmissionPreview,
   getVideoFrame,
+  getVideoKeyframe,
   getVideoFrames,
   getVideoPlayback,
   getVideoStudio,
@@ -12,6 +13,7 @@ import {
   parseVideoStudioResponse,
   saveSelection,
   searchMedia,
+  searchExactFrames,
 } from '@/lib/api';
 import type { SearchResponse } from '@/lib/contracts';
 
@@ -47,6 +49,36 @@ afterEach(() => {
 });
 
 describe('search API boundary', () => {
+  it('posts an exact-frame batch without entering semantic retrieval', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ...validResponse,
+      query: 'Exact frame lookup',
+      query_mode: 'exact_frames',
+    }), { status: 200 })));
+
+    const result = await searchExactFrames({
+      task: 'textual_kis',
+      frames: [{ video_id: 'video_01', original_frame_id: 385 }],
+    });
+
+    expect(result.query_mode).toBe('exact_frames');
+    expect(fetch).toHaveBeenCalledWith('/api/v1/search/exact-frames', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('loads a canonical frame by keyframe ordinal', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      video_id: 'video_01', keyframe_no: 7, original_frame_id: 385, timestamp_ms: 12_800,
+      captions: [], ocr: [], objects: [], asr_spans: [],
+      thumbnail_uri: '/api/v1/media/videos/video_01/frames/385/thumbnail',
+      is_exact_frame: true, annotation_source_frame_id: null,
+    }), { status: 200 })));
+
+    await expect(getVideoKeyframe('video_01', 7)).resolves.toMatchObject({
+      keyframe_no: 7, original_frame_id: 385,
+    });
+    expect(fetch).toHaveBeenCalledWith('/api/v1/videos/video_01/keyframes/7', expect.anything());
+  });
+
   it('calls the query improver API and parses its response contract', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
       original_query: 'một người đi bộ',
@@ -98,6 +130,9 @@ describe('search API boundary', () => {
     expect(parseSearchResponse({ ...validResponse, query: '', query_mode: 'frame_image' })).toMatchObject({
       query: '',
       query_mode: 'frame_image',
+    });
+    expect(parseSearchResponse({ ...validResponse, query_mode: 'exact_frames' })).toMatchObject({
+      query_mode: 'exact_frames',
     });
     expect(() => parseSearchResponse({ ...validResponse, query_mode: 'unknown' })).toThrow('query_mode');
   });

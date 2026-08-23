@@ -8,6 +8,7 @@ import {
   type BranchName,
   type ChannelWeights,
   type FrameQuery,
+  type ExactFrameSearchRequest,
   type RetrievalOverrides,
   type SearchRequest,
   type TaskType,
@@ -134,5 +135,36 @@ export function parseSearchRequest(value: unknown): SearchRequest {
     retrieval: optionalOverrides(value.retrieval),
     embedding: parseEmbeddingOverride(value.embedding),
     ...(frameQuery ? { frame_query: frameQuery } : {}),
+  };
+}
+
+export function parseExactFrameSearchRequest(value: unknown): ExactFrameSearchRequest {
+  if (!isRecord(value)) throw new BadRequestException('request body must be an object');
+  if (typeof value.task !== 'string' || !TASK_TYPES.includes(value.task as TaskType)) {
+    throw new BadRequestException(`task must be one of: ${TASK_TYPES.join(', ')}`);
+  }
+  if (!Array.isArray(value.frames) || value.frames.length < 1 || value.frames.length > 100) {
+    throw new BadRequestException('frames must contain 1-100 items');
+  }
+  const frames = value.frames.map((frame, index) => {
+    try {
+      const parsed = optionalFrameQuery(frame);
+      if (!parsed) throw new BadRequestException('frame is required');
+      return parsed;
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw new BadRequestException(`frames[${index}] is invalid: ${error.message}`);
+      }
+      throw error;
+    }
+  });
+  const sessionId = value.session_id === undefined ? undefined : value.session_id;
+  if (sessionId !== undefined && (typeof sessionId !== 'string' || sessionId.length > 200)) {
+    throw new BadRequestException('session_id must be a string of at most 200 characters');
+  }
+  return {
+    task: value.task as TaskType,
+    frames,
+    session_id: sessionId as string | undefined,
   };
 }
