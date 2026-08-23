@@ -9,7 +9,7 @@ export interface VqaQueueItem {
   readonly key: string;
   readonly video_id: string;
   readonly frame_id: number;
-  readonly thumbnail_uri: string;
+  readonly thumbnail_uri?: string;
   readonly status: VqaQueueStatus;
   readonly answer?: string;
   readonly error?: string;
@@ -101,6 +101,45 @@ export function addVqaFrame(
   if (current.some((item) => item.key === key)) return current;
   if (current.length >= limitValue(limit)) return current;
   return [...current, itemFromFrame(frame)];
+}
+
+export function appendVqaFrames(
+  existing: readonly VqaQueueItem[],
+  frames: readonly { video_id: string; frame_id?: number; original_frame_id?: number }[],
+  answer?: string,
+  limit = VQA_QUEUE_LIMIT,
+): VqaQueueItem[] {
+  const max = limitValue(limit);
+  const normalizedAnswer = answer?.trim();
+
+  const incomingItems: VqaQueueItem[] = [];
+  const incomingKeys = new Set<string>();
+
+  for (const frame of frames) {
+    const frameId = typeof frame.original_frame_id === 'number'
+      ? frame.original_frame_id
+      : typeof frame.frame_id === 'number'
+        ? frame.frame_id
+        : 0;
+    const key = queueKey({ video_id: frame.video_id, original_frame_id: frameId });
+    if (!incomingKeys.has(key)) {
+      incomingKeys.add(key);
+      // Accept the pre-canonical underscore key when resuming an older queue.
+      incomingKeys.add(`${frame.video_id}_${frameId}`);
+      incomingItems.push({
+        key,
+        video_id: frame.video_id,
+        frame_id: frameId,
+        status: normalizedAnswer ? 'answered' : 'pending',
+        answer: normalizedAnswer || undefined,
+      });
+    }
+  }
+
+  // Automatically remove duplicate frames that were previously in the queue
+  const filteredExisting = deduplicateQueue(existing).filter((item) => !incomingKeys.has(item.key));
+
+  return [...filteredExisting, ...incomingItems].slice(0, max);
 }
 
 export function applyAnswerToPending(

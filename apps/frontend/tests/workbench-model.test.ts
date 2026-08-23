@@ -1,18 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  appendKisAnswers,
   autoBuildTrakeAnswers,
   autoSelectNearbyTrakeFrames,
   buildAnswer,
   buildRankedTextualSubmission,
   buildSubmission,
   displayMatchedModalities,
+  extractNearbyFrames,
   formatMs,
   groupEvidence,
   applyStudioFrameToCandidate,
   applyCanonicalFrameToCandidate,
   moveFrameToBoundary,
   parseFrame,
+  reorderAnswers,
   reorderFrames,
   resultKey,
   toFrameCandidates,
@@ -151,7 +154,9 @@ describe('workbench answer model', () => {
     expect(groupEvidence(candidate.evidence).asr).toHaveLength(0);
     expect(validateTrakeSequence([candidate, next, third, fourth])).toBe(true);
     expect(validateTrakeSequence([next, candidate, third, fourth])).toBe(false);
-    expect(validateTrakeSequence([candidate, next, third])).toBe(false);
+    expect(validateTrakeSequence([candidate, next, third])).toBe(true);
+    expect(validateTrakeSequence([candidate, next, third], 4)).toBe(false);
+    expect(validateTrakeSequence([candidate, next, third], 3)).toBe(true);
     expect(validateTrakeSequence([candidate, next, third, { ...fourth, video_id: 'video_02' }])).toBe(false);
   });
 
@@ -397,6 +402,85 @@ describe('workbench answer model', () => {
     expect(answers[0].video_id).toBe('video_01');
     expect(answers[0].frame_ids).toHaveLength(4);
     expect(answers[0].frame_ids).toEqual([100, 200, 300, 400]);
+  });
+
+  it('extracts candidate frame plus k neighboring frames before and after spaced 5 frames apart', () => {
+    const anchor = { video_id: 'video_01', original_frame_id: 300, timestamp_ms: 12_000 };
+
+    // k = 0: only anchor
+    expect(extractNearbyFrames(anchor, undefined, 0)).toEqual([
+      { video_id: 'video_01', frame_id: 300 },
+    ]);
+
+    // k = 1: anchor first (300), then neighbors (295, 305)
+    expect(extractNearbyFrames(anchor, undefined, 1)).toEqual([
+      { video_id: 'video_01', frame_id: 300 },
+      { video_id: 'video_01', frame_id: 295 },
+      { video_id: 'video_01', frame_id: 305 },
+    ]);
+
+    // k = 2: anchor first (300), then 2k neighbors (290, 295, 305, 310)
+    expect(extractNearbyFrames(anchor, undefined, 2)).toEqual([
+      { video_id: 'video_01', frame_id: 300 },
+      { video_id: 'video_01', frame_id: 290 },
+      { video_id: 'video_01', frame_id: 295 },
+      { video_id: 'video_01', frame_id: 305 },
+      { video_id: 'video_01', frame_id: 310 },
+    ]);
+
+    // filters out negative frame numbers if anchor is near frame 0
+    const nearZeroAnchor = { video_id: 'video_01', original_frame_id: 4 };
+    expect(extractNearbyFrames(nearZeroAnchor, undefined, 2)).toEqual([
+      { video_id: 'video_01', frame_id: 4 },
+      { video_id: 'video_01', frame_id: 9 },
+      { video_id: 'video_01', frame_id: 14 },
+    ]);
+  });
+
+  it('appends KIS answers immutably without duplicates and respects queue limits', () => {
+    const existing = [
+      { video_id: 'video_01', frame_id: 100 },
+      { video_id: 'video_01', frame_id: 200 },
+    ];
+    const incoming = [
+      { video_id: 'video_01', frame_id: 200 }, // Duplicate
+      { video_id: 'video_01', frame_id: 300 },
+      { video_id: 'video_02', frame_id: 100 },
+    ];
+
+    const result = appendKisAnswers(existing, incoming, 100);
+    expect(result).toEqual([
+      { video_id: 'video_01', frame_id: 100 },
+      { video_id: 'video_01', frame_id: 200 },
+      { video_id: 'video_01', frame_id: 300 },
+      { video_id: 'video_02', frame_id: 100 },
+    ]);
+
+    // Cap at limit
+    const capped = appendKisAnswers(existing, incoming, 3);
+    expect(capped).toHaveLength(3);
+  });
+
+  it('reorders answers immutably with safe boundary checks', () => {
+    const list = [
+      { video_id: 'v1', frame_id: 1 },
+      { video_id: 'v2', frame_id: 2 },
+      { video_id: 'v3', frame_id: 3 },
+    ];
+
+    expect(reorderAnswers(list, 0, 2)).toEqual([
+      { video_id: 'v2', frame_id: 2 },
+      { video_id: 'v3', frame_id: 3 },
+      { video_id: 'v1', frame_id: 1 },
+    ]);
+    expect(reorderAnswers(list, 1, 0)).toEqual([
+      { video_id: 'v2', frame_id: 2 },
+      { video_id: 'v1', frame_id: 1 },
+      { video_id: 'v3', frame_id: 3 },
+    ]);
+    // Out of bounds or identical: returns clone
+    expect(reorderAnswers(list, -1, 2)).toEqual(list);
+    expect(reorderAnswers(list, 1, 1)).toEqual(list);
   });
 });
 

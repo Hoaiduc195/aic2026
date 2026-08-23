@@ -723,6 +723,7 @@ textarea:focus-visible,
 }
 
 .vqa-result-toolbar,
+.kis-result-toolbar,
 .result-queue-toolbar {
   display: flex;
   align-items: center;
@@ -1252,6 +1253,14 @@ textarea:focus-visible,
   margin-bottom: 10px;
 }
 
+.answer-builder textarea {
+  min-height: 58px;
+  padding: 8px 11px;
+  resize: vertical;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .answer-builder-actions {
   display: grid;
   gap: 10px;
@@ -1471,29 +1480,99 @@ textarea:focus-visible,
   background: #effaf4;
 }
 
+.drawer-warning {
+  color: #b45309;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  font-weight: 600;
+}
+
+.drawer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.clear-queue-button {
+  font-size: 11px;
+  color: var(--danger, #dc2626);
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.clear-queue-button:hover {
+  background: #fee2e2;
+}
+
 .answer-list {
   overflow-y: auto;
   padding: 12px 18px;
 }
 
 .answer-row {
-  display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 11px 0;
+  gap: 8px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--line);
+  border-radius: 8px;
+  transition: background 0.15s ease, opacity 0.15s ease;
+  user-select: none;
+}
+
+.answer-row--draggable {
+  cursor: grab;
+}
+
+.answer-row--dragging {
+  opacity: 0.45;
+  background: var(--bg-hover, rgba(59, 130, 246, 0.08));
+  border: 1px dashed var(--accent, #3b82f6);
+}
+
+.answer-drag-handle {
+  color: var(--ink-muted);
+  cursor: grab;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 2px;
+  opacity: 0.5;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.answer-row:hover .answer-drag-handle {
+  opacity: 1;
+}
+
+.answer-thumb {
+  width: 46px;
+  height: 30px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: #1e293b;
+  flex-shrink: 0;
 }
 
 .answer-rank {
   color: var(--ink-muted);
   font-size: 11px;
   font-weight: 700;
+  flex-shrink: 0;
+  width: 20px;
+}
+
+.answer-row > div:not(.answer-actions) {
+  flex: 1;
+  min-width: 0;
 }
 
 .answer-row strong,
 .answer-row small {
   display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .answer-row strong {
@@ -1501,8 +1580,9 @@ textarea:focus-visible,
 }
 
 .answer-row small {
-  margin-top: 3px;
+  margin-top: 2px;
   color: var(--ink-muted);
+  font-size: 11px;
 }
 
 .answer-row--pending small {
@@ -1513,9 +1593,35 @@ textarea:focus-visible,
   color: #a34621;
 }
 
+.vqa-inline-edit-group {
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+}
+
+.vqa-inline-answer-input {
+  width: 100%;
+  min-height: 26px;
+  padding: 2px 7px;
+  font: inherit;
+  font-size: 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--ink);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.vqa-inline-answer-input:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
 .answer-actions {
   display: flex;
   gap: 3px;
+  flex-shrink: 0;
 }
 
 .answer-actions button {
@@ -1563,6 +1669,54 @@ textarea:focus-visible,
   gap: 9px;
   border-top: 1px solid var(--line);
   border-bottom: 0;
+}
+
+.drawer-csv-filename-bar {
+  flex: 0 0 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.drawer-csv-filename-bar label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.filename-input-group {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.filename-input-group input {
+  flex: 1;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 8px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  outline: none;
+}
+
+.file-ext-badge {
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-muted);
+  background: var(--surface-muted);
+  border-left: 1px solid var(--line);
+  line-height: 30px;
 }
 
 .answer-drawer > footer span {

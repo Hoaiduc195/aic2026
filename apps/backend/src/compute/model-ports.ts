@@ -26,7 +26,7 @@ export class HttpQueryEmbeddingProvider implements QueryEmbeddingProvider {
     private readonly endpoint: string,
     public readonly dimensions: number,
     private readonly bearerToken?: string,
-    private readonly timeoutMs = 5000,
+    private readonly timeoutMs = 15_000,
   ) {}
 
   async embedText(query: string): Promise<readonly number[]> {

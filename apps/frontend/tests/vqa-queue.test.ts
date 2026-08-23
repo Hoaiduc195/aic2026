@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { FrameCandidate } from '@/lib/contracts';
 import type { VqaBatchResult } from '@/lib/vqa-batch';
 import {
+  appendVqaFrames,
   applyAnswerToPending,
   applyVqaBatchResults,
   autoFillVqaQueueWithMajority,
@@ -109,5 +110,23 @@ describe('VQA queue model', () => {
     expect(updatedQueue[1]?.answer).toBe('màu xanh'); // preserved individual answer
     expect(updatedQueue[0]?.answer).toBe('màu đỏ');
     expect(updatedQueue[99]?.answer).toBe('màu đỏ'); // populated with majority
+  });
+
+  it('appends neighbor cluster frames with optional answer and without duplicates', () => {
+    const initial: VqaQueueItem[] = [
+      { key: 'video_01_100', video_id: 'video_01', frame_id: 100, status: 'answered', answer: 'xe buýt' },
+    ];
+    const cluster = [
+      { video_id: 'video_01', original_frame_id: 100 }, // Anchor frame (xếp đầu)
+      { video_id: 'video_01', original_frame_id: 95 },
+      { video_id: 'video_01', original_frame_id: 105 },
+    ];
+
+    const next = appendVqaFrames(initial, cluster, 'xe buýt', 100);
+
+    expect(next).toHaveLength(3);
+    expect(next.map((item) => item.frame_id)).toEqual([100, 95, 105]);
+    expect(next.every((item) => item.answer === 'xe buýt')).toBe(true);
+    expect(next.every((item) => item.status === 'answered')).toBe(true);
   });
 });
