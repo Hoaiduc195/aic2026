@@ -1,0 +1,32 @@
+{
+  "name": "@aic2026/evidence-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Read-only MCP service for AIC frame retrieval and evidence tracing.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx src/main.ts",
+    "start": "node dist/main.js",
+    "test": "vitest run",
+    "test:protocol": "npm run build && vitest run tests/protocol.test.ts",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.0.0",
+    "dotenv": "^16.4.7",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^3.2.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.7"
+  }
+}
