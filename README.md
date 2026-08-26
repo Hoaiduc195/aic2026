@@ -1,71 +1,197 @@
-# Ho Chi Minh City AI Challenge 2026: Multimedia Preprocessing Pipeline
+# AIC 2026 — Tìm kiếm video đa phương thức
 
-## Overview
-This repository serves as the official, primary codebase for the Ho Chi Minh City AI Challenge 2026. It encapsulates the comprehensive Multimedia Preprocessing Pipeline and the advanced Retrieval System designed to tackle complex, large-scale video and frame/evidence search tasks using Natural Language Queries (NLQ).
+Đây là codebase cho hệ thống tìm kiếm và duyệt bằng chứng video của AIC 2026.
+Hệ thống đi từ video gốc, tạo frame có định danh chính xác và các feature đa
+phương thức, nạp chúng vào bộ máy retrieval, sau đó cung cấp Workbench để
+người vận hành chọn frame và tạo submission preview.
 
-## Directory Structure
-The source code within this repository is organized systematically to promote modularity and scalability:
+## Phạm vi hiện tại
 
-- **`apps/`**: Contains the core application modules, user interfaces, and primary online service APIs.
-- **`artifacts/`**: Serves as the storage directory for intermediate outputs, pre-trained model weights, and compiled build artifacts.
-- **`configs/`**: Houses all system configuration files (YAML/JSON), encompassing hyper-parameters for both the data processing pipelines and the deep learning models.
-- **`contracts/`**: Defines the data schemas and API contracts essential for ensuring seamless integration and data consistency across various system modules.
-- **`data/`**: Designated for raw video ingestion, metadata storage, and structured indexing outputs.
-- **`docs/`**: Provides comprehensive system design documentation, architectural guidelines, and technical references.
-- **`eval/`**: Incorporates the evaluation frameworks, validation scripts, and query datasets utilized to measure system performance metrics (e.g., Recall, mAP, MRR).
-- **`experiments/`**: Dedicated to Research and Development, containing Jupyter Notebooks and experimental scripts for model fine-tuning and exploratory data analysis.
-- **`pipelines/`**: The core component housing the offline and online processing pipelines, including Keyframe Extraction, Deduplication, Visual Embedding (CLIP/SigLIP), Optical Character Recognition (OCR), and Automatic Speech Recognition (ASR).
+Các phần chính đã có trong repository:
 
-The implemented keyframe pipeline and its exact-frame output contract are
-documented in [`pipelines/preprocessing/README.md`](pipelines/preprocessing/README.md).
-The supported GitHub-to-Kaggle deployment using raw video from Cloudflare R2
-is documented in [`docs/keyframe_kaggle_r2_runbook.md`](docs/keyframe_kaggle_r2_runbook.md).
+- preprocessing hai tầng: sparse retrieval frames và dense exact-frame
+  alignment;
+- feature extraction cho caption, OCR tiếng Việt, object detection, visual
+  embedding và ASR theo timeline;
+- contract JSON Schema dùng chung giữa pipeline, ingestion và backend;
+- NestJS retrieval backend với PostgreSQL/pgvector, full-text search, RRF
+  fusion, R2 signed URL và các chế độ degraded khi dependency chưa sẵn sàng;
+- Next.js Workbench theo hướng frame-first cho `textual_kis`, VQA và TRAKE;
+- lựa chọn thủ công, submission preview JSON/CSV và xuất CSV các frame lân cận
+  quanh một frame tâm do người dùng chọn (1–50 frame, gồm frame tâm).
 
-## System Architecture
-The system architecture follows a tiered processing paradigm. It leverages early-stage noise filtering mechanisms to drastically reduce the computational burden on resource-intensive deep learning models. A cornerstone of this design is the **Dynamic Keyframe Extraction** strategy.
+Backend hiện tạo preview để kiểm tra; adapter submit chính thức lên hệ thống
+cuộc thi nằm ngoài phạm vi repository này. Một số retrieval branch/model là
+tùy chọn và sẽ được báo là `unavailable` nếu chưa cấu hình artifact hoặc service
+tương ứng.
 
-The offline preprocessing workflow is illustrated below:
+## Kiến trúc
 
 ```mermaid
-graph TD
-    A[Raw Video .mp4, .mkv] --> B[Metadata Extraction & Audio Demuxing]
-    B --> C1[Audio Stream Separation .wav]
-    B --> C2[Shot Boundary Detection: TransNetV2 / Fallback]
-    
-    C1 --> D1[ASR Module: Whisper]
-    D1 --> E1[Transcription with Start/End Timestamps]
-    
-    C2 --> D2[Adaptive Keyframe Sampling]
-    D2 --> D3[Quality Scoring and Routing]
-    D3 --> D4[dHash / SigLIP Cosine Deduplication]
-    
-    D4 --> E2[Retrieval-Eligible Keyframes]
-    
-    E2 --> F1[Visual Embedding Module: CLIP/SigLIP]
-    E2 --> F2[OCR Module: PaddleOCR]
-    E2 --> F3[Optional: Captioning & Object Detection]
-    
-    F1 --> G1[Visual Vector Embeddings .npy]
-    F2 --> G2[OCR Text Metadata .parquet]
-    F3 --> G3[Semantic Captions & Tags .parquet]
-    E1 --> G4[ASR Transcripts .parquet]
-    
-    G1 & G2 & G3 & G4 --> H[Data Fusion & Mapping Schema]
-    H --> I[Storage: WebP Keyframes & Parquet Metadata]
-    H --> J[DB Ingestion: PostgreSQL + pgvector / Qdrant]
+flowchart LR
+    A[Video gốc] --> B[Preprocessing]
+    B --> C[Frame manifest + sparse/dense keyframes]
+    C --> D[Feature extraction]
+    D --> E[Refined artifacts]
+    E --> F[Importer]
+    F --> G[(PostgreSQL + pgvector)]
+    A --> H[(R2/S3 raw video)]
+    C --> H
+    G --> I[Retrieval backend]
+    H --> I
+    J[Embedding service] --> I
+    K[LLM/VLM tùy chọn] --> I
+    I --> L[Next.js BFF]
+    L --> M[Operator Workbench]
 ```
 
-## Key Capabilities
+`original_frame_id` là định danh source-frame chuẩn, bắt đầu từ `0`. Timestamp
+chỉ là thông tin phụ trợ; không được suy ngược timestamp thành frame khi đã có
+`original_frame_id`.
 
-1. **Multimodal Query Processing**: Seamlessly supports Visual Search, Optical Character Recognition (OCR), Automatic Speech Recognition (ASR), Semantic Captioning, and Object-based Retrieval.
-2. **Computational Efficiency**: Employs rigorous Quality Filtering and Deduplication algorithms prior to feature extraction, significantly optimizing GPU utilization and processing throughput.
-3. **Fault Tolerance and Recovery**: Implements a robust checkpointing mechanism by persisting intermediate states (.parquet/.npy formats), ensuring the pipeline can resume processing from the last successful execution point in the event of an interruption.
-4. **Two-Stage Keyframe Foundation**: Preserves a zero-based, PTS-aware source
-   identity for every decoded frame; builds sparse retrieval frames and event
-   windows; supports optional DINOv2 structural deduplication/cluster medoids;
-   and densely decodes candidate windows to an explainable semantic frame
-   selection. Query-specific event models and full Textual KIS, VQA, or TRAKE
-   handlers remain downstream work.
+## Chạy nhanh trên máy local
 
----
-*For further technical specifications, please consult the documentation provided in the `docs/` directory.*
+### Yêu cầu
+
+- Docker Desktop đang chạy;
+- Node.js `>=20`;
+- Python `3.11+`;
+- `ffmpeg` và `ffprobe` trong `PATH` cho probing, ASR và exact-frame decode;
+- `npm` cho backend, Corepack/pnpm cho frontend.
+
+### Khởi động database và embedding service
+
+Từ thư mục repository:
+
+```powershell
+Copy-Item apps/backend/.env.example apps/backend/.env
+docker compose up -d --build postgres embedding
+```
+
+Mở `apps/backend/.env` và cấu hình ít nhất `DATABASE_URL`,
+`DATABASE_DIRECT_URL` trỏ tới PostgreSQL local ở port `5433`, cùng
+`EMBEDDING_SERVICE_URL=http://127.0.0.1:8001/embed` nếu muốn dùng CLIP branch.
+Không đưa R2/API key thật vào git hoặc vào frontend.
+
+### Migration và backend
+
+```powershell
+Set-Location apps/backend
+npm install
+npm run db:migrate
+npm run db:verify
+npm run start:dev
+```
+
+### Frontend
+
+Mở terminal khác:
+
+```powershell
+Set-Location apps/frontend
+corepack enable
+pnpm install
+pnpm dev
+```
+
+Mở <http://localhost:3000>. Nếu `BACKEND_API_URL` để trống, frontend dùng
+fixture deterministic cho search; các thao tác cần backend sẽ trả lỗi rõ ràng
+thay vì ghi dữ liệu giả. Hướng dẫn đầy đủ nằm ở
+[`apps/frontend/README.md`](apps/frontend/README.md).
+
+### Import feature vào database
+
+Sau khi đã có refined artifacts, chạy dry-run trước rồi mới import:
+
+```powershell
+python -m pip install -r pipelines/ingestion/requirements.txt
+$env:PYTHONPATH = (Get-Location).Path
+python -m pipelines.ingestion.import_refined `
+  --data-root D:\data\refined `
+  --dry-run
+```
+
+Khi validation thành công, bỏ `--dry-run`, truyền database URL và chạy lại
+`npm run db:build-indexes`, `npm run db:verify` trong `apps/backend`. Chi tiết
+layout artifact và các phase import nằm ở
+[`pipelines/ingestion/README.md`](pipelines/ingestion/README.md).
+
+### Chạy toàn bộ stack bằng Docker
+
+Sau khi đã chuẩn bị `apps/backend/.env` và migration, có thể chạy:
+
+```powershell
+docker compose up -d --build
+```
+
+Các cổng mặc định là frontend `3000`, backend `4000`, embedding `8001` và
+PostgreSQL `5433`. Compose này dành cho local; đổi credentials và giới hạn
+network trước khi dùng ngoài máy phát triển.
+
+## Các lệnh thường dùng
+
+| Scope | Lệnh | Mục đích |
+|---|---|---|
+| Backend | `npm run start:dev` | Chạy NestJS với watch mode |
+| Backend | `npm run db:migrate` | Áp dụng migration |
+| Backend | `npm run db:build-indexes` | Tạo FTS/trigram/HNSW sau khi import |
+| Backend | `npm run db:verify` | Kiểm tra schema, index và release |
+| Backend | `npm test` / `npm run test:coverage` | Unit/integration test và coverage |
+| Backend | `npm run typecheck` / `npm run build` | Kiểm tra TypeScript và build |
+| Frontend | `pnpm dev` | Chạy Next.js dev server |
+| Frontend | `pnpm test` / `pnpm test:coverage` | Component, route và utility tests |
+| Frontend | `pnpm test:e2e` | Playwright qualification flow |
+| Frontend | `pnpm typecheck` / `pnpm lint` / `pnpm build` | Kiểm tra frontend |
+| Pipelines | `python -m unittest discover -s tests -q` | Test pipeline và contract |
+| Preprocessing | `python -m pipelines.preprocessing.cli --help` | Xem các stage offline |
+| Greenfield pipeline | `python -m pipelines.main --help` | Xem DAG local/hybrid/Modal |
+
+Chạy các lệnh Node trong đúng thư mục con tương ứng; repository không có
+root `package.json`.
+
+## Bản đồ repository
+
+| Thư mục | Vai trò |
+|---|---|
+| `apps/frontend/` | Next.js Workbench và BFF routes |
+| `apps/backend/` | NestJS retrieval API, database adapter, media và task executor |
+| `contracts/` | JSON Schema và semantic validation dùng chung |
+| `pipelines/preprocessing/` | Frame manifest, sparse sampling, dense decode, indexing |
+| `pipelines/feature_extraction/` | ASR, caption, OCR, object và visual embedding |
+| `pipelines/ingestion/` | Validate/import refined artifacts vào PostgreSQL |
+| `pipelines/main/` | Greenfield DAG orchestration local/hybrid/Modal |
+| `embedding_services/` | FastAPI CLIPA text/image embedding service |
+| `docs/` | PRD, design, testing notes và runbook triển khai |
+| `data/`, `artifacts/`, `outputs/` | Khung lưu dữ liệu local; phần lớn output bị gitignore |
+| `eval/`, `experiments/` | Khu vực đánh giá và thử nghiệm |
+
+Raw video, model weights, `.env`, parquet/numpy output và local cache không
+thuộc source control. Xem `.gitignore` trước khi chia sẻ hoặc staging artifact.
+
+## README theo module
+
+- [Frontend Workbench](apps/frontend/README.md)
+- [Backend retrieval API](apps/backend/README.md)
+- [Contract boundary](contracts/README.md)
+- [Video preprocessing](pipelines/preprocessing/README.md)
+- [Refined database ingestion](pipelines/ingestion/README.md)
+- [Greenfield pipeline](pipelines/main/README.md)
+- [ASR](pipelines/feature_extraction/asr/README.md)
+- [Image captioning](pipelines/feature_extraction/captioning/README.md)
+- [Vietnamese OCR](pipelines/feature_extraction/ocr/README.md)
+- [Object detection](pipelines/feature_extraction/object_detection/README.md)
+- [Unified feature extraction](pipelines/feature_extraction/unified/README.md)
+- [Visual embedding](pipelines/feature_extraction/visual_embedding/README.md)
+- [Query embedding service](embedding_services/README.md)
+
+## Tài liệu vận hành liên quan
+
+- [Local Docker runbook](RUNBOOK_LOCAL_DOCKER.md)
+- [GitHub → Kaggle → R2 keyframe runbook](docs/keyframe_kaggle_r2_runbook.md)
+- [VLM team guide](HUONG_DAN_VLM_TEAM.md)
+- [Contract compatibility policy](contracts/versioning/compatibility_policy.md)
+- [Testing/design notes](docs/testing/)
+
+Khi thay đổi schema, identity hoặc output artifact, cập nhật contract và README
+module liên quan trong cùng một thay đổi; không dùng README làm source of truth
+cho dữ liệu máy đọc được.

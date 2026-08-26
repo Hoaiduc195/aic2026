@@ -1,19 +1,16 @@
-# Modal Florence-2 image captioning
+# Florence-2 image captioning trên Modal
 
-This module streams local keyframes to one Modal T4 container running
-`microsoft/Florence-2-base`. It generates English captions; translation is a
-separate downstream feature.
+Module gửi keyframe local theo batch giới hạn tới một Modal GPU chạy
+`microsoft/Florence-2-base` và ghi một caption tiếng Anh cho mỗi ảnh. Frame
+không được copy vào Modal Volume; volume chỉ giữ Hugging Face model cache.
 
-Only the English output is used for the canonical `caption_result` and refined
-database artifacts. Any optional `captioning_vi/` output is not imported.
+Caption tiếng Anh là artifact canonical được ingestion sử dụng. Dịch tiếng
+Việt là bước downstream độc lập và output `captioning_vi/` không được importer
+canonical nạp vào database.
 
-The local machine owns the input and output folders. Frames are not uploaded
-to a Modal Volume. A small Modal Volume is used only for the Hugging Face
-model cache, so reruns do not download model weights again.
+## Input và output
 
-## Input and output layout
-
-The input folder must contain one directory per video:
+Input phải có một thư mục cho mỗi video:
 
 ```text
 keyframes/
@@ -24,142 +21,94 @@ keyframes/
     └── 001.jpg
 ```
 
-Captions preserve this layout:
+Output giữ nguyên layout:
 
 ```text
 captioning/
-└── L21_V001/
-    ├── 001.txt
-    └── 002.txt
+├── L21_V001/001.txt
+├── L21_V001/002.txt
+└── run_batch_0_of_3.jsonl
 ```
 
-The script also appends local progress records to
-`run_batch_<index>_of_<count>.jsonl`. Existing `.txt` files are resumed
-automatically, including empty files.
+JSONL là progress/error manifest append-only. File `.txt` đã tồn tại, kể cả
+file rỗng, được xem là đã xử lý và bỏ qua trừ khi có `--overwrite`.
 
-## Installation
-
-From this directory, install only the local Modal CLI dependency:
+## Cài đặt và xác thực Modal
 
 ```powershell
-python -m pip install -r requirements-modal.txt
+python -m pip install -r pipelines/feature_extraction/captioning/requirements-modal.txt
 modal token new
 ```
 
-Florence-2, PyTorch, Transformers, Accelerate, and Pillow are installed in the
-remote Modal image. The model is loaded once per container and requests are
-dynamic-batched on the T4.
+Florence-2, PyTorch, Transformers, Accelerate và Pillow được cài trong remote
+image. Worker giữ model trong memory và dynamic-batch trên T4.
 
-## Translate captions to Vietnamese
+## Chạy pilot
 
-The generated captions are English. Translate them locally without a
-per-request API by using the pinned `Helsinki-NLP/opus-mt-en-vi` model. The
-translator keeps the English files unchanged, mirrors their directory layout,
-deduplicates identical captions before inference, and resumes from existing
-Vietnamese output files.
-
-Install the local translation dependencies from this directory:
+Luôn dry-run một partition trước:
 
 ```powershell
-python -m pip install -r requirements-translation.txt
+modal run pipelines/feature_extraction/captioning/modal_florence_captioning.py `
+  --input-dir E:\aic2026\keyframes `
+  --output-dir E:\aic2026\captioning `
+  --batch-index 0 --num-batches 3 `
+  --max-images 500 --dry-run
 ```
 
-Run it with explicit input and output folders:
+Chạy pilot thật bằng cách bỏ `--dry-run`, giữ `--max-images 500` để kiểm tra
+chất lượng caption. Sau khi duyệt sample mới chạy toàn bộ dataset:
+
+```powershell
+modal run pipelines/feature_extraction/captioning/modal_florence_captioning.py `
+  --input-dir E:\aic2026\keyframes `
+  --output-dir E:\aic2026\captioning `
+  --batch-index 0 --num-batches 3 `
+  --budget-usd 25
+```
+
+Các worker độc lập dùng `--batch-index` từ `0` đến `--num-batches - 1`. Không
+cho hai process ghi cùng output partition. Chạy lại cùng command sẽ resume
+những file còn thiếu; dùng `--overwrite` chỉ khi chủ động regenerate.
+
+## Điều chỉnh throughput và chi phí
+
+- `--batch-size` là submission window local, không phải GPU batch cố định;
+- `--max-new-tokens` và `--num-beams` đổi chất lượng/thời gian generation;
+- `--max-retries` chỉ nên retry lỗi transient;
+- `--budget-usd` là guardrail ước tính theo thời gian remote, không phải hóa
+  đơn Modal chính thức;
+- `--gpu-rate-usd-per-hour` dùng để hiệu chỉnh ước tính khi giá GPU thay đổi.
+
+Mặc định greedy decoding (`--num-beams 1`) ưu tiên throughput. Tăng beams chỉ
+sau khi pilot cho thấy chất lượng cần cải thiện.
+
+## Dịch sang tiếng Việt
+
+Cài dependency dịch local:
+
+```powershell
+python -m pip install -r pipelines/feature_extraction/captioning/requirements-translation.txt
+```
+
+Translator dùng model pinned `Helsinki-NLP/opus-mt-en-vi`, deduplicate caption
+trùng trước inference, giữ nguyên file tiếng Anh và resume file tiếng Việt:
 
 ```powershell
 python -m pipelines.feature_extraction.captioning.translate_captions `
   --input-dir E:\aic2026\captioning `
   --output-dir E:\aic2026\captioning_vi `
-  --batch-size 64 `
-  --device auto
+  --batch-size 64 --device auto
 ```
 
-The output preserves the input layout:
+Có thể chia deterministic partitions bằng `--batch-index` và `--num-batches`.
+Dùng `--overwrite` để dịch lại output đã có. CUDA được dùng nếu khả dụng,
+ngược lại translator chạy CPU.
 
-```text
-captioning/L21_V001/001.txt
-captioning_vi/L21_V001/001.txt
-```
-
-Use `--overwrite` to regenerate existing Vietnamese files. For a large
-dataset, deterministic partitions can be run separately:
+## Kiểm tra
 
 ```powershell
-python -m pipelines.feature_extraction.captioning.translate_captions `
-  --input-dir E:\aic2026\captioning `
-  --output-dir E:\aic2026\captioning_vi `
-  --batch-index 0 --num-batches 3
+python -m unittest tests.test_captioning_modal tests.test_translation_captions -v
 ```
 
-Repeat with indexes `1` and `2`. The model uses CUDA automatically when it is
-available and falls back to CPU otherwise. `--batch-size` controls the number
-of unique caption strings sent to the model per inference call; repeated
-caption files are written from one translated result.
-
-## Three-way split
-
-The input directory currently contains 873 video directories. The script
-requires an even split and deterministically selects 291 videos per batch:
-
-```powershell
-# Member 1
-modal run modal_florence_captioning.py `
-  --input-dir E:\aic2026\keyframes `
-  --output-dir E:\aic2026\captioning `
-  --batch-index 0 --num-batches 3 --budget-usd 25
-
-# Member 2: use --batch-index 1
-# Member 3: use --batch-index 2
-```
-
-Use different output folders if multiple members share the same machine, or
-use disjoint batch indexes as shown above. Do not run two processes writing the
-same output files concurrently.
-
-## Pilot and resume
-
-First inspect the selected partition without starting Modal:
-
-```powershell
-modal run modal_florence_captioning.py `
-  --input-dir E:\aic2026\keyframes `
-  --output-dir E:\aic2026\captioning `
-  --batch-index 0 --num-batches 3 --max-images 500 --dry-run
-```
-
-For a real pilot, omit `--dry-run` and keep `--max-images 500`. Review a
-sample of the English captions before processing the full batch. The default
-greedy decoding (`--num-beams 1`) is chosen for throughput; use
-`--num-beams 3` only if the pilot shows a quality problem.
-
-Rerunning the same command is safe: any existing `.txt` caption file is
-skipped, including an empty file. Use `--overwrite` when intentionally
-regenerating completed or empty captions.
-
-## Cost and throughput controls
-
-- `--budget-usd 25` leaves approximately `$5` of the `$30` credit as a safety
-  reserve.
-- `--batch-size 128` bounds the local in-flight request window and RAM usage;
-  the remote GPU batch is fixed at 8 for T4 safety.
-- `--max-new-tokens 32` is sufficient for one-sentence captions and avoids
-  unnecessarily long generation.
-- `--max-retries 2` retries transient network/service failures only.
-- `--gpu-rate-usd-per-hour 0.5904` is an estimate used by the local guardrail;
-  adjust it if Modal changes its published T4 price.
-
-The budget guard is intentionally conservative because it uses elapsed remote
-window time rather than an undocumented billing API. It stops before sending a
-new window once the estimate reaches the configured budget; completed files
-remain available for the next resume run.
-
-## Tests
-
-Run the local utility tests from `src`:
-
-```powershell
-python -m unittest tests.test_captioning_modal -v
-```
-
-The tests do not require the Modal SDK or a GPU. A real Modal pilot is still
-required to validate end-to-end model loading and caption quality.
+Test local không cần Modal SDK hoặc GPU. Cần một pilot Modal thật để xác nhận
+model loading, quota và chất lượng caption trước full run.

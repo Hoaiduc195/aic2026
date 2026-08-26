@@ -1,82 +1,111 @@
-﻿# Unified Feature Extraction Pipeline
+# Unified feature extraction trên Modal
 
-Extract **all four features** for every keyframe in a **single Modal GPU run**,
-instead of running five separate scripts.
+Pipeline này xử lý một keyframe một lần trên một Modal GPU và tạo đồng thời
+bốn feature. Nó giảm số lần cold-start so với chạy từng script riêng.
 
-## Features extracted per keyframe
+## Bốn feature
 
-| Feature | Model | Output file |
-|---------|-------|-------------|
-| Caption | Florence-2-base | `captioning/<video>/<frame>.txt` |
-| Visual Embedding | CLIPA-ViT-H-14-336 (1024-dim) | `embeddings/<video>/<frame>.npy` |
-| Object Detection | YOLO26n (COCO-80) | `object_detection/<video>/<frame>.json` |
+| Feature | Model mặc định | Output |
+|---|---|---|
+| Caption tiếng Anh | Florence-2-base | `captioning/<video>/<frame>.txt` |
+| Visual embedding | CLIPA ViT-H/14, 1024 chiều | `embeddings/<video>/<frame>.npy` |
+| Object detection | YOLO26n, COCO | `object_detection/<video>/<frame>.json` |
 | Vietnamese OCR | PaddleOCR PP-OCRv6 | `ocr/<video>/<frame>.jsonl` |
 
-> **ASR** is NOT included (it reads from the video audio track, not keyframes).
-> Run `pipelines/feature_extraction/asr` separately.
+ASR không nằm trong pipeline vì ASR đọc audio track của video gốc, không đọc
+ảnh keyframe. Chạy riêng tại [`../asr/`](../asr/README.md).
 
-## Quick start
+## Cài đặt và quick start
 
-`ash
-# Install Modal SDK (once per machine)
-pip install modal
-modal setup
+Máy local chỉ cần Modal CLI:
 
-# Process batch 0 of 3 (round-robin; 3 team members run batch 0, 1, 2)
-modal run pipelines/feature_extraction/unified/modal_unified_pipeline.py \
-    --keyframe-dir E:/aic2026/keyframes \
-    --data-root   E:/aic2026/data \
-    --batch-index 0 --num-batches 3 --budget-usd 25
+```powershell
+python -m pip install -r pipelines/feature_extraction/unified/requirements-modal.txt
+modal token new
+```
 
-# Dry run -- count pending frames and estimate cost without uploading anything
-modal run pipelines/feature_extraction/unified/modal_unified_pipeline.py \
-    --keyframe-dir E:/aic2026/keyframes \
-    --data-root   E:/aic2026/data \
-    --dry-run
-`
+Chạy partition đầu tiên:
 
-## Batch 2 (when BTC releases new data)
+```powershell
+modal run pipelines/feature_extraction/unified/modal_unified_pipeline.py `
+  --keyframe-dir E:\aic2026\keyframes `
+  --data-root E:\aic2026\data `
+  --batch-index 0 --num-batches 3 --budget-usd 25
+```
 
-Point `--keyframe-dir` at the new folder. The script automatically skips any
-frame that already has all four output files, so Batch 1 is never re-processed.
+Ba worker có thể dùng index `0`, `1`, `2`. Không cho hai worker ghi cùng
+partition hoặc cùng output folder.
 
-`ash
-modal run pipelines/feature_extraction/unified/modal_unified_pipeline.py \
-    --keyframe-dir E:/aic2026/keyframes_batch2 \
-    --data-root   E:/aic2026/data \
-    --batch-index 0 --num-batches 3
-`
+Dry-run để đếm frame pending và ước tính chi phí mà không upload:
 
-## Resume safety
+```powershell
+modal run pipelines/feature_extraction/unified/modal_unified_pipeline.py `
+  --keyframe-dir E:\aic2026\keyframes `
+  --data-root E:\aic2026\data `
+  --dry-run
+```
 
-A frame is considered **done** only when **all four output files** exist.
-Partially written frames are re-processed on the next run.
+## Resume và output
 
-## GPU
+Một frame chỉ được xem là hoàn tất khi **cả bốn file output** tồn tại. File
+được ghi atomic; frame partial sẽ được xử lý lại ở lần chạy tiếp theo. Dùng
+`--overwrite` để chủ động chạy lại tất cả frame trong partition.
 
-Default: **L4** (16 GB VRAM) -- comfortably fits all four models (~6.3 GB combined).
-Override: `UNIFIED_GPU=A10G modal run ...`
+```text
+<data-root>/
+├── captioning/<video>/<frame>.txt
+├── embeddings/<video>/<frame>.npy
+├── object_detection/<video>/<frame>.json
+└── ocr/<video>/<frame>.jsonl
+```
 
-## CLI flags
+Input hỗ trợ `.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp` đệ quy. `--max-images`
+giới hạn số frame pending (`0` = không giới hạn), `--batch-size` là số frame
+trong một submission window local, và `--max-retries` kiểm soát retry lỗi
+transient.
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--keyframe-dir` | `keyframes` | Directory containing keyframe `.jpg` files |
-| `--data-root` | `data` | Root where output subdirs are written |
-| `--batch-index` | `0` | Round-robin partition index (0-based) |
-| `--num-batches` | `1` | Total number of partitions |
-| `--batch-size` | `8` | Frames per Modal call |
-| `--max-retries` | `2` | Retry count per chunk on Modal error |
-| `--budget-usd` | `25.0` | Hard cost guard |
-| `--max-images` | `0` | Limit frames processed (0 = unlimited) |
-| `--overwrite` | false | Re-process frames even if output exists |
-| `--dry-run` | false | Estimate without calling Modal |
+## GPU, model và flag
 
-## Compared to running scripts separately
+Mặc định dùng L4 16 GB. Đổi GPU hoặc model YOLO trước khi chạy:
 
-| | Separate scripts | Unified pipeline |
-|---|---|---|
-| Scripts to run | 4 (+ ASR separately) | 1 (+ ASR separately) |
-| GPU cold-starts | 4 | 1 |
-| Progress view | 4 terminals | 1 terminal |
-| Batch 2 support | Re-run each script | Same command, new --keyframe-dir |
+```powershell
+$env:UNIFIED_GPU = "A10G"
+$env:UNIFIED_YOLO_MODEL = "yolo26s.pt"
+modal run pipelines/feature_extraction/unified/modal_unified_pipeline.py `
+  --keyframe-dir E:\aic2026\keyframes `
+  --data-root E:\aic2026\data
+```
+
+Các flag chính:
+
+| Flag | Mặc định | Ý nghĩa |
+|---|---:|---|
+| `--keyframe-dir` | `keyframes` | Root ảnh input |
+| `--data-root` | `data` | Root bốn output |
+| `--batch-index` | `0` | Partition hiện tại |
+| `--num-batches` | `1` | Tổng partition |
+| `--batch-size` | `8` | Frame/submission window |
+| `--max-retries` | `2` | Retry mỗi chunk |
+| `--budget-usd` | `25` | Cost guardrail |
+| `--max-images` | `0` | Giới hạn frame; 0 = unlimited |
+| `--overwrite` | tắt | Bỏ qua resume và chạy lại |
+| `--dry-run` | tắt | Chỉ lập kế hoạch |
+
+Model names, threshold và output version tập trung ở
+`unified/config.py`. Nếu đổi model/projection/normalization, cập nhật metadata
+contract và downstream importer tương ứng.
+
+## Khi nào dùng pipeline riêng?
+
+Unified phù hợp khi cùng một tập keyframe cần cả bốn feature và muốn giảm
+cold-start. Chạy script riêng khi chỉ cần một modality, cần retry độc lập hoặc
+muốn chọn cấu hình GPU/model khác cho từng modality.
+
+## Kiểm tra
+
+```powershell
+python -m unittest discover -s tests -q
+```
+
+Các utility test không cần Modal GPU; nên luôn chạy dry-run và một pilot nhỏ
+trước full dataset.

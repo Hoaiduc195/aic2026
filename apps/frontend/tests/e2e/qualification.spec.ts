@@ -115,6 +115,15 @@ async function mockFrameFirstApis(page: Page) {
     });
   });
 
+  await page.route('**/api/v1/videos/video_01/frames?center_frame_id=385&limit=6', async (route) => {
+    requests.frames += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json; charset=utf-8',
+      body: JSON.stringify(frameContextResponse),
+    });
+  });
+
   await page.route('**/api/v1/videos/video_01/studio', async (route) => {
     await route.fulfill({
       status: 200,
@@ -228,6 +237,26 @@ test.describe('qualification frame-first workbench', () => {
     await expect(page.getByText('Preview đã tạo cho 1 đáp án')).toBeVisible();
   });
 
+  test('loads and exports a user-sized nearby frame window', async ({ page }) => {
+    const requests = await mockFrameFirstApis(page);
+    await page.goto('/');
+
+    await page.getByLabel('Mô tả sự kiện').fill('Một cửa hàng trên phố');
+    await page.getByRole('button', { name: 'Tìm frame' }).click();
+    await expect(page.getByRole('heading', { name: 'Frame lân cận' })).toBeVisible();
+
+    const frameCount = page.getByLabel('Số frame trong cửa sổ lân cận');
+    await frameCount.fill('6');
+    await page.getByRole('button', { name: 'Tải frame lân cận' }).click();
+
+    await expect(page.getByText('Frame 351')).toBeVisible();
+    expect(requests.frames).toBe(1);
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Xuất CSV frame lân cận' }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toBe('aic-video_01-frame-385-nearby.csv');
+  });
+
   test('preserves task workspaces and restores a successful query from history', async ({ page }) => {
     await mockFrameFirstApis(page);
     await page.goto('/');
@@ -259,6 +288,9 @@ test.describe('qualification frame-first workbench', () => {
     await page.getByRole('tab', { name: 'TRAKE' }).click();
     await page.getByLabel('Truy vấn chính').fill('Một người đi qua cửa hàng');
     await page.getByLabel('Mô tả sự kiện 1').fill('Người đi vào cửa hàng');
+    await page.getByLabel('Mô tả sự kiện 2').fill('Người dừng lại');
+    await page.getByLabel('Mô tả sự kiện 3').fill('Người nhìn vào quầy');
+    await page.getByLabel('Mô tả sự kiện 4').fill('Người rời khỏi cửa hàng');
     await page.getByRole('button', { name: 'Tìm frame' }).click();
     await page.getByRole('button', { name: 'Chọn frame video_01 · 385' }).click();
     await page.getByRole('button', { name: 'Xem video studio' }).click();
@@ -273,6 +305,6 @@ test.describe('qualification frame-first workbench', () => {
     await expect(page.getByText('xe máy')).toBeVisible();
     await page.getByRole('button', { name: 'Thêm chuỗi vào đáp án' }).click();
     await page.getByRole('button', { name: 'Đáp án (1)' }).click();
-    await expect(page.getByText('video_01 · frame 385 → 411 → 450 → 500')).toBeVisible();
+    await expect(page.getByText('Frame 385 → 411 → 450 → 500')).toBeVisible();
   });
 });

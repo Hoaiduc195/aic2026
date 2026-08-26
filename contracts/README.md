@@ -1,57 +1,75 @@
-# AIC contract boundary
+# Contract boundary
 
-`contracts/` is the canonical, machine-checkable data boundary between
-preprocessing, artifact publication, retrieval, task handlers, backend, and
-the future competition adapter. It does not contain raw videos, model code,
-database migrations, or organizer-specific submission payloads.
+`contracts/` là ranh giới dữ liệu machine-checkable giữa preprocessing, feature
+extraction, artifact publication, ingestion, retrieval backend và competition
+adapter. Đây không phải nơi chứa raw video, model code hoặc migration database.
 
-## Invariants
+## Quy tắc bất biến
 
-- `video_id` and `original_frame_id` identify a source frame. The latter is
-  authoritative for exact-frame results.
-- A sparse keyframe occurrence is identified by `(video_id, keyframe_no)` and
-  may be represented as a `frame_alias` of the same canonical source frame.
-  Retrieval may receive multiple aliases, but fusion must return one result per
+- `video_id` + `original_frame_id` xác định một source frame; `original_frame_id`
+  zero-based là identity authoritative cho kết quả exact frame.
+- Một lần xuất hiện sparse được xác định bởi `(video_id, keyframe_no)` và có
+  thể là `frame_alias` trỏ tới canonical frame. Fusion phải loại duplicate theo
   canonical `(video_id, original_frame_id)`.
-- Internal temporal intervals use integer milliseconds and half-open semantics:
-  `[start_ms, end_ms)`.
-- `frame_id` is optional legacy/adapter identity and must not replace
-  `original_frame_id` internally.
-- Evidence is independently addressable through `evidence_id` and carries its
-  producer/model provenance.
-- Caption evidence is English-only (`language: "en"`); OCR evidence is
-  Vietnamese-only (`language: "vi"`).
-- Published results identify one coherent dataset, pipeline, schema, and index
-  version tuple.
-- A failed retrieval branch is represented by a normalized `branch_result` and
-  cannot silently publish partial candidates as `completed`.
-- TRAKE output contains one semantic frame per ordered event. JSON Schema
-  validates shape; providers must additionally enforce strictly increasing
-  `event_ordinal` and `original_frame_id`.
-- `needs_more_evidence` and `abstained` are valid outcomes for VQA; an absent
-  answer must not be encoded as a confident empty string.
+- Khoảng thời gian dùng số nguyên milliseconds và nửa mở: `[start_ms, end_ms)`.
+- `frame_id` là identity legacy/adapter tùy chọn, không được thay thế
+  `original_frame_id` bên trong hệ thống.
+- Evidence có `evidence_id`, producer/model provenance và được tham chiếu độc
+  lập bởi kết quả retrieval/task.
+- Caption canonical dùng `language: "en"`; OCR canonical dùng
+  `language: "vi"`.
+- Mỗi kết quả đã publish phải ghi rõ tuple dataset, pipeline, schema, artifact
+  và index version tương ứng.
+- Retrieval branch lỗi phải được biểu diễn bằng `branch_result` chuẩn hóa;
+  không được âm thầm publish candidate một phần như `completed`.
+- TRAKE có một semantic frame cho mỗi event; `event_ordinal` liên tục và
+  `original_frame_id` tăng nghiêm ngặt.
+- VQA có thể là `answered`, `needs_more_evidence` hoặc `abstained`. Không mã
+  hóa việc chưa trả lời thành chuỗi rỗng có vẻ tự tin.
 
-## Boundary map
+## Bản đồ schema
 
-| Boundary | Canonical schemas |
+| Boundary | Schema |
 |---|---|
-| Source and temporal hierarchy | `video_manifest`, `frame`, `frame_alias`, `micro_event`, `context_window`, `event_window` |
-| Retrieval and evidence | `keyframe`, `dense_candidate`, `semantic_keyframe`, `event_score`, `evidence`, `evidence_relation` |
-| Reproducibility and publication | `processing_run`, `artifact_manifest`, `version_manifest`, `ingestion_record` |
-| Query and branch execution | `qualification_request`, `query_plan`, `branch_result`, `search_response` |
-| Preliminary-round task outputs | `textual_kis_response`, `vqa_response`, `trake_alignment`, `qualification_response` |
+| Video và timeline | `video_manifest`, `frame`, `frame_alias`, `micro_event`, `context_window`, `event_window` |
+| Retrieval và evidence | `keyframe`, `dense_candidate`, `semantic_keyframe`, `event_score`, `evidence`, `evidence_relation` |
+| Artifact và reproducibility | `processing_run`, `artifact_manifest`, `version_manifest`, `ingestion_record` |
+| Query và execution | `qualification_request`, `query_plan`, `branch_result`, `search_response` |
+| Task output | `textual_kis_response`, `vqa_response`, `trake_alignment`, `qualification_response` |
 
-The three preliminary-round tasks are represented internally as
-`textual_kis`, `vqa`, and `trake`. Organizer-specific names, identifiers,
-timestamp units, and payloads belong behind the competition adapter.
+Mỗi schema nằm ở `contracts/schemas/<name>/schema.json`. Ví dụ hợp lệ và không
+hợp lệ nằm ở `contracts/examples/valid_outputs/` và
+`contracts/examples/invalid_outputs/`.
+
+Ba task vòng sơ tuyển nội bộ dùng tên `textual_kis`, `vqa` và `trake`. Tên
+field/ID/timestamp của organizer phải được chuyển đổi ở competition adapter,
+không làm bẩn contract nội bộ.
 
 ## Validation
 
-Every schema is Draft 2020-12 JSON Schema. Contract tests validate the schema
-documents, valid fixtures, invalid fixtures, URI safety, task conditionals,
-and the versioned evidence envelope. Semantic constraints that JSON Schema
-cannot compare (for example `end_ms > start_ms` or strict TRAKE frame order)
-must be checked by the producing/ingesting boundary as described above.
+JSON Schema dùng Draft 2020-12 để kiểm tra shape và type. Các invariant cần so
+sánh nhiều field được kiểm tra thêm ở `semantic_validation.py`, ví dụ:
 
-See `versioning/compatibility_policy.md` before changing a required field or
-renaming an identifier.
+- `end_ms > start_ms` và frame interval không rỗng;
+- TRAKE event ordinal liên tục, frame ID tăng nghiêm ngặt;
+- VQA `answered` phải có answer không rỗng và evidence;
+- `qualification_response` phải khớp result type với task.
+
+Chạy toàn bộ contract/pipeline test từ repository root:
+
+```powershell
+python -m unittest discover -s tests -q
+```
+
+Hoặc chạy nhóm contract nhanh:
+
+```powershell
+python -m unittest `
+  tests.test_keyframe_contracts `
+  tests.test_qualification_contracts -v
+```
+
+Khi thay đổi required field, identifier, timestamp unit hoặc meaning của một
+record, đọc [compatibility policy](versioning/compatibility_policy.md), cập
+nhật fixture và thêm regression test. README chỉ giải thích contract; schema
+JSON và semantic validator mới là nguồn sự thật.

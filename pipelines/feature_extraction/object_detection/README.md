@@ -1,38 +1,49 @@
-# Modal Object Detection
+# Object detection bằng YOLO trên Modal
 
-`modal_yolo.py` processes a local directory of image frames with Ultralytics
-YOLO running on a Modal GPU. The local process only enumerates files, uploads
-bounded windows, and writes results; the detector and PyTorch runtime never run
-on the local machine.
+`modal_yolo.py` quét thư mục frame local, gửi upload window có giới hạn tới
+Ultralytics YOLO trên Modal GPU và ghi một JSON result cho mỗi ảnh. PyTorch,
+detector và model weights không chạy trên máy local.
 
-Defaults:
+## Mặc định
 
-- Model: `yolo26n.pt`, pretrained on COCO;
-- Ultralytics headless: `8.4.104`;
-- GPU: T4;
-- Input: `.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp`, recursively;
-- Output: one `.json` per frame, preserving the input directory layout.
+| Thuộc tính | Giá trị |
+|---|---|
+| Model | `yolo26n.pt`, pretrained COCO |
+| Ultralytics | headless `8.4.104` |
+| GPU | T4 |
+| Input | `.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp` đệ quy |
+| Output | JSON theo đúng layout input |
 
-The detector returns bounding boxes, class IDs/names, confidence, pixel
-coordinates (`bbox_xyxy`), and normalized coordinates (`bbox_normalized`).
-Frames with no detection are still written as successful JSON records with an
-empty `detections` list.
+Mỗi detection có class ID/name, confidence, pixel box `bbox_xyxy` và box chuẩn
+hóa `bbox_normalized`. Frame không có object vẫn ghi record thành công với
+`detections: []`.
 
-## Setup
+Ultralytics model distribution dùng license AGPL-3.0. Kiểm tra nghĩa vụ license
+trước khi đưa pipeline vào sản phẩm thương mại.
 
-Install only the local Modal CLI dependency and authenticate once:
+## Cài đặt
 
 ```powershell
 python -m pip install -r pipelines/feature_extraction/object_detection/requirements-modal.txt
 modal token new
 ```
 
-The headless Ultralytics distribution, PyTorch, Pillow, and the model runtime
-are installed in the remote Modal image. The headless OpenCV variant avoids
-GUI dependencies such as `libGL.so.1`. Downloaded weights are kept in the Modal Volume
-`aic-ultralytics-model-cache`.
+Runtime headless, PyTorch, Pillow và weights được cài trong Modal image.
+Weights giữ trong volume `aic-ultralytics-model-cache`; bản OpenCV headless
+tránh dependency GUI như `libGL`.
 
-## Test a small sample
+## Chạy pilot
+
+`--dry-run` chỉ in kế hoạch, không khởi tạo Modal và không ghi output:
+
+```powershell
+modal run pipelines/feature_extraction/object_detection/modal_yolo.py `
+  --input-dir E:\aic2026\frames `
+  --output-dir E:\aic2026\object_detection `
+  --max-images 500 --dry-run
+```
+
+Chạy sample thật:
 
 ```powershell
 modal run pipelines/feature_extraction/object_detection/modal_yolo.py `
@@ -41,11 +52,7 @@ modal run pipelines/feature_extraction/object_detection/modal_yolo.py `
   --max-images 500
 ```
 
-`--max-images` limits this invocation to the first N selected frames. Omit it
-for the complete dataset. `--dry-run` prints the plan without starting Modal
-or creating output files.
-
-## Process all 177k frames
+Bỏ `--max-images` để xử lý toàn bộ dataset:
 
 ```powershell
 modal run pipelines/feature_extraction/object_detection/modal_yolo.py `
@@ -54,56 +61,38 @@ modal run pipelines/feature_extraction/object_detection/modal_yolo.py `
   --batch-size 64
 ```
 
-The command resumes completed frames automatically. Use `--overwrite` to
-recompute existing JSON files. For deterministic sharding across separate
-runs, use for example:
+Output đã hoàn tất được resume tự động. Dùng `--overwrite` để tính lại.
+
+## Sharding và tuning
+
+Chia input deterministic cho nhiều worker:
 
 ```powershell
 modal run pipelines/feature_extraction/object_detection/modal_yolo.py `
   --input-dir E:\aic2026\frames `
   --output-dir E:\aic2026\object_detection `
-  --batch-index 0 `
-  --num-batches 4 `
-  --batch-size 64
+  --batch-index 0 --num-batches 4 --batch-size 64
 ```
 
-Run the same command with `--batch-index 1`, `2`, and `3` for the other
-partitions. Each partition writes a manifest and error log in the output
-directory.
+Chạy lại với index `1`, `2`, `3`. Mỗi partition có manifest và error log riêng;
+không cho hai worker ghi cùng partition.
 
-## GPU and model configuration
-
-The default is T4. Select L4 for more throughput:
+Mặc định dùng T4. Chọn L4 hoặc model lớn hơn khi ưu tiên throughput/accuracy:
 
 ```powershell
 $env:OBJECT_DETECTION_MODAL_GPU = "L4"
-modal run pipelines/feature_extraction/object_detection/modal_yolo.py `
-  --input-dir E:\aic2026\frames `
-  --output-dir E:\aic2026\object_detection
-```
-
-The default `yolo26n.pt` favors throughput. Select a larger COCO checkpoint
-when accuracy matters more:
-
-```powershell
 $env:OBJECT_DETECTION_MODEL = "yolo26s.pt"
 modal run pipelines/feature_extraction/object_detection/modal_yolo.py `
   --input-dir E:\aic2026\frames `
   --output-dir E:\aic2026\object_detection
 ```
 
-Useful controls are `--image-size`, `--confidence-threshold`,
-`--iou-threshold`, and `--max-detections`. Larger image sizes and models
-increase GPU time and memory usage.
+Các flag `--image-size`, `--confidence-threshold`, `--iou-threshold` và
+`--max-detections` điều chỉnh trade-off accuracy/thời gian/bộ nhớ.
 
-Ultralytics model licensing is AGPL-3.0; check the license requirements before
-using this pipeline in a commercial product.
+## Output
 
-## Output layout
-
-For input `L21_V001/001.jpg`, the result is
-`L21_V001/001.json`. Each record contains the model configuration and a
-structure like:
+Với input `L21_V001/001.jpg`, output là `L21_V001/001.json`:
 
 ```json
 {
@@ -124,15 +113,13 @@ structure like:
 }
 ```
 
-`run_batch_*.jsonl` records completed frames. `errors_batch_*.jsonl` records
-local read or remote inference failures. Both are append-only logs and can be
-used to audit or retry a shard.
+`run_batch_*.jsonl` ghi frame hoàn tất; `errors_batch_*.jsonl` ghi lỗi đọc local
+hoặc inference remote. Cả hai là log append-only để audit/retry shard.
 
-## Local tests
-
-The tests use fake Modal responses and do not require Modal credentials,
-Ultralytics, or a GPU:
+## Kiểm tra
 
 ```powershell
 python -m unittest tests.test_object_detection_modal -v
 ```
+
+Test dùng fake Modal response nên không cần credential, Ultralytics hoặc GPU.

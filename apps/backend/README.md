@@ -1,48 +1,94 @@
-# AIC 2026 retrieval backend
+# AIC 2026 Retrieval Backend
 
-NestJS backend cho ba task vòng sơ tuyển: `textual_kis`, `vqa`, `trake`.
-Backend chạy retrieval trên toàn bộ feature đã ingest, hợp nhất bằng RRF, lưu top-k
-vào Neon để nhóm duyệt thủ công, và chỉ tạo submission preview. Backend không tự
-submit lên hệ thống cuộc thi.
+Backend là NestJS API cho retrieval và operator review. Service nhận query,
+chạy các branch feature đã được cấu hình, hợp nhất kết quả bằng RRF, lưu
+candidate/selection vào PostgreSQL và cấp preview media qua R2 hoặc FFmpeg.
+Service không tự submit lên hệ thống cuộc thi.
 
-## Thành phần đã cài đặt
+## Thành phần
 
-- PostgreSQL FTS cho caption, ASR và OCR; `pg_trgm` cho object label.
-- pgvector/HNSW cho visual embedding 1024 chiều; query encoder chạy qua HTTP interface riêng.
-- Branch isolation: một index/model lỗi không làm hỏng toàn bộ search.
-- R2 presigned URL cho video playback và keyframe thumbnail.
-- Exact source-frame preview: backend dùng FFmpeg decode on-demand khi frame chưa có thumbnail sparse.
-- Ảnh sparse/ảnh decode vượt giới hạn 12 MiB sẽ được re-encode JPEG với kích thước/chất lượng giảm dần để endpoint và VQA vẫn nhận được ảnh.
-- Snapshot retrieval run/candidate và manual selection có revision trong Neon.
-- Export preview JSON + CSV cho Textual KIS, VQA và TRAKE, tối đa 100 answers.
-- Operator token, CORS, rate limit 120 request/phút và input validation.
-- Degraded mode khi Neon, R2 hoặc model service chưa được cấu hình.
+- PostgreSQL full-text search cho caption, ASR và OCR; `pg_trgm` cho object
+  label;
+- pgvector/HNSW cho visual embedding 1024 chiều;
+- query embedding, LLM và VLM qua HTTP adapter, không tải PyTorch/VLM/LLM vào
+  NestJS process;
+- branch isolation: branch thiếu index hoặc model được trả là unavailable,
+  không làm hỏng toàn bộ search;
+- R2 presigned URL cho video/keyframe và exact source-frame decode bằng FFmpeg;
+- retrieval run/candidate snapshot, manual selection revision và submission
+  preview JSON/CSV;
+- operator token, CORS, request validation và throttling.
 
-Các port `LanguageModel`, `TemporalAligner` và `QueryEmbeddingProvider` nằm trong
-`src/compute/model-ports.ts`; `VisionLanguageModel` và adapter OpenAI-compatible
-nằm trong `src/compute/vlm-vision.client.ts`. NestJS chỉ gọi model qua HTTP, không
-tải PyTorch/VLM/LLM trực tiếp.
+Các port model nằm ở `src/compute/model-ports.ts`; VLM client và visual rerank
+nằm ở `src/compute/vlm-vision.client.ts` và `src/retrieval/`.
 
-## Cấu hình và chạy
+## Chạy local
+
+Yêu cầu Node.js `>=20`, PostgreSQL có extension `vector`/`pg_trgm` và FFmpeg
+trong `PATH` (hoặc đặt `FFMPEG_PATH`). Cách nhanh nhất là dùng PostgreSQL và
+embedding service trong root Compose:
 
 ```powershell
 Copy-Item .env.example .env
+# Điền DATABASE_URL/DATABASE_DIRECT_URL và các service tùy chọn trong .env.
+Set-Location ../..
+docker compose up -d --build postgres embedding
+Set-Location apps/backend
 npm install
 npm run db:migrate
 npm run db:verify
-# Sau khi bulk import feature:
-npm run db:build-indexes
 npm run start:dev
 ```
 
-Neon nên dùng pooled URL cho `DATABASE_URL` và direct URL cho
-`DATABASE_DIRECT_URL`. Migration tạo extension `vector`, `pg_trgm` cùng các bảng
-video/frame, feature set/artifact, evidence, index release, retrieval và manual selection.
-GIN/trigram/HNSW là index nặng nên chỉ được tạo bằng `npm run db:build-indexes`
-sau khi bulk import hoàn tất.
+Khi chạy backend trực tiếp trên host, database local thường dùng port `5433`
+và embedding service dùng `http://127.0.0.1:8001/embed`. Khi chạy trong
+Compose, root `docker-compose.yml` thay hai địa chỉ đó bằng tên service.
 
-R2 dùng S3-compatible API nên backend cần đủ endpoint, bucket, access key và
-secret key. Object key được giả định theo cấu trúc:
+Migration tạo extension, bảng video/frame/evidence, feature artifact, index
+release, retrieval run và manual selection. Chỉ chạy build index sau khi import
+đủ dữ liệu:
+
+```powershell
+npm run db:build-indexes
+npm run db:verify
+```
+
+## Ingest refined artifacts
+
+Feature extraction thuộc `pipelines/`, không chạy trong backend runtime.
+Importer validate toàn bộ input trước transaction và ghi theo quan hệ:
+
+```text
+video -> canonical frame -> frame alias -> evidence -> retrieval index
+```
+
+Chạy importer từ repository root:
+
+```powershell
+python -m pip install -r pipelines/ingestion/requirements.txt
+$env:PYTHONPATH = (Get-Location).Path
+python -m pipelines.ingestion.import_refined `
+  --data-root D:\data\refined `
+  --dry-run
+```
+
+Sau dry-run, bỏ `--dry-run`, truyền `--database-url` hoặc đặt
+`DATABASE_DIRECT_URL`/`DATABASE_URL`. Có thể giới hạn bằng `--video-id` hoặc
+`--limit-videos`. Import idempotent và không yêu cầu upload ma trận `.npy` lên
+R2; vector local được ghi trực tiếp vào `clip_embeddings`.
+
+## Media và exact frame
+
+Các route frame dùng `original_frame_id` zero-based. `GET /v1/videos/:id/frames`
+trả cửa sổ quanh `center_frame_id`; `limit` backend nhận từ `1` đến `100`.
+Workbench hiện giới hạn UI ở `1`–`50` và dùng frame tâm để xuất CSV.
+
+Nếu thumbnail exact frame chưa tồn tại, backend seek về codec keyframe và gọi
+FFmpeg để decode đúng source frame. `frame_count` (nếu có) được dùng để từ
+chối ID vượt video; mọi ảnh trả về có giới hạn kích thước và có thể được nén
+trước khi gửi sang VLM/VQA.
+
+R2 dùng S3-compatible API. Object key mặc định được tổ chức như sau:
 
 ```text
 datasets/<dataset-version>/videos/<video-id>.mp4
@@ -50,66 +96,72 @@ datasets/<dataset-version>/keyframes/<video-id>/<original-frame-id>.webp
 features/<dataset-version>/<modality>/<model-version>/<artifact>
 ```
 
-`EMBEDDING_SERVICE_URL` là tùy chọn. Service nhận `{"text":"..."}` ở `/embed`
-và raw image bytes ở `/embed/image`, cùng trả `{"embedding":[1024 số hữu hạn]}`.
-Image encoder và text query encoder phải dùng
-đúng cùng checkpoint/projection/normalization; chỉ cùng số chiều là chưa đủ. Khi
-request có `frame_query: {"video_id":"...", "original_frame_id":385}`, backend
-ưu tiên vector CLIP đã index; nếu chưa có, backend lấy exact frame từ R2/FFmpeg
-và gọi image encoder. Browser chỉ gửi định danh frame, không gửi signed URL.
-Nếu
-chưa cấu hình, CLIP branch được đánh dấu
-`unavailable`; caption/ASR/OCR/object vẫn hoạt động.
+Browser chỉ gửi `video_id` và `original_frame_id`; signed URL được backend
+kiểm soát. Nếu database hoặc R2 chưa cấu hình, service chuyển sang degraded
+mode và health response nêu rõ dependency nào chưa sẵn sàng.
 
-MoreVQA là nhánh tùy chọn của VQA:
+## LLM, VLM và retrieval tuning
 
-- Backend lấy `frames.thumbnail_object_key`, ký presigned URL bằng R2 rồi gửi
-  text cùng `image_url` tới VLM OpenAI-compatible.
-- Nếu VLM lỗi, thiếu thumbnail hoặc không trả lời được, hệ thống fallback về
-  LLM text hiện tại.
-- Có thể bật VLM mặc định bằng `VLM_ENABLED=true`, `VLM_BASE_URL` và `VLM_MODEL`.
-  Frontend cũng cho phép cấu hình VLM theo từng request; API key chỉ nằm trong
-  memory của tab.
-- VLM visual rerank mặc định tắt. Khi bật `retrieval.vlm_rerank`, backend chỉ
-  gửi ảnh của `top_k` candidate đầu tiên và ghi trace `vlm_rerank` vào response.
+LLM OpenAI-compatible là tùy chọn cho VQA/query improvement. VLM có thể bật
+theo cấu hình backend hoặc override cho một request từ frontend; API key của
+request chỉ tồn tại trong memory của tab.
 
-Endpoint trả lời VQA là `POST /v1/vqa/answer`; request có thể thêm `vlm` với
-các trường `base_url`, `api_key`, `model`, `timeout_ms`, `max_tokens` và
-`temperature`.
+Khi bật VLM, có thể dùng:
+
+- `vlm` để trả lời VQA bằng ảnh;
+- `retrieval.vlm_rerank` để chấm lại candidate bằng ảnh;
+- `VLM_MIN_SCORE` để lọc candidate dưới ngưỡng;
+- `VLM_QUERY_EXPANSION=true` để tạo biến thể query tiếng Anh;
+- `VLM_ADAPTIVE_TOP_K=true` để co giãn số candidate gửi VLM.
+
+Các branch retrieval hiện gồm caption, OCR lexical, ASR lexical, object và
+CLIP khi database/index/query encoder tương ứng đã sẵn sàng. Branch semantic,
+temporal và audio yêu cầu provider/index bổ sung.
 
 ## API
 
+Tất cả route trừ `/health` yêu cầu header `x-operator-token` khi
+`OPERATOR_TOKEN` được cấu hình. Trong development có thể bật
+`ALLOW_UNAUTHENTICATED_LOCAL=true`; không dùng tùy chọn này cho staging hoặc
+production.
+
 | Method | Endpoint | Mục đích |
 |---|---|---|
-| `GET` | `/health` | Trạng thái Neon/R2, branch và task executor |
-| `POST` | `/v1/search` | Search và lưu candidate snapshot |
-| `POST` | `/v1/search/plan` | Xem static all-feature execution plan |
-| `GET` | `/v1/videos/:id/playback` | Presigned video URL và metadata |
-| `GET` | `/v1/videos/:id/frames` | Keyframe quanh `center_frame_id` |
-| `GET` | `/v1/videos/:id/frames/:frameId` | Metadata exact source frame + annotation gần nhất |
-| `GET` | `/v1/videos/:id/frames/:frameId/thumbnail` | Thumbnail exact source frame; decode bằng FFmpeg nếu cần |
-| `GET` | `/v1/queries/:id/candidates` | Manual top-k, `limit` 1-1000 |
-| `GET` | `/v1/queries/:id/selection` | Revision lựa chọn gần nhất |
-| `PUT` | `/v1/queries/:id/selection` | Lưu revision manual mới |
-| `POST` | `/v1/submissions/preview` | Validate và tạo JSON/CSV; không submit |
+| `GET` | `/health` | Trạng thái database, object storage, branch và task |
+| `POST` | `/v1/search` | Search đa branch, lưu candidate snapshot |
+| `POST` | `/v1/search/exact-frames` | Search từ danh sách source frame đã biết |
+| `POST` | `/v1/search/plan` | Xem execution plan tĩnh |
+| `POST` | `/v1/query/improve` | Cải thiện query/question/event bằng LLM tùy chọn |
+| `POST` | `/v1/vqa/answer` | Sinh gợi ý đáp án VQA từ frame |
+| `GET` | `/v1/videos/:id/playback` | Playback URI và metadata video |
+| `GET` | `/v1/videos/:id/studio` | Frame/evidence/ASR cho video studio |
+| `GET` | `/v1/videos/:id/frames` | Frame lân cận quanh `center_frame_id` |
+| `GET` | `/v1/videos/:id/frames/:frameId` | Metadata canonical exact frame |
+| `GET` | `/v1/videos/:id/frames/:frameId/thumbnail` | Bytes thumbnail exact frame |
+| `GET` | `/v1/videos/:id/keyframes/:keyframeNo` | Tra canonical frame theo alias |
+| `GET` | `/v1/queries/:id/candidates` | Đọc candidate snapshot, phân trang |
+| `GET` | `/v1/queries/:id/selection` | Đọc selection revision mới nhất |
+| `PUT` | `/v1/queries/:id/selection` | Lưu manual selection revision mới |
+| `POST` | `/v1/submissions/preview` | Validate và tạo JSON/CSV preview |
 
-Ví dụ search:
+Ví dụ text search:
 
 ```json
 {
-  "query": "Người phụ nữ đang cầm vật gì?",
+  "query": "người phụ nữ đang cầm vật gì",
   "task": "vqa",
   "top_k": 20,
-  "retrieval": { "branch_k": 200, "fusion_k": 500, "display_k": 100, "near_frame_window_ms": 1000 }
+  "retrieval": {
+    "branch_k": 200,
+    "fusion_k": 500,
+    "display_k": 100,
+    "near_frame_window_ms": 1000
+  }
 }
 ```
 
-`branch_k`, `fusion_k` và `display_k` là tham số runtime. Manual mode có thể lấy
-thêm candidate đã lưu bằng `GET .../candidates?limit=500&offset=0` mà không chạy
-lại model. `near_frame_window_ms` lọc các kết quả quá gần nhau trong cùng video
-sau bước fusion; mặc định là `1000`, còn `0` để tắt lọc.
-
-Search bằng frame dùng request tối giản, không cần query chữ:
+`near_frame_window_ms` lọc các kết quả quá gần nhau trong cùng video sau
+fusion; đặt `0` để tắt. Search bằng source frame không cần query chữ:
 
 ```json
 {
@@ -120,31 +172,31 @@ Search bằng frame dùng request tối giản, không cần query chữ:
 }
 ```
 
-Exact-frame preview cần `ffmpeg` trong PATH của backend hoặc đặt `FFMPEG_PATH`.
-`frame_count` trong bảng `videos` được dùng để từ chối frame ID vượt quá video;
-nếu chưa có `frame_count`, backend vẫn kiểm tra số nguyên không âm và để FFmpeg
-xác nhận frame có tồn tại hay không. FFmpeg có timeout `FRAME_DECODE_TIMEOUT_MS`
-(mặc định 15 giây); ảnh trả về được giới hạn tối đa 12 MiB và VQA chủ động nén
-xuống khoảng 4 MiB để phù hợp payload multimodal.
+## Biến môi trường
 
-## Ingest feature
+Tạo `.env` từ [`.env.example`](.env.example). Các biến chính:
 
-Feature extraction vẫn thuộc `pipelines/`, không thuộc backend. Importer
-dataset-specific nằm ở `pipelines/ingestion/import_refined.py`; nó đọc các
-artifact đã chuẩn hóa và ghi theo transaction từng phase/video:
+| Nhóm | Biến | Ý nghĩa |
+|---|---|---|
+| Runtime | `PORT`, `CORS_ORIGINS`, `NODE_ENV` | Port, origin được phép và môi trường |
+| Auth | `OPERATOR_TOKEN`, `ALLOW_UNAUTHENTICATED_LOCAL` | Bảo vệ API; local-only escape hatch |
+| Database | `DATABASE_URL`, `DATABASE_DIRECT_URL` | Pooled runtime URL và direct migration URL |
+| R2 | `R2_ENDPOINT_URL`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_REGION` | Object storage và credentials |
+| R2 | `R2_SIGNED_URL_TTL_SECONDS` | TTL presigned URL |
+| Embedding | `EMBEDDING_SERVICE_URL`, `EMBEDDING_SERVICE_TOKEN`, `EMBEDDING_DIMENSIONS` | Query text/image encoder; mặc định 1024 chiều |
+| LLM | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | Provider VQA/query improvement |
+| LLM | `LLM_TIMEOUT_MS`, `LLM_MAX_TOKENS`, `LLM_TEMPERATURE` | Giới hạn request và decoding |
+| VLM | `VLM_ENABLED`, `VLM_BASE_URL`, `VLM_API_KEY`, `VLM_MODEL` | Vision provider mặc định |
+| VLM | `VLM_TIMEOUT_MS`, `VLM_TOP_K`, `VLM_WEIGHT`, `VLM_CONCURRENCY` | Rerank/VQA runtime |
+| VLM nâng cao | `VLM_MIN_SCORE`, `VLM_QUERY_EXPANSION`, `VLM_QUERY_EXPANSION_MAX_VARIANTS`, `VLM_ADAPTIVE_TOP_K` | Lọc, mở rộng query và adaptive rerank |
+| Frame | `FFMPEG_PATH`, `FRAME_DECODE_TIMEOUT_MS` | Exact-frame decode/nén ảnh |
+| Version | `DATASET_ID`, `DATASET_VERSION`, `PIPELINE_VERSION`, `ARTIFACT_VERSION` | Provenance của dataset và pipeline |
+| Version | `INDEX_VERSION`, `INDEX_CHECKSUM`, `VERSION_STATUS`, `SCHEMA_VERSION` | Release/index validation |
+| Version | `MODEL_VERSIONS_JSON` | Map tên modality sang model version |
 
-1. `videos`, `feature_sets`, `feature_artifacts`;
-2. `frames` với exact source-frame identity;
-3. `evidence` cho từng caption/ASR/OCR/object/CLIP record;
-4. `text_evidence`, `object_evidence` hoặc `clip_embeddings` theo modality;
-5. `index_releases`, `index_release_features` để khóa snapshot đa phương thức;
-6. build search indexes, benchmark, rồi mới chuyển đúng một release sang `active`.
-
-Importer không nằm trong backend runtime để retrieval API không phải biết cách
-đọc Parquet/NumPy. Chạy `python -m pipelines.ingestion.import_refined --dry-run`
-trước, rồi truyền `DATABASE_URL` của PostgreSQL local/Docker để import; các
-vector local được ghi trực tiếp vào `clip_embeddings`, không yêu cầu upload
-embedding lên R2.
+R2 phải được cấu hình đủ cả endpoint, bucket, access key và secret; LLM/VLM
+phải có cả base URL và model. Một release `active` phải có
+`INDEX_VERSION` và checksum SHA-256 hợp lệ.
 
 ## Kiểm tra
 
@@ -155,6 +207,6 @@ npm run typecheck
 npm run build
 ```
 
-Coverage gate: statements/lines/functions từ 80%, branches từ 70%. Integration
-test dùng Supertest kiểm tra operator auth, search, media, manual selection và
-submission preview.
+Coverage gate hiện yêu cầu statements/lines/functions từ `80%` và branches từ
+`70%`. Integration tests dùng fake dependency hoặc PostgreSQL test doubles để
+kiểm tra auth, search, media, frame decode, manual selection, VQA và preview.

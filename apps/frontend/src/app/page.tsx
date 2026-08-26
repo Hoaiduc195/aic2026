@@ -5,6 +5,7 @@ import { Workbench } from '../components/Workbench';
 import {
   createSubmissionPreview,
   getVideoFrame,
+  getVideoFrames,
   getVideoKeyframe,
   getVideoStudio,
   improveQuery,
@@ -21,6 +22,7 @@ export default function HomePage() {
         search={searchMedia}
         exactFrameSearch={searchExactFrames}
         loadFrame={getVideoFrame}
+        loadNearbyFrames={getVideoFrames}
         loadKeyframe={getVideoKeyframe}
         loadStudio={getVideoStudio}
         saveSelection={saveSelection}

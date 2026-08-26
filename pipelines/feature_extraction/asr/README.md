@@ -1,51 +1,66 @@
-# Timeline-only ASR pipeline
+# Timeline-only ASR
 
-This package transcribes one audio stream per video and publishes spoken-text
-evidence as half-open timeline intervals `[start_ms, end_ms)`. ASR is not
-projected onto shot boundaries or another intermediate grouping. Retrieval can
-anchor an interval to a nearby source frame when it needs a visual result.
+Module này chuyển một audio/video stream thành các đoạn speech có timestamp,
+giữ interval nửa mở `[start_ms, end_ms)`. ASR không chiếu transcript lên shot
+boundary hoặc keyframe trung gian; retrieval có thể dùng timeline để neo sang
+frame gần đó.
 
-## Outputs
+## Output contract
 
-Canonical rows contain:
+Mỗi row canonical gồm:
 
-- `video_id`
-- `start_ms`, `end_ms`
-- `text_raw`, `text_normalized`, `language`
-- `producer`, `model_version`, `pipeline_version`, `schema_version`
-- optional word timing and quality metadata
+- `video_id`, `start_ms`, `end_ms`;
+- `text_raw`, `text_normalized`, `language`, `confidence`;
+- `producer`, `model_version`, `pipeline_version` và metadata quality tùy chọn;
+- word timing/no-speech probability nếu backend cung cấp.
 
-The normalized offline dataset is written as `asr_spans.jsonl` and
-`asr_spans.parquet`, with a manifest and quality report beside them. The shape
-is validated against `contracts/schemas/asr_span/schema.json`.
+CLI ghi JSONL canonical cho từng input; Parquet/JSON cũng có thể tạo qua legacy
+adapter. Refined ingestion dùng artifact `asr_spans.parquet` và kiểm tra shape
+theo [`contracts/schemas/asr_span/schema.json`](../../../contracts/schemas/asr_span/schema.json).
 
-## Headless Sherpa CLI
+## Cài đặt
+
+Headless Sherpa runtime:
+
+```powershell
+python -m pip install -r pipelines/feature_extraction/asr/requirements-sherpa.txt
+```
+
+Model Sherpa và FFmpeg là dependency bên ngoài repository. Cấu hình mặc định
+nằm ở [`config.ini`](config.ini), gồm model name, tiếng Việt, CPU provider,
+punctuation và quality processing.
+
+## CLI Sherpa
+
+Kiểm tra runtime/model trước:
 
 ```powershell
 python -m pipelines.feature_extraction.asr.cli check
-python -m pipelines.feature_extraction.asr.cli transcribe input.wav --output output.asr.jsonl
-python -m pipelines.feature_extraction.asr.cli batch data/audio --output-dir data/asr --recursive
 ```
 
-Use `--model-dir`, `--model-name`, `--language`, `--device`, and the other
-runtime options shown by `--help` to override configuration.
+Transcribe một file:
 
-## Transcript adapters
-
-The JSON and Whisper adapters accept their provider-native chunk lists and
-convert timestamps to integer milliseconds. The provider field name remains at
-that external boundary; it is not copied into the canonical schema or database
-identity.
-
-For a JSON transcript:
-
-```json
-[
-  {"start": 0.0, "end": 1.25, "text": "xin chao"}
-]
+```powershell
+python -m pipelines.feature_extraction.asr.cli transcribe `
+  input.wav --output data/asr/video_1.asr.jsonl
 ```
 
-The direct transcript CLI is useful for deterministic local conversion:
+Transcribe cả thư mục; thêm `--recursive` nếu media nằm trong thư mục con:
+
+```powershell
+python -m pipelines.feature_extraction.asr.cli batch `
+  data/audio --output-dir data/asr --recursive
+```
+
+Output đã tồn tại sẽ được bỏ qua. Dùng `--overwrite` khi muốn chạy lại. Các
+tham số `--model-dir`, `--model-name`, `--language`, `--device`, `--cpu-threads`,
+`--ffmpeg-dir`, `--disable-punctuation` và `--disable-quality` có thể override
+config; xem `--help` để biết đầy đủ.
+
+## Adapter transcript/Whisper
+
+Legacy adapter hữu ích để chuyển transcript JSON deterministically mà không cần
+model ASR:
 
 ```powershell
 python -m pipelines.feature_extraction.asr.cli `
@@ -55,4 +70,23 @@ python -m pipelines.feature_extraction.asr.cli `
   --transcript-json data/transcripts/video_1.json
 ```
 
-No shot map, frame grouping, or additional timeline input is required.
+Input chunk có dạng:
+
+```json
+[
+  {"start": 0.0, "end": 1.25, "text": "xin chao"}
+]
+```
+
+Các backend `faster-whisper` và `openai-whisper` cũng có thể dùng qua legacy
+flags. CLI chuẩn hóa timestamp sang milliseconds và NFC-normalize text; không
+cần shot map, frame grouping hay timeline input phụ.
+
+## Kiểm tra
+
+```powershell
+python -m unittest tests.test_asr_module tests.test_sherpa_asr_cli -v
+```
+
+Nếu output dùng cho ingestion, kiểm tra thêm language, interval nằm trong
+duration video và `video_id` khớp canonical manifest trước khi import.

@@ -1,40 +1,123 @@
-# AIC query embedding service
+# CLIPA query embedding service
 
-This service exposes text embeddings from the same CLIPA checkpoint used for the indexed image vectors:
+Đây là FastAPI service tạo embedding cho text query và raw image. Text encoder
+và image encoder dùng cùng checkpoint CLIPA để vector query nằm trong cùng
+không gian 1024 chiều với visual embedding đã index.
 
-- model: `hf-hub:UCSC-VLAA/ViT-H-14-CLIPA-336-laion2B`
-- model version: `visual-embedding-clipa-v2-h14`
-- output: `float32`-compatible, L2-normalized vector with 1024 values
-- endpoint: `POST /embed` with `{ "text": "..." }`
-- image endpoint: `POST /embed/image` with raw JPEG/PNG/WebP/GIF bytes and the matching `Content-Type`
-- response: `{ "embedding": [ ...1024 numbers... ] }`
-- image requests are limited to 12 MiB and use the same CLIPA image encoder/checkpoint as the indexed vectors
+| Thuộc tính | Giá trị mặc định |
+|---|---|
+| Model | `hf-hub:UCSC-VLAA/ViT-H-14-CLIPA-336-laion2B` |
+| Model version | `visual-embedding-clipa-v2-h14` |
+| Dimension | `1024` |
+| Port | `8001` |
+| Device | `auto` (CUDA nếu có, nếu không CPU) |
+| Text limit | `2000` ký tự |
+| Image limit | `12 MiB` |
 
-The model weights are downloaded on first startup and should be kept in a Docker volume. The API token is supplied at runtime and is never copied into the image.
+Model weights tải ở lần khởi động đầu tiên và được giữ trong Docker volume.
+Service không copy API token vào image.
 
-For the normal setup, use the included Compose file. It creates the container with the fixed host mapping `8001:8001`, so starting the `aic-embedding` container from Docker Desktop keeps the same port:
+## API
+
+### Health
+
+```http
+GET /health
+```
+
+Response cho biết `ready`, model name/version, dimension và device.
+
+### Text embedding
+
+```http
+POST /embed
+Content-Type: application/json
+
+{"text":"người phụ nữ mặc áo dài đỏ"}
+```
+
+Response:
+
+```json
+{"embedding":[0.0123,-0.0456]}
+```
+
+Response thực tế luôn có 1024 số hữu hạn và được L2-normalize. Text rỗng hoặc
+dài hơn giới hạn bị từ chối.
+
+### Image embedding
+
+```http
+POST /embed/image
+Content-Type: image/jpeg
+
+<raw image bytes>
+```
+
+Chấp nhận `image/jpeg`, `image/png`, `image/webp` và `image/gif`. Request có
+token phải gửi `Authorization: Bearer <token>`; khi `EMBEDDING_TOKEN` rỗng,
+service chạy không auth cho local development.
+
+## Chạy bằng Docker
+
+Từ repository root:
 
 ```powershell
 docker compose -f embedding_services/docker-compose.yml up -d --build
 ```
 
-After the first creation, use **Start** for `aic-embedding` in Docker Desktop, or run:
+Compose map host port `8001`, tạo volume `aic-embedding-model-cache`, drop toàn
+bộ Linux capabilities và bật `no-new-privileges`. Sau lần tạo đầu tiên có thể
+start lại mà không build:
 
 ```powershell
 docker compose -f embedding_services/docker-compose.yml start
 ```
 
-The direct Docker equivalent is:
+Root Compose cũng có service tên `embedding`:
+
+```powershell
+docker compose up -d --build embedding
+```
+
+Backend chạy trên host dùng `http://127.0.0.1:8001/embed`; backend chạy trong
+Compose dùng `http://embedding:8001/embed`.
+
+Build/run trực tiếp:
 
 ```powershell
 docker build -f embedding_services/Dockerfile -t aic-embedding:local .
 docker run --rm --name aic-embedding `
   -p 8001:8001 `
-  -e EMBEDDING_TOKEN=replace-me `
+  -e EMBEDDING_TOKEN=replace-with-a-secret `
   -v aic-embedding-model-cache:/models `
   aic-embedding:local
 ```
 
-The backend calls the configured `/embed` URL for text and automatically uses `/embed/image` for frame-image queries. The frontend may override that URL, token and timeout. `EMBEDDING_DEVICE=auto` selects CUDA when available and otherwise CPU.
+## Cấu hình
 
-For the normal local Docker setup, point the backend to `http://host.docker.internal:8001/embed` when the backend itself runs in a container. If backend and embedding service run directly on the host, use `http://127.0.0.1:8001/embed` instead.
+| Biến | Mặc định | Mục đích |
+|---|---|---|
+| `EMBEDDING_HOST` | `0.0.0.0` | Bind host |
+| `EMBEDDING_PORT` | `8001` | Listen port |
+| `EMBEDDING_TOKEN` | rỗng | Bearer token tùy chọn |
+| `EMBEDDING_MODEL_NAME` | CLIPA checkpoint ở trên | Model name |
+| `EMBEDDING_MODEL_VERSION` | `visual-embedding-clipa-v2-h14` | Provenance version |
+| `EMBEDDING_DEVICE` | `auto` | `auto`, `cpu` hoặc `cuda` |
+| `EMBEDDING_MAX_TEXT_CHARS` | `2000` | Giới hạn text, tối đa 2000 |
+| `EMBEDDING_MAX_IMAGE_BYTES` | `12582912` | Giới hạn ảnh, tối đa 12 MiB |
+| `EMBEDDING_MODEL_CACHE_DIR` | `/models/huggingface` | Nơi lưu model cache |
+
+Dimension cố định ở `1024` để không làm lệch database contract. Nếu đổi
+checkpoint/projection/normalization, phải rebuild visual index tương ứng; cùng
+dimension không đủ để bảo đảm tương thích.
+
+## Kiểm tra
+
+```powershell
+python -m pip install -r embedding_services/requirements-dev.txt
+python -m pytest embedding_services/tests -q
+```
+
+Các test dùng fake encoder nên không cần GPU hoặc download model. Smoke test
+thực tế cần service ready và có thể mất thời gian ở lần tải checkpoint đầu tiên.

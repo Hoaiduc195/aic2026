@@ -1,90 +1,60 @@
-# Modal Vietnamese OCR with PP-OCRv6 + PP-OCRv5 Mobile
+# Vietnamese OCR trên Modal
 
-`modal_paddleocr.py` processes a local directory of image frames with
-PaddleOCR text detection and lightweight PaddleOCR recognition running on a
-Modal GPU. The
-local process only enumerates files, uploads bounded batches, and writes
-results; it does not load OCR models locally.
+`modal_paddleocr.py` phát hiện và nhận dạng chữ trong frame bằng PaddleOCR trên
+Modal GPU. Máy local chỉ quét file, gửi batch có giới hạn và ghi JSON; detector
+không chạy ở local.
 
-The default remote configuration is:
+## Mặc định model/runtime
 
-- PaddleOCR `3.7.0` `PP-OCRv6_small_det` for fast text detection;
-- PaddleOCR `latin_PP-OCRv5_mobile_rec` for Latin-script recognition,
-  including Vietnamese, with a 14 MB model;
-- PaddlePaddle `3.2.1` with CUDA 11.8 as the inference runtime;
-- OpenCV Linux runtime libraries (`libgl1`, `libglib2.0-0`, `libsm6`,
-  `libxext6`, `libxrender1`);
-- detector batches of eight frames and recognition batches of up to 64 crops;
-- standard Paddle inference in FP32 on one long-lived T4 worker.
+- PaddleOCR `3.7.0`;
+- detector `PP-OCRv6_small_det` (đổi sang `PP-OCRv6_medium_det` nếu ưu tiên
+  accuracy);
+- recognizer `latin_PP-OCRv5_mobile_rec` cho Latin/Vietnamese;
+- PaddlePaddle `3.2.1`, CUDA 11.8, inference FP32;
+- detector batch 8 frame, recognition batch tối đa 64 crop trên T4.
 
-Set `OCR_DETECTION_MODEL=PP-OCRv6_medium_det` when accuracy is more important
-than detection throughput. The default `PP-OCRv6_small_det` is chosen for the
-177k-frame throughput target.
+Model cache nằm trong Modal Volume `aic-paddleocr-model-cache` để rerun không
+download lại weights.
 
-The command accepts `--input-dir` and `--output-dir`. `--max-images 0` is the
-default, so omitting that option processes every supported frame, including a
-dataset of approximately 177k frames.
+## Input và output
 
-## Input and output
-
-Any supported image files (`jpg`, `jpeg`, `png`, `webp`, `bmp`) may be nested
-under the input directory. The output preserves the relative layout and
-writes one JSON result per frame:
+Input nhận `.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp` đệ quy dưới thư mục frame.
+Output giữ relative layout và tạo một JSON cho mỗi frame:
 
 ```text
-frames/
-└── L21_V001/
-    └── 001.jpg
-
+frames/L21_V001/001.jpg
 ocr/
-├── L21_V001/
-│   └── 001.json
+├── L21_V001/001.json
 ├── run_batch_0_of_1.jsonl
 └── errors_batch_0_of_1.jsonl
 ```
 
-Each result contains `relative_path`, recognized `text`, NFC-normalized
-`normalized_text`, text polygons, per-box confidence, aggregate confidence,
-language, model version, and pipeline version. Empty frames are successful
-results with empty text and zero confidence; malformed/unreadable frames are
-recorded separately in the errors JSONL.
+Record chứa `relative_path`, text gốc, `normalized_text` NFC, polygon, độ tin
+cậy từng box, aggregate confidence, language, model và pipeline version. Frame
+không có chữ vẫn ghi record thành công với text rỗng/độ tin cậy `0`; file lỗi
+đọc hoặc inference đi vào `errors_batch_*.jsonl`.
 
-## Installation
-
-Install only the Modal CLI dependency in the local environment:
+## Cài đặt
 
 ```powershell
 python -m pip install -r pipelines/feature_extraction/ocr/requirements-modal.txt
 modal token new
 ```
 
-PaddlePaddle, PaddleOCR, Pillow, and the GPU runtime are installed in the
-remote Modal image. The model cache is kept in the Modal
-Volume `aic-paddleocr-model-cache` so repeated runs do not redownload model
-files.
-The image first installs a wheel-based `PyYAML>=6.0,<7` with
-`--ignore-installed`; this works around the distutils-installed PyYAML package
-included in the PaddlePaddle base image.
+PaddlePaddle, PaddleOCR, Pillow và GPU runtime được cài trong Modal image.
 
-The base image is pinned to PaddlePaddle `3.2.1`. It also installs the Linux
-runtime libraries required by the non-headless OpenCV wheel. If an older Modal
-image logs `Type of attribute: strides is not right` or
-`libGL.so.1: cannot open shared object file`, rerun after the image rebuilds.
+## Pilot trước khi chạy full dataset
 
-## Run a pilot
-
-Use `--dry-run` first. This discovers and counts files without starting a
-Modal container:
+Dry-run chỉ discover/count, không tạo container hay output:
 
 ```powershell
 modal run pipelines/feature_extraction/ocr/modal_paddleocr.py `
   --input-dir E:\aic2026\frames `
   --output-dir E:\aic2026\ocr `
-  --max-images 500 `
-  --dry-run
+  --max-images 500 --dry-run
 ```
 
-Then run the pilot:
+Chạy pilot thật, kiểm tra dấu tiếng Việt và JSON:
 
 ```powershell
 modal run pipelines/feature_extraction/ocr/modal_paddleocr.py `
@@ -93,10 +63,7 @@ modal run pipelines/feature_extraction/ocr/modal_paddleocr.py `
   --max-images 500
 ```
 
-Inspect the JSON output and Vietnamese diacritics before removing
-`--max-images` for the full dataset.
-
-## Process all frames and resume
+Sau đó bỏ `--max-images` để xử lý toàn bộ:
 
 ```powershell
 modal run pipelines/feature_extraction/ocr/modal_paddleocr.py `
@@ -105,43 +72,24 @@ modal run pipelines/feature_extraction/ocr/modal_paddleocr.py `
   --batch-size 64
 ```
 
-There is no `--max-images` flag in this full-run command, so all frames are
-processed. The local process keeps only a bounded upload window in memory; it
-does not load all 177k images at once.
+`--max-images 0` là unlimited. JSON không rỗng đã có sẽ được skip; dùng
+`--overwrite` để regenerate. `--batch-size` là upload window local, còn batch
+GPU detector/recognizer vẫn được giới hạn riêng.
 
-Existing non-empty JSON result files are skipped. Use `--overwrite` only when
-intentionally regenerating results. `--batch-size` is the local upload window;
-the detector GPU batch remains bounded at eight and recognition is batched
-separately in groups of up to 64 text crops. Progress logs include
-`batch_fps` for the latest window, `fps` for end-to-end completed frames, and
-`remote_fps` for remote inference time excluding local file writes.
+## Chia shard và chọn GPU/model
 
-To regenerate JSON files produced by the previous recognizer, pass `--overwrite`
-or use a new output directory. To test another PaddleOCR recognition model,
-set its model name before running:
+Các run độc lập dùng deterministic partition:
 
 ```powershell
-$env:OCR_RECOGNITION_MODEL = "latin_PP-OCRv5_mobile_rec"
-```
-
-For independent runs, split the deterministic input list. Uneven partitions
-are supported:
-
-```powershell
-# First worker
 modal run pipelines/feature_extraction/ocr/modal_paddleocr.py `
   --input-dir E:\aic2026\frames --output-dir E:\aic2026\ocr `
   --batch-index 0 --num-batches 3
-
-# Repeat with --batch-index 1 and --batch-index 2.
 ```
 
-Do not run multiple workers writing the same output directory and the same
-partition at the same time.
+Chạy lại với index `1` và `2`. Không cho nhiều worker ghi cùng partition/output
+đồng thời.
 
-## Select T4 or L4
-
-The default is T4. Select L4 through the environment before invoking Modal:
+T4 là mặc định; chọn L4:
 
 ```powershell
 $env:OCR_MODAL_GPU = "L4"
@@ -149,18 +97,19 @@ modal run pipelines/feature_extraction/ocr/modal_paddleocr.py `
   --input-dir E:\aic2026\frames --output-dir E:\aic2026\ocr
 ```
 
-The GPU selection is a deployment setting because Modal binds it in the class
-decorator before the local entrypoint starts.
+Đổi recognizer hoặc detector qua environment trước khi gọi Modal:
 
-## Tests
+```powershell
+$env:OCR_RECOGNITION_MODEL = "latin_PP-OCRv5_mobile_rec"
+$env:OCR_DETECTION_MODEL = "PP-OCRv6_medium_det"
+```
 
-The tests use fake Modal responses and do not require Modal credentials,
-PaddleOCR, or a GPU:
+## Kiểm tra
 
 ```powershell
 python -m unittest tests.test_ocr_modal -v
 ```
 
-The first real run should remain a small pilot. For subtitle-heavy videos,
-pre-filtering unchanged frames or cropping the subtitle region will reduce
-upload and inference cost substantially.
+Test dùng fake Modal response nên không cần credential, PaddleOCR hoặc GPU.
+Subtitle-heavy video có thể giảm chi phí bằng cách loại frame không đổi hoặc
+crop vùng subtitle trước khi upload.

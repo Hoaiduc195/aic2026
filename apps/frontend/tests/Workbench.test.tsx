@@ -15,6 +15,7 @@ import type {
   SubmissionPreview,
   VqaAnswerSuggestion,
   VideoPlayback,
+  VideoFramesResponse,
   VideoStudioResponse,
 } from '@/lib/contracts';
 import { createWorkbenchHistoryEntry, saveWorkbenchHistoryEntry } from '@/lib/workbench-history';
@@ -178,6 +179,7 @@ function renderWorkbench({
     is_exact_frame: true,
     annotation_source_frame_id: null,
   })),
+  loadNearbyFrames,
   saveSelection = vi.fn(async (): Promise<SelectionRevision> => ({
     selection_id: 'selection_01', query_id: 'query_0001', revision: 1, task: 'textual_kis',
     answers: [], note: null,
@@ -203,6 +205,7 @@ function renderWorkbench({
         exactFrameSearch={exactFrameSearch}
         loadFrame={loadFrame}
         loadKeyframe={loadKeyframe}
+        loadNearbyFrames={loadNearbyFrames}
         loadStudio={loadStudio}
         saveSelection={saveSelection}
         createPreview={createPreview}
@@ -211,7 +214,17 @@ function renderWorkbench({
       />
     </QueryClientProvider>,
   );
-  return { ...view, search, exactFrameSearch, loadFrame, loadKeyframe, loadStudio, saveSelection, createPreview };
+  return {
+    ...view,
+    search,
+    exactFrameSearch,
+    loadFrame,
+    loadKeyframe,
+    loadNearbyFrames,
+    loadStudio,
+    saveSelection,
+    createPreview,
+  };
 }
 
 describe('qualification frame-first workbench', () => {
@@ -234,6 +247,67 @@ describe('qualification frame-first workbench', () => {
       frames: [{ video_id: 'video_01', original_frame_id: 385 }],
       session_id: expect.any(String),
     }));
+  });
+
+  it('loads and exports a selectable nearby frame window around the current result', async () => {
+    const user = userEvent.setup();
+    const loadNearbyFrames = vi.fn(async (
+      videoId: string,
+      centerFrameId: number,
+      limit: number,
+    ): Promise<VideoFramesResponse> => ({
+      video_id: videoId,
+      center_frame_id: centerFrameId,
+      frames: [
+        {
+          video_id: videoId,
+          keyframe_no: 4,
+          original_frame_id: 350,
+          timestamp_ms: 11_600,
+          thumbnail_uri: '/frames/350.jpg',
+        },
+        {
+          video_id: videoId,
+          keyframe_no: 5,
+          original_frame_id: centerFrameId,
+          timestamp_ms: 12_800,
+          thumbnail_uri: '/frames/385.jpg',
+        },
+      ].slice(0, limit),
+    }));
+    renderWorkbench({ loadNearbyFrames });
+
+    await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
+    await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
+
+    const frameCount = await screen.findByLabelText('Số frame trong cửa sổ lân cận');
+    expect(frameCount).toHaveValue(4);
+    await user.clear(frameCount);
+    await user.type(frameCount, '6');
+    await user.click(screen.getByRole('button', { name: 'Tải frame lân cận' }));
+
+    await waitFor(() => expect(loadNearbyFrames).toHaveBeenCalledWith('video_01', 385, 6));
+    expect(await screen.findByText(/Frame 350/)).toBeInTheDocument();
+
+    const createObjectURL = vi.fn((_blob: Blob) => 'blob:nearby-csv');
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    await user.click(screen.getByRole('button', { name: 'Xuất CSV frame lân cận' }));
+
+    const blob = createObjectURL.mock.calls[0]?.[0] as Blob;
+    const blobText = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(blob);
+    });
+    expect(blobText).toContain('video_id,original_frame_id,keyframe_no,timestamp_ms,is_center');
+    expect(blobText).toContain('video_01,385,5,12800,true');
+    expect(click).toHaveBeenCalledOnce();
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:nearby-csv');
+    click.mockRestore();
   });
 
   it('resolves a keyframe ordinal before running exact frame lookup', async () => {

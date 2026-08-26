@@ -56,6 +56,21 @@ describe('retrieval settings', () => {
     })).toContain('VLM');
   });
 
+  it('accepts partial VLM settings by using the default numeric values', () => {
+    const settings = {
+      ...DEFAULT_RETRIEVAL_SETTINGS,
+      vlm_rerank: { enabled: true },
+    };
+
+    expect(validateRetrievalSettings(settings)).toBeNull();
+    saveRetrievalSettings(settings);
+    expect(loadRetrievalSettings().vlm_rerank).toEqual({ enabled: true, top_k: 15, weight: 0.6 });
+    expect(validateRetrievalSettings({
+      ...DEFAULT_RETRIEVAL_SETTINGS,
+      vlm_rerank: { enabled: true, top_k: 15, weight: 1.1 },
+    })).toContain('VLM');
+  });
+
   it('accepts a 100-second near-frame window but rejects values above it', () => {
     expect(validateRetrievalSettings({
       ...DEFAULT_RETRIEVAL_SETTINGS,

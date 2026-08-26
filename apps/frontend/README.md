@@ -1,74 +1,132 @@
-# AIC 2026 Frontend
+# AIC 2026 Frontend Workbench
 
-Frontend Next.js/TypeScript cho workbench qualification theo hướng `frame-first`.
+Frontend là ứng dụng Next.js/React/TypeScript cho operator duyệt kết quả
+retrieval và tạo submission preview. UI đi theo mô hình `frame-first`: mỗi kết
+quả có một source frame rõ ràng, còn video, frame lân cận và metadata được tải
+lazy khi operator cần xác minh.
 
-## Luồng frame-first
+## Luồng sử dụng
 
-Luồng operator hiện được bám theo redesign:
+1. Chọn task và nhập query trong sidebar.
+2. Bấm `Tìm frame` để lấy các candidate từ `/api/v1/search`.
+3. Chọn một frame để xem evidence, canonical frame hoặc video studio.
+4. Với VQA/TRAKE, đưa frame vào queue và chỉnh đáp án thủ công.
+5. Lưu selection và tạo JSON/CSV submission preview trong drawer `Đáp án`.
 
-1. Sidebar trái giữ toàn bộ điều khiển truy vấn.
-2. Bấm `Tìm frame` để lấy danh sách frame ứng viên.
-3. Chọn một frame để mở bằng chứng của kết quả đó.
-4. Lazy load `Xem video` hoặc `Xem các frame cùng video` khi thật sự cần xác minh thêm.
-5. Thêm lựa chọn vào drawer `Đáp án`, lưu selection và tạo submission preview.
+Frontend hỗ trợ các task qualification `textual_kis`, `vqa` và `trake`. Search
+API còn nhận các task retrieval khác theo contract backend.
 
-Spec E2E trong `tests/e2e/qualification.spec.ts` được cập nhật theo đúng flow này.
+## Kiến trúc runtime
 
-## Chạy local
+```text
+Browser
+  -> Next.js route handlers (/api/v1/*)
+  -> NestJS backend (server-to-server, nếu được cấu hình)
+  -> PostgreSQL/pgvector, R2 và các model service tùy chọn
+```
+
+Browser chỉ gọi các route `/api/v1/*`. `BACKEND_API_URL` và
+`BACKEND_OPERATOR_TOKEN` chỉ được đọc ở server; BFF forward token tới backend
+và không gửi token đó xuống browser.
+
+Khi `BACKEND_API_URL` để trống, search dùng fixture deterministic để phát triển
+UI. Những route cần persistence hoặc media backend trả `503` thay vì tạo dữ
+liệu giả.
+
+## Cài đặt và chạy local
+
+Yêu cầu Node.js `>=20`. Từ thư mục này:
 
 ```powershell
+corepack enable
 pnpm install
 pnpm dev
 ```
 
-Browser chỉ gọi các route `/api/v1/*` của Next.js. Khi `BACKEND_API_URL` được cấu hình,
-Next.js BFF sẽ gọi NestJS server-to-server và forward `BACKEND_OPERATOR_TOKEN` mà
-không đưa token xuống browser:
+Mở <http://localhost:3000>. Để dùng backend thật, tạo `.env.local` từ file
+mẫu rồi điền `BACKEND_API_URL` và token tương ứng:
 
 ```powershell
-$env:BACKEND_API_URL = "http://localhost:4000"
-$env:BACKEND_OPERATOR_TOKEN = "same-value-as-backend-OPERATOR_TOKEN"
+Copy-Item .env.example .env.local
 ```
 
-Khi chưa có backend, search vẫn dùng fixture deterministic; các manual API trả
-`503` để tránh ghi dữ liệu giả.
-
-## Media backend và local fallback
-
-Khi backend được cấu hình, playback và keyframe metadata lấy từ backend, còn
-video/keyframe được phục vụ bằng signed URL từ R2. Khi backend chưa cấu hình,
-các route lazy preview mới dùng dữ liệu local từ `AIC_MEDIA_ROOT`.
-
-- Windows fallback trong code hiện là `E:\aic2026`.
-- Nên đặt `AIC_MEDIA_ROOT=E:\aic2026` một cách tường minh trong `.env.local` hoặc môi trường shell để tránh lệch giữa máy dev, E2E và các môi trường không phải Windows.
-- `BACKEND_OPERATOR_TOKEN` và `AIC_MEDIA_ACCESS_TOKEN` chỉ được cấu hình ở server; không nhập hoặc lưu secret trong browser.
-- Search thành công tạo cookie phiên `HttpOnly` khi local media session được bật.
-- Dev local không yêu cầu token. Không bật `AIC_ALLOW_UNAUTHENTICATED_MEDIA=true` ở máy có thể truy cập từ mạng ngoài.
-
-Ví dụ:
-
-```powershell
-$env:AIC_MEDIA_ROOT = "E:\aic2026"
-$env:AIC_MEDIA_ACCESS_TOKEN = "thay-bang-secret-dai"
+```env
+BACKEND_API_URL=http://localhost:4000
+BACKEND_OPERATOR_TOKEN=replace-with-backend-operator-token
+NEXT_PUBLIC_API_BASE_URL=/api
 ```
 
-Thư mục root này cần chứa tối thiểu các nhánh mà frontend lazy-load đang dùng:
+Backend và database có hướng dẫn riêng tại
+[`../backend/README.md`](../backend/README.md). Cách khởi động cả stack nằm ở
+[`../../README.md`](../../README.md) và [`../../RUNBOOK_LOCAL_DOCKER.md`](../../RUNBOOK_LOCAL_DOCKER.md).
 
-- `videos`
-- `keyframes`
-- `map-keyframes-aic25-b1\map-keyframes`
-- `media-info-aic25-b1\media-info`
+## Frame lân cận và xuất CSV
+
+Sau khi có kết quả search, panel `Frame lân cận` cho phép:
+
+- chọn frame tâm từ danh sách kết quả hiện tại;
+- chọn số lượng từ `1` đến `50`, mặc định `4`; số lượng này **đã gồm frame
+  tâm**;
+- gọi `GET /api/v1/videos/:videoId/frames?center_frame_id=...&limit=...`;
+- xem danh sách frame cùng video theo timeline và đánh dấu frame tâm;
+- xuất CSV sau khi tải thành công.
+
+CSV có các cột `video_id`, `original_frame_id`, `keyframe_no`, `timestamp_ms`
+và `is_center`. Dữ liệu export chỉ giữ các frame thuộc cùng video với frame
+tâm, loại duplicate theo `(video_id, original_frame_id)`, đồng thời bảo vệ
+các cell bắt đầu bằng `=`, `+`, `-` hoặc `@` khi mở bằng spreadsheet.
+
+Backend có thể trả frame sparse hoặc decode exact source frame bằng FFmpeg khi
+thumbnail chưa tồn tại. Frontend không tự suy ra frame ID từ timestamp.
+
+## Media local và R2
+
+Khi backend/R2 đã cấu hình, playback và thumbnail dùng signed URL do server
+cấp. Khi backend chưa cấu hình, các route lazy preview có thể dùng local media
+root qua `AIC_MEDIA_ROOT`.
+
+Local media tối thiểu nên có:
+
+```text
+<AIC_MEDIA_ROOT>/
+├── videos/
+├── keyframes/
+├── map-keyframes-aic25-b1/map-keyframes/
+└── media-info-aic25-b1/media-info/
+```
+
+Windows fallback trong code là `E:\aic2026`, nhưng nên đặt giá trị rõ ràng để
+local, E2E và máy khác dùng cùng layout. `AIC_MEDIA_ACCESS_TOKEN` là secret
+server-only; không bật `AIC_ALLOW_UNAUTHENTICATED_MEDIA=true` trên máy có thể
+truy cập từ mạng ngoài.
 
 ## Biến môi trường
 
-Tham khảo `apps/frontend/.env.example`:
+| Biến | Phạm vi | Bắt buộc | Mục đích |
+|---|---|---:|---|
+| `BACKEND_API_URL` | Server | Không | URL NestJS; bỏ trống để dùng fixture search |
+| `BACKEND_OPERATOR_TOKEN` | Server | Không ở local | Token BFF forward tới backend |
+| `NEXT_PUBLIC_API_BASE_URL` | Browser | Không | Base route của browser, mặc định `/api` |
+| `AIC_MEDIA_ROOT` | Server | Không | Root media local cho fallback |
+| `AIC_MEDIA_ACCESS_TOKEN` | Server | Không | Bảo vệ session media local |
+| `AIC_ALLOW_UNAUTHENTICATED_MEDIA` | Server | Không | Chỉ dùng trong môi trường local cô lập |
 
-- `AIC_MEDIA_ROOT=E:\aic2026`
-- `AIC_MEDIA_ACCESS_TOKEN=replace-with-a-long-random-secret`
-- `AIC_ALLOW_UNAUTHENTICATED_MEDIA=false`
-- `BACKEND_API_URL=http://localhost:4000`
-- `BACKEND_OPERATOR_TOKEN=replace-with-backend-operator-token`
-- `NEXT_PUBLIC_API_BASE_URL=/api`
+Không đặt credential, R2 key, LLM/VLM key hoặc backend token dưới tiền tố
+`NEXT_PUBLIC_`; mọi biến có tiền tố đó có thể xuất hiện trong bundle browser.
+
+## API routes của Next.js
+
+| Nhóm | Route |
+|---|---|
+| Search | `/api/v1/search`, `/api/v1/search/exact-frames` |
+| Query/VQA | `/api/v1/query/improve`, `/api/v1/vqa/answer` |
+| Video/frame | `/api/v1/videos/:videoId/*`, `/api/v1/media/*` |
+| Manual review | `/api/v1/queries/:queryId/candidates`, `/selection` |
+| Submission | `/api/v1/submissions/preview` |
+
+Contract response được parse và validate ở `src/lib/api.ts` trước khi đưa vào
+UI. Thay đổi payload nên cập nhật `src/lib/contracts.ts` và test route tương
+ứng cùng lúc.
 
 ## Kiểm tra
 
@@ -81,6 +139,6 @@ pnpm lint
 pnpm build
 ```
 
-E2E sidecar hiện mock các API để giữ flow frame-first deterministic. Khi chạy
-integration thật, cấu hình `BACKEND_API_URL`, `BACKEND_OPERATOR_TOKEN`, Neon và
-R2 ở backend; frontend không cần `AIC_MEDIA_ROOT` cho media production.
+E2E trong `tests/e2e/qualification.spec.ts` mock API để flow frame-first ổn
+định. Integration với backend thật cần backend, database, embedding service và
+R2 (nếu cần playback) được cấu hình riêng.
