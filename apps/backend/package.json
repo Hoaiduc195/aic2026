@@ -17,6 +17,7 @@
     "db:build-indexes": "tsx src/database/build-indexes.ts",
     "db:verify": "tsx src/database/verify.ts",
     "agent:mcp": "tsx src/agent/mcp-server.ts",
+    "agent:worker": "tsx src/agent/rest-worker.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

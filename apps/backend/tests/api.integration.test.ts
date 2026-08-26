@@ -15,6 +15,8 @@ import { VqaAnswerController } from '../src/tasks/vqa/vqa-answer.controller';
 import { VqaAnswerService } from '../src/tasks/vqa/vqa-answer.service';
 import { QueryImproverController } from '../src/query-improver/query-improver.controller';
 import { QueryImproverService } from '../src/query-improver/query-improver.service';
+import { AgentVerificationController } from '../src/agent/agent-verification.controller';
+import { AgentVerificationService } from '../src/agent/agent-verification.service';
 
 describe('backend HTTP API', () => {
   let app: INestApplication;
@@ -57,10 +59,23 @@ describe('backend HTTP API', () => {
       warning: null,
     })),
   };
+  const agentVerification = {
+    start: vi.fn(async () => ({ run: { run_id: 'run-1', status: 'running' } })),
+    get: vi.fn(async () => ({ run: { run_id: 'run-1', status: 'running' } })),
+    nextBatch: vi.fn(async () => ({ run: { run_id: 'run-1' }, batch: null })),
+    submit: vi.fn(async () => ({ run: { run_id: 'run-1' }, accepted: 1 })),
+    claim: vi.fn(async () => ({ run: { run_id: 'run-1', worker_id: 'worker-1' }, claimed: true })),
+    heartbeat: vi.fn(async () => ({ run: { run_id: 'run-1', worker_id: 'worker-1' } })),
+    release: vi.fn(async () => ({ run: { run_id: 'run-1' }, released: true })),
+    stop: vi.fn(async () => ({ run: { run_id: 'run-1', status: 'stopped' }, changed: true })),
+  };
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({
-      controllers: [SearchController, MediaController, ManualController, SubmissionController, VqaAnswerController, QueryImproverController],
+      controllers: [
+        SearchController, MediaController, ManualController, SubmissionController,
+        VqaAnswerController, QueryImproverController, AgentVerificationController,
+      ],
       providers: [
         { provide: RetrievalService, useValue: retrieval },
         { provide: MediaService, useValue: media },
@@ -68,6 +83,7 @@ describe('backend HTTP API', () => {
         { provide: OBJECT_STORAGE, useValue: storage },
         { provide: VqaAnswerService, useValue: vqaAnswer },
         { provide: QueryImproverService, useValue: queryImprover },
+        { provide: AgentVerificationService, useValue: agentVerification },
       ],
     }).compile();
     app = module.createNestApplication();
@@ -138,6 +154,21 @@ describe('backend HTTP API', () => {
       .expect(201)
       .expect(({ body }) => expect(body).toMatchObject({ improved_query: 'A person walking.' }));
     expect(queryImprover.improve).toHaveBeenCalledWith({ query: 'một người đi bộ', task: 'textual_kis' });
+  });
+
+  it('claims agent runs per worker and forwards worker ownership to batch requests', async () => {
+    await request(app.getHttpServer()).post('/v1/agent/frame-search/run-1/claim')
+      .set('x-operator-token', 'operator-secret')
+      .set('x-agent-worker-id', 'worker-1')
+      .send({ lease_ms: 60000 })
+      .expect(201);
+    await request(app.getHttpServer()).get('/v1/agent/frame-search/run-1/batch')
+      .set('x-operator-token', 'operator-secret')
+      .set('x-agent-worker-id', 'worker-1')
+      .expect(200);
+
+    expect(agentVerification.claim).toHaveBeenCalledWith('run-1', 'worker-1', 60000);
+    expect(agentVerification.nextBatch).toHaveBeenCalledWith('run-1', 'worker-1');
   });
 
   it('supports configurable manual top-k, revision save and preview-only export', async () => {

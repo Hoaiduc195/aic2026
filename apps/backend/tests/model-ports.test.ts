@@ -21,6 +21,42 @@ describe('query embedding providers', () => {
     expect(vi.mocked(fetch).mock.calls[0][1]?.headers).toMatchObject({ authorization: 'Bearer secret' });
   });
 
+  it('coalesces and caches identical text embeddings for local service contention', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ embedding: [0.1, 0.2] }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = new HttpQueryEmbeddingProvider('http://localhost:8001/embed', 2);
+
+    const [first, second] = await Promise.all([
+      provider.embedText('  A person walking  '),
+      provider.embedText('A person walking'),
+    ]);
+    const third = await provider.embedText('A person walking');
+
+    expect(first).toEqual([0.1, 0.2]);
+    expect(second).toEqual(first);
+    expect(third).toEqual(first);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('serializes different text queries sent to one local embedding service', async () => {
+    let active = 0;
+    let maximumActive = 0;
+    const fetchMock = vi.fn(async () => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return new Response(JSON.stringify({ embedding: [0.1, 0.2] }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = new HttpQueryEmbeddingProvider('http://localhost:8001/embed', 2);
+
+    await Promise.all([provider.embedText('query one'), provider.embedText('query two')]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(maximumActive).toBe(1);
+  });
+
   it('sends raw frame bytes to the image encoder endpoint', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ embedding: [0.1, 0.2] }), { status: 200 })));
     const provider = new HttpQueryEmbeddingProvider('https://encoder.test/embed', 2, 'secret');

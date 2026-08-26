@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Inject, Param, Post } from '@nestjs/common';
 
 import { parseSearchRequest } from '../common/request-validation';
 import type { VerificationJudgment } from './agent-verification.types';
@@ -9,6 +9,15 @@ const SAFE_RUN_ID = /^[A-Za-z0-9][A-Za-z0-9-]{0,99}$/;
 function runId(value: string): string {
   if (!SAFE_RUN_ID.test(value)) throw new BadRequestException('run_id is invalid');
   return value;
+}
+
+function workerId(value: string | undefined, required = false): string | undefined {
+  const normalized = value?.trim();
+  if (!normalized && !required) return undefined;
+  if (!normalized || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(normalized)) {
+    throw new BadRequestException('x-agent-worker-id is invalid');
+  }
+  return normalized;
 }
 
 function integer(value: unknown, field: string, minimum: number, maximum: number, fallback: number): number {
@@ -76,7 +85,7 @@ function parseJudgments(value: unknown): VerificationJudgment[] {
 
 @Controller('v1/agent/frame-search')
 export class AgentVerificationController {
-  constructor(private readonly service: AgentVerificationService) {}
+  constructor(@Inject(AgentVerificationService) private readonly service: AgentVerificationService) {}
 
   @Post()
   start(@Body() body: unknown) {
@@ -90,13 +99,46 @@ export class AgentVerificationController {
   }
 
   @Get(':runId/batch')
-  nextBatch(@Param('runId') value: string) {
-    return this.service.nextBatch(runId(value));
+  nextBatch(@Param('runId') value: string, @Headers('x-agent-worker-id') owner?: string) {
+    return this.service.nextBatch(runId(value), workerId(owner));
   }
 
   @Post(':runId/judgments')
-  submit(@Param('runId') value: string, @Body() body: unknown) {
-    return this.service.submit(runId(value), parseJudgments(body));
+  submit(
+    @Param('runId') value: string,
+    @Body() body: unknown,
+    @Headers('x-agent-worker-id') owner?: string,
+  ) {
+    return this.service.submit(runId(value), parseJudgments(body), workerId(owner));
+  }
+
+  @Post(':runId/claim')
+  claim(
+    @Param('runId') value: string,
+    @Headers('x-agent-worker-id') owner?: string,
+    @Body() body?: unknown,
+  ) {
+    const leaseMs = body && typeof body === 'object' && !Array.isArray(body)
+      ? integer((body as Record<string, unknown>).lease_ms, 'lease_ms', 10_000, 300_000, 60_000)
+      : 60_000;
+    return this.service.claim(runId(value), workerId(owner, true)!, leaseMs);
+  }
+
+  @Post(':runId/heartbeat')
+  heartbeat(
+    @Param('runId') value: string,
+    @Headers('x-agent-worker-id') owner?: string,
+    @Body() body?: unknown,
+  ) {
+    const leaseMs = body && typeof body === 'object' && !Array.isArray(body)
+      ? integer((body as Record<string, unknown>).lease_ms, 'lease_ms', 10_000, 300_000, 60_000)
+      : 60_000;
+    return this.service.heartbeat(runId(value), workerId(owner, true)!, leaseMs);
+  }
+
+  @Post(':runId/release')
+  release(@Param('runId') value: string, @Headers('x-agent-worker-id') owner?: string) {
+    return this.service.release(runId(value), workerId(owner, true)!);
   }
 
   @Post(':runId/stop')

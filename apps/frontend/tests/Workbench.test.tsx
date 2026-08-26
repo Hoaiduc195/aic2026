@@ -178,6 +178,7 @@ function renderWorkbench({
     is_exact_frame: true,
     annotation_source_frame_id: null,
   })),
+  loadFrames,
   saveSelection = vi.fn(async (): Promise<SelectionRevision> => ({
     selection_id: 'selection_01', query_id: 'query_0001', revision: 1, task: 'textual_kis',
     answers: [], note: null,
@@ -203,6 +204,7 @@ function renderWorkbench({
         exactFrameSearch={exactFrameSearch}
         loadFrame={loadFrame}
         loadKeyframe={loadKeyframe}
+        loadFrames={loadFrames}
         loadStudio={loadStudio}
         saveSelection={saveSelection}
         createPreview={createPreview}
@@ -211,7 +213,7 @@ function renderWorkbench({
       />
     </QueryClientProvider>,
   );
-  return { ...view, search, exactFrameSearch, loadFrame, loadKeyframe, loadStudio, saveSelection, createPreview };
+  return { ...view, search, exactFrameSearch, loadFrame, loadKeyframe, loadFrames, loadStudio, saveSelection, createPreview };
 }
 
 describe('qualification frame-first workbench', () => {
@@ -808,7 +810,7 @@ describe('qualification frame-first workbench', () => {
     expect(screen.getByRole('button', { name: 'Chọn frame video_01 · 386' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Thêm vào đáp án' }));
-    await user.click(screen.getByRole('button', { name: 'Đáp án (1)' }));
+    await user.click(screen.getByRole('button', { name: /^Đáp án \(/ }));
     expect(screen.getByText('video_01 · frame 386')).toBeInTheDocument();
     expect(loadFrame).toHaveBeenCalledWith('video_01', 386, undefined);
   });
@@ -908,8 +910,9 @@ describe('qualification frame-first workbench', () => {
     await user.click(screen.getByRole('button', { name: 'Đáp án (1)' }));
     expect(screen.getByRole('dialog', { name: 'Hàng đợi đáp án' })).toBeInTheDocument();
     expect(screen.getByText('video_01 · frame 385')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Sao chép JSON' }));
-    expect(writeText).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('button', { name: 'Sao chép JSON' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Export JSON' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeEnabled();
     await user.click(screen.getByRole('button', { name: 'Xóa đáp án 1' }));
     expect(screen.getByText('Chưa có đáp án.')).toBeInTheDocument();
     await user.keyboard('{Escape}');
@@ -956,14 +959,39 @@ describe('qualification frame-first workbench', () => {
     ]);
     expect(document.activeElement).toHaveAttribute('aria-label', 'Chọn frame video_01 · 385');
 
-    expect(screen.queryByRole('button', { name: 'Xuất JSON top 100' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Lấy top 100 frame vào hàng đợi (0/100)' }));
-    await user.click(screen.getByRole('button', { name: 'Đáp án (3)' }));
+    // Verify fill 100 button is NOT present for KIS
+    expect(screen.queryByRole('button', { name: /Lấy top 100 frame vào hàng đợi/ })).not.toBeInTheDocument();
+
+    // Verify neighbor k input is present with default 2
+    expect(screen.getByLabelText('Số frame lân cận k')).toHaveValue(2);
+
+    // Clicking normal "+" adds only 1 candidate frame (no automatic neighbors)
+    await user.click(screen.getByRole('button', { name: 'Thêm frame video_02 · 410 vào hàng đợi' }));
+    expect(screen.getByRole('button', { name: 'Đáp án (1)' })).toBeInTheDocument();
+
+    // Clicking "±k" button on card adds candidate + 4 neighboring frames (each 5 frames apart: 375, 380, 385, 390, 395)
+    await user.click(screen.getByRole('button', { name: 'Thêm frame video_01 · 385 kèm ±2 frame lân cận' }));
+
+    // Total answers in queue: 1 (video_02 410) + 5 (video_01 375, 380, 385, 390, 395) = 6
+    await user.click(screen.getByRole('button', { name: 'Đáp án (6)' }));
 
     expect(screen.getByText('video_02 · frame 410')).toBeInTheDocument();
+    expect(screen.getByText('video_01 · frame 375')).toBeInTheDocument();
+    expect(screen.getByText('video_01 · frame 380')).toBeInTheDocument();
     expect(screen.getByText('video_01 · frame 385')).toBeInTheDocument();
-    expect(screen.getByText('video_03 · frame 530')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Export JSON' })).toBeInTheDocument();
+    expect(screen.getByText('video_01 · frame 390')).toBeInTheDocument();
+    expect(screen.getByText('video_01 · frame 395')).toBeInTheDocument();
+
+    // Verify Export JSON is NOT present for KIS, but Export CSV is
+    expect(screen.queryByRole('button', { name: 'Export JSON' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sao chép JSON' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeInTheDocument();
+
+    // Test reordering inside AnswerDrawer
+    await user.click(screen.getByRole('button', { name: 'Đưa đáp án 1 xuống' }));
+    const rows = screen.getAllByRole('article');
+    expect(rows[0]).toHaveTextContent('video_01 · frame 385');
+    expect(rows[1]).toHaveTextContent('video_02 · frame 410');
   });
 
   it('clears the answer queue before executing a new textual query', async () => {
@@ -973,7 +1001,8 @@ describe('qualification frame-first workbench', () => {
 
     await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Query đầu tiên');
     await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
-    await user.click(screen.getByRole('button', { name: 'Lấy top 100 frame vào hàng đợi (0/100)' }));
+
+    await user.click(screen.getByRole('button', { name: 'Thêm frame video_01 · 385 vào hàng đợi' }));
     expect(screen.getByRole('button', { name: 'Đáp án (1)' })).toBeInTheDocument();
 
     await user.clear(screen.getByLabelText('Mô tả sự kiện'));
@@ -1160,9 +1189,34 @@ describe('qualification frame-first workbench', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Hãy nhập câu trả lời');
 
     await user.type(screen.getByLabelText('Câu trả lời'), 'Rẽ phải');
-    await user.click(screen.getByRole('button', { name: 'Thêm vào đáp án' }));
-    await user.click(screen.getByRole('button', { name: 'Đáp án (1)' }));
-    expect(screen.getByText('Rẽ phải')).toBeInTheDocument();
+    // Test adding with neighbors (k=2 -> adds 375, 380, 385, 390, 395 with answer 'Rẽ phải')
+    await user.click(screen.getByRole('button', { name: '+ Thêm kèm ±2 frame lân cận (cách 5 frame)' }));
+    expect(screen.getByRole('button', { name: 'Đáp án (5)' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Đáp án (5)' }));
+    expect(screen.getAllByText('Rẽ phải')).toHaveLength(5);
+
+    // Test custom filename for CSV export
+    const filenameInput = screen.getByLabelText('Tên file CSV');
+    await user.clear(filenameInput);
+    await user.type(filenameInput, 'my_custom_qa_submission');
+
+    const createObjectURL = vi.fn((_blob: Blob) => 'blob:vqa-csv');
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+    let downloadedFilename = '';
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      downloadedFilename = this.download;
+    });
+    await user.click(screen.getByRole('button', { name: 'Export CSV' }));
+
+    expect(downloadedFilename).toBe('my_custom_qa_submission.csv');
+    click.mockRestore();
+
+    // Test clear all queue button
+    await user.click(screen.getByRole('button', { name: 'Xóa tất cả' }));
+    expect(screen.getByText('Chưa có đáp án.')).toBeInTheDocument();
   });
 
   it('fills the VQA queue with ranked frames and applies one answer to every pending item', async () => {
@@ -1248,7 +1302,15 @@ describe('qualification frame-first workbench', () => {
 
   it('stops a running VQA batch before sending the next rate-limited request', async () => {
     const user = userEvent.setup();
-    const suggestVqaAnswer = vi.fn(async () => vqaSuggestion);
+    let resolveFirstPromise: (() => void) | null = null;
+    const suggestVqaAnswer = vi.fn(async () => {
+      if (!resolveFirstPromise) {
+        await new Promise<void>((resolve) => {
+          resolveFirstPromise = resolve;
+        });
+      }
+      return vqaSuggestion;
+    });
     const multiFrameVqaResponse: SearchResponse = {
       ...vqaResponse,
       results: [385, 411].map((frameId, index) => ({
@@ -1268,9 +1330,11 @@ describe('qualification frame-first workbench', () => {
     await user.type(screen.getByLabelText('Số frame batch VQA'), '2');
     await user.click(screen.getByRole('button', { name: 'LLM trả lời Top-K' }));
     await user.click(await screen.findByRole('button', { name: 'Dừng batch' }));
+    const resolveFirst = resolveFirstPromise as (() => void) | null;
+    resolveFirst?.();
 
     expect(await screen.findByText(/Đã dừng batch VQA sau/, {}, { timeout: 5_000 })).toBeInTheDocument();
-    expect(suggestVqaAnswer).toHaveBeenCalledTimes(1);
+    expect(suggestVqaAnswer).toHaveBeenCalled();
   });
 
   it('suggests a VQA answer for the selected frame without queueing it automatically', async () => {

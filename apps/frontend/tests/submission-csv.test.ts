@@ -35,9 +35,9 @@ describe('buildSubmissionCsv', () => {
     ])).toBe('video-01,12,18,25\r\n');
   });
 
-  it('rejects a Q&A answer over the 100-character limit', () => {
+  it('rejects a Q&A answer over the 2000-character limit', () => {
     expect(() => buildSubmissionCsv('qa', [
-      { video_id: 'video-01', frame_id: 12, answer: 'a'.repeat(101) },
+      { video_id: 'video-01', frame_id: 12, answer: 'a'.repeat(2001) },
     ])).toThrowError(CsvExportError);
   });
 

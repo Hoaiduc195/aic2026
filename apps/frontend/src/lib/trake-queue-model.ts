@@ -37,9 +37,10 @@ export function fillTrakeQueue(
 export function completeTrakeQueueItem(
   item: TrakeQueueItem,
   frames: readonly FrameCandidate[],
+  expectedCount?: number,
 ): TrakeQueueItem {
   const normalized = sortTrakeFrames(frames);
-  return validateTrakeSequence(normalized)
+  return validateTrakeSequence(normalized, expectedCount)
     ? { ...item, frames: normalized.map((frame) => ({ ...frame })) }
     : { ...item, frames: [] };
 }
@@ -48,8 +49,9 @@ export function updateTrakeQueueItem(
   existing: readonly TrakeQueueItem[],
   key: string,
   frames: readonly FrameCandidate[],
+  expectedCount?: number,
 ): TrakeQueueItem[] {
-  return existing.map((item) => item.key === key ? completeTrakeQueueItem(item, frames) : cloneItem(item));
+  return existing.map((item) => item.key === key ? completeTrakeQueueItem(item, frames, expectedCount) : cloneItem(item));
 }
 
 export function upsertCompletedTrakeQueueItem(
@@ -57,18 +59,23 @@ export function upsertCompletedTrakeQueueItem(
   anchor: FrameCandidate,
   frames: readonly FrameCandidate[],
   limit = TRAKE_QUEUE_LIMIT,
+  expectedCount?: number,
 ): TrakeQueueItem[] {
   const filled = fillTrakeQueue(existing, [anchor], limit);
-  return updateTrakeQueueItem(filled, trakeQueueKey(anchor), frames);
+  return updateTrakeQueueItem(filled, trakeQueueKey(anchor), frames, expectedCount);
 }
 
-export function isCompleteTrakeQueueItem(item: TrakeQueueItem): boolean {
-  return item.frames.length === TRAKE_FRAME_COUNT && validateTrakeSequence(item.frames);
+export function isCompleteTrakeQueueItem(item: TrakeQueueItem, expectedCount?: number): boolean {
+  if (item.frames.length === 0) return false;
+  if (typeof expectedCount === 'number' && expectedCount > 0) {
+    return item.frames.length === expectedCount && validateTrakeSequence(item.frames, expectedCount);
+  }
+  return validateTrakeSequence(item.frames);
 }
 
-export function trakeQueueAnswers(items: readonly TrakeQueueItem[]): TrakeAnswer[] {
+export function trakeQueueAnswers(items: readonly TrakeQueueItem[], expectedCount?: number): TrakeAnswer[] {
   return items
-    .filter(isCompleteTrakeQueueItem)
+    .filter((item) => isCompleteTrakeQueueItem(item, expectedCount))
     .map((item) => ({
       video_id: item.frames[0].video_id,
       frame_ids: item.frames.map((frame) => frame.original_frame_id),
@@ -111,8 +118,8 @@ export function restoreTrakeQueueFromAnswers(
   });
 }
 
-export function incompleteTrakeQueueCount(items: readonly TrakeQueueItem[]): number {
-  return items.filter((item) => !isCompleteTrakeQueueItem(item)).length;
+export function incompleteTrakeQueueCount(items: readonly TrakeQueueItem[], expectedCount?: number): number {
+  return items.filter((item) => !isCompleteTrakeQueueItem(item, expectedCount)).length;
 }
 
 export function removeTrakeQueueItem(existing: readonly TrakeQueueItem[], key: string): TrakeQueueItem[] {

@@ -36,6 +36,9 @@ export interface BackendConfig {
   readonly vlmQueryExpansionMaxVariants: number;
   // Plan C: auto-adjust top_k based on score variance of candidates
   readonly vlmAdaptiveTopK: boolean;
+  readonly agentClipRejectBelow: number;
+  readonly agentClipAcceptAbove: number;
+  readonly agentWorkerLeaseMs: number;
   readonly ffmpegPath: string;
   readonly frameDecodeTimeoutMs: number;
   readonly datasetVersion: string;
@@ -119,6 +122,11 @@ export function loadConfig(): BackendConfig {
   if (versionStatus === 'active' && (!indexChecksum || indexVersion === 'not-configured')) {
     throw new Error('an active version requires INDEX_VERSION and INDEX_CHECKSUM');
   }
+  const agentClipRejectBelow = boundedNumber(process.env.AGENT_CLIP_REJECT_BELOW, 0.08, -1, 1);
+  const agentClipAcceptAbove = boundedNumber(process.env.AGENT_CLIP_ACCEPT_ABOVE, 0.42, -1, 1);
+  if (agentClipAcceptAbove <= agentClipRejectBelow) {
+    throw new Error('AGENT_CLIP_ACCEPT_ABOVE must be greater than AGENT_CLIP_REJECT_BELOW');
+  }
 
   return {
     datasetId: optionalEnv('DATASET_ID') ?? 'aic2026',
@@ -158,6 +166,9 @@ export function loadConfig(): BackendConfig {
     vlmQueryExpansionMaxVariants: positiveInteger(process.env.VLM_QUERY_EXPANSION_MAX_VARIANTS, 3),
     // Plan C: adaptively scale top_k based on RRF score spread
     vlmAdaptiveTopK: optionalEnv('VLM_ADAPTIVE_TOP_K') === 'true',
+    agentClipRejectBelow,
+    agentClipAcceptAbove,
+    agentWorkerLeaseMs: positiveInteger(process.env.AGENT_WORKER_LEASE_MS, 60_000),
     ffmpegPath: optionalEnv('FFMPEG_PATH') ?? 'ffmpeg',
     frameDecodeTimeoutMs: positiveInteger(process.env.FRAME_DECODE_TIMEOUT_MS, 15000),
     datasetVersion: optionalEnv('DATASET_VERSION') ?? 'local',

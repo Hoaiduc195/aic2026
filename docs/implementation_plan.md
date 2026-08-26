@@ -80,6 +80,12 @@ be examined even when the frame ranked 1 belongs to another video.
 Backend and frontend tests are green. Refined artifacts remain staging-only
 until exact frame mapping, R2 object keys and embedding revision are resolved.
 
+Local dump hiện có `schema_migrations` checksum của `001_initial.sql` khác file
+trong repo, nên `npm run db:migrate` chủ động dừng để tránh sửa schema mù. Pilot
+đã áp dụng riêng migration 004/005 idempotent trên DB local. Trước khi chia sẻ DB,
+team phải chọn một trong hai cách: dựng lại DB từ migration hiện tại rồi import
+artifact, hoặc audit schema và chốt thủ tục repair checksum; không tự sửa checksum.
+
 ### Phase 4A status (implemented MVP)
 
 - [x] Migration `004_agent_verification.sql` tao checkpoint table
@@ -90,9 +96,17 @@ until exact frame mapping, R2 object keys and embedding revision are resolved.
 - [x] API `GET .../:runId` tra coverage va trang thai resume; `POST .../:runId/stop`
   dung an toan ma khong mat checkpoint.
 - [x] MCP stdio bridge nam o `apps/backend/src/agent/mcp-server.ts`.
-- [ ] Ket noi model/agent thuc te (Codex hoac model noi bo) de xem thumbnail va
-  sinh judgment. Bridge chi cap tool, khong tu dong chay model.
+- [x] REST worker tu dong xem thumbnail qua VLM; CLIP auto-reject/auto-accept va
+  chi goi VLM cho vung score mo ho.
+- [x] Migration `005_agent_worker_leases.sql`: moi run co query embedding, worker
+  lease, heartbeat va resume; hai worker dung hai `run_id` rieng.
+- [x] Query embedding cache/in-flight coalescing de UI va worker dung chung local
+  embedding service ma khong encode lai cung mot query.
+- [x] Pilot mot worker/mot query: 4 frame trong 9.6 giay, 3 auto-reject bang
+  CLIP, 1 VLM review; giam 75% VLM call o batch thu.
 - [ ] Chot cung checkpoint/projection giua image embedding va text query encoder
   truoc khi bat CLIP query rewrite trong production.
-- [ ] Them worker/queue neu can chay nhieu query dai song song; MVP hien tai
-  phu hop test co checkpoint va mot run tai mot thoi diem.
+- [ ] Calibrate hai nguong CLIP tren ground-truth; pilot chi xac nhan do on dinh,
+  chua du de ket luan accuracy.
+- [ ] Sau khi pilot duoc chap nhan, chay hai worker song song tren hai `run_id`
+  va do latency p50/p95 cung tai CPU embedding service.

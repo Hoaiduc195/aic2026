@@ -30,6 +30,8 @@ export interface VerificationJudgment {
   readonly reason?: string;
 }
 
+export type AgentPrefilterRoute = 'auto_reject' | 'auto_accept' | 'vlm_review';
+
 export interface AgentVerificationStartRequest {
   readonly search: SearchRequest;
   readonly options: AgentStartOptions;

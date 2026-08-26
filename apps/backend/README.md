@@ -2,7 +2,7 @@
 
 NestJS backend cho ba task vòng sơ tuyển: `textual_kis`, `vqa`, `trake`.
 Backend chạy retrieval trên toàn bộ feature đã ingest, hợp nhất bằng RRF, lưu top-k
-vào Neon để nhóm duyệt thủ công, và chỉ tạo submission preview. Backend không tự
+vào PostgreSQL/pgvector local để nhóm duyệt thủ công, và chỉ tạo submission preview. Backend không tự
 submit lên hệ thống cuộc thi.
 
 ## Thành phần đã cài đặt
@@ -13,10 +13,10 @@ submit lên hệ thống cuộc thi.
 - R2 presigned URL cho video playback và keyframe thumbnail.
 - Exact source-frame preview: backend dùng FFmpeg decode on-demand khi frame chưa có thumbnail sparse.
 - Ảnh sparse/ảnh decode vượt giới hạn 12 MiB sẽ được re-encode JPEG với kích thước/chất lượng giảm dần để endpoint và VQA vẫn nhận được ảnh.
-- Snapshot retrieval run/candidate và manual selection có revision trong Neon.
+- Snapshot retrieval run/candidate và manual selection có revision trong PostgreSQL local.
 - Export preview JSON + CSV cho Textual KIS, VQA và TRAKE, tối đa 100 answers.
 - Operator token, CORS, rate limit 120 request/phút và input validation.
-- Degraded mode khi Neon, R2 hoặc model service chưa được cấu hình.
+- Degraded mode khi PostgreSQL local, R2 hoặc model service chưa được cấu hình.
 
 Các port `LanguageModel`, `TemporalAligner` và `QueryEmbeddingProvider` nằm trong
 `src/compute/model-ports.ts`; `VisionLanguageModel` và adapter OpenAI-compatible
@@ -35,8 +35,9 @@ npm run db:build-indexes
 npm run start:dev
 ```
 
-Neon nên dùng pooled URL cho `DATABASE_URL` và direct URL cho
-`DATABASE_DIRECT_URL`. Migration tạo extension `vector`, `pg_trgm` cùng các bảng
+Team hiện không dùng Neon. `DATABASE_URL` và `DATABASE_DIRECT_URL` cùng trỏ tới
+PostgreSQL/pgvector local (Docker hoặc máy host); direct URL được migration/importer dùng.
+Migration tạo extension `vector`, `pg_trgm` cùng các bảng
 video/frame, feature set/artifact, evidence, index release, retrieval và manual selection.
 GIN/trigram/HNSW là index nặng nên chỉ được tạo bằng `npm run db:build-indexes`
 sau khi bulk import hoàn tất.
@@ -47,8 +48,10 @@ secret key. Object key được giả định theo cấu trúc:
 ```text
 datasets/<dataset-version>/videos/<video-id>.mp4
 datasets/<dataset-version>/keyframes/<video-id>/<original-frame-id>.webp
-features/<dataset-version>/<modality>/<model-version>/<artifact>
 ```
+
+Artifact feature Parquet/JSON/NumPy được giữ local và importer ghi dữ liệu cần
+truy vấn vào PostgreSQL/pgvector local; không upload feature lên R2.
 
 `EMBEDDING_SERVICE_URL` là tùy chọn. Service nhận `{"text":"..."}` ở `/embed`
 và raw image bytes ở `/embed/image`, cùng trả `{"embedding":[1024 số hữu hạn]}`.
@@ -81,7 +84,7 @@ các trường `base_url`, `api_key`, `model`, `timeout_ms`, `max_tokens` và
 
 | Method | Endpoint | Mục đích |
 |---|---|---|
-| `GET` | `/health` | Trạng thái Neon/R2, branch và task executor |
+| `GET` | `/health` | Trạng thái PostgreSQL local/R2, branch và task executor |
 | `POST` | `/v1/search` | Search và lưu candidate snapshot |
 | `POST` | `/v1/search/plan` | Xem static all-feature execution plan |
 | `GET` | `/v1/videos/:id/playback` | Presigned video URL và metadata |
@@ -96,6 +99,9 @@ các trường `base_url`, `api_key`, `model`, `timeout_ms`, `max_tokens` và
 | `GET` | `/v1/agent/frame-search/:runId/batch` | Lấy batch keyframe tiếp theo để agent xem |
 | `POST` | `/v1/agent/frame-search/:runId/judgments` | Ghi judgment cho toàn bộ frame trong batch |
 | `GET` | `/v1/agent/frame-search/:runId` | Tiến độ, coverage và các match liên quan |
+| `POST` | `/v1/agent/frame-search/:runId/claim` | Worker nhận lease độc quyền cho một run |
+| `POST` | `/v1/agent/frame-search/:runId/heartbeat` | Gia hạn lease trong lúc worker chạy |
+| `POST` | `/v1/agent/frame-search/:runId/release` | Nhả lease để worker khác có thể resume |
 | `POST` | `/v1/agent/frame-search/:runId/stop` | Dừng run nhưng giữ checkpoint |
 
 Ví dụ search:
@@ -174,7 +180,7 @@ gửi judgment cho từng frame trong batch; checkpoint nằm trong
 duyệt keyframe đã lưu trong `frames`, không tự địa giải mọi frame raw trong
 video; raw-video decode chỉ dùng khi cần preview exact frame.
 
-Chạy migration một lần sau khi đã chọn Neon development branch:
+Chạy migration trên PostgreSQL local:
 
 ```powershell
 cd D:\VSCode\AIC\aic2026\apps\backend
@@ -231,9 +237,36 @@ Lặp lại endpoint `/batch` và `/judgments` cho đến khi `status=completed`
 `video_id` + `original_frame_id`, tối đa 100 match điểm cao nhất). Có thể dùng
 `POST .../$runId/stop` để dừng mà không mất checkpoint.
 
+### Chạy REST worker tự động (khuyến nghị)
+
+Worker gọi REST API nên prompt, ảnh và lịch sử tool không đi qua context MCP/Codex.
+Mỗi lệnh không có `--run-id` tạo một UUID `run_id` mới; vì vậy hai worker phải
+dùng hai `worker-id` và hai run khác nhau. Lease/heartbeat ngăn hai process cùng
+ghi vào một run. Cả search thủ công lẫn worker dùng chung embedding service local;
+backend cache tối đa 256 query embedding và gộp các request đồng thời giống nhau.
+Mỗi run chỉ encode query một lần, sau đó so với vector frame đã lưu trong pgvector.
+
+```powershell
+cd D:\VSCode\AIC\aic2026\apps\backend
+npm run agent:worker -- --query "a person walking outdoors" `
+  --task textual_kis --top-k 10 --video-budget 10 --batch-size 8 `
+  --worker-id worker-1
+```
+
+Pipeline worker là CLIP cascade: score thấp được auto-reject, score cao được
+auto-accept, chỉ vùng mơ hồ mới gọi VLM. Điều chỉnh bằng
+`AGENT_CLIP_REJECT_BELOW`/`AGENT_CLIP_ACCEPT_ABOVE`. Có thể đặt riêng model ảnh
+qua `AGENT_WORKER_VLM_MODEL`; model này phải thực sự nhận image input. Pilot an
+toàn dùng `--max-batches 1`; state JSON ghi atomic trong `data/tmp/agent-worker`.
+Resume một run đang dở:
+
+```powershell
+npm run agent:worker -- --run-id <run_id> --worker-id worker-1
+```
+
 ### Ra lệnh qua MCP/Codex
 
-MCP bridge không truy cập trực tiếp Neon/R2; nó chỉ chuyển năm tool
+MCP bridge không truy cập trực tiếp PostgreSQL/R2; nó chỉ chuyển năm tool
 bounded tới backend: `start_frame_verification`, `get_next_frame_batch`,
 `submit_frame_judgments`, `get_frame_verification_status`,
 `stop_frame_verification`. Backend phải chạy trước, sau đó MCP client khởi

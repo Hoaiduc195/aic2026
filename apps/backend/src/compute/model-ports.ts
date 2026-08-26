@@ -21,15 +21,51 @@ export interface TemporalAligner {
 
 export class HttpQueryEmbeddingProvider implements QueryEmbeddingProvider {
   readonly isConfigured = true;
+  private readonly textCache = new Map<string, readonly number[]>();
+  private readonly inFlightText = new Map<string, Promise<readonly number[]>>();
+  private readonly maxCachedQueries = 256;
+  private textQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly endpoint: string,
     public readonly dimensions: number,
     private readonly bearerToken?: string,
-    private readonly timeoutMs = 5000,
+    private readonly timeoutMs = 15_000,
   ) {}
 
   async embedText(query: string): Promise<readonly number[]> {
+    const cacheKey = query.normalize('NFKC').trim();
+    const cached = this.textCache.get(cacheKey);
+    if (cached) {
+      this.textCache.delete(cacheKey);
+      this.textCache.set(cacheKey, cached);
+      return cached;
+    }
+    const inFlight = this.inFlightText.get(cacheKey);
+    if (inFlight) return inFlight;
+
+    const request = this.enqueueTextEmbedding(query)
+      .then((embedding) => {
+        this.textCache.set(cacheKey, embedding);
+        while (this.textCache.size > this.maxCachedQueries) {
+          const oldest = this.textCache.keys().next().value as string | undefined;
+          if (oldest === undefined) break;
+          this.textCache.delete(oldest);
+        }
+        return embedding;
+      })
+      .finally(() => this.inFlightText.delete(cacheKey));
+    this.inFlightText.set(cacheKey, request);
+    return request;
+  }
+
+  private enqueueTextEmbedding(query: string): Promise<readonly number[]> {
+    const request = this.textQueue.then(() => this.fetchTextEmbedding(query));
+    this.textQueue = request.then(() => undefined, () => undefined);
+    return request;
+  }
+
+  private async fetchTextEmbedding(query: string): Promise<readonly number[]> {
     const response = await fetch(this.endpoint, {
       method: 'POST',
       headers: {
