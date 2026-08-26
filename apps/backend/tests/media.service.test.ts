@@ -20,6 +20,7 @@ const repository: MediaRepository = {
     video_id: 'video-1', keyframe_no: 2, original_frame_id: 50,
     timestamp_ms: 2000, thumbnail_object_key: 'keyframes/video-1/000050.jpg',
   })),
+  findFramesPage: vi.fn(async () => []),
   findNearestStudioFrame: vi.fn(async () => ({
     video_id: 'video-1', keyframe_no: 2, original_frame_id: 50, timestamp_ms: 2000,
     captions: [{ evidence_id: 'caption-1', text: 'a person', language: 'en', producer: 'caption:v1' }],

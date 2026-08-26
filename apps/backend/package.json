@@ -16,11 +16,13 @@
     "db:migrate": "tsx src/database/migrate.ts",
     "db:build-indexes": "tsx src/database/build-indexes.ts",
     "db:verify": "tsx src/database/verify.ts",
+    "agent:mcp": "tsx src/agent/mcp-server.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1109.0",
     "@aws-sdk/s3-request-presigner": "^3.1109.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
@@ -28,7 +30,8 @@
     "dotenv": "^16.4.7",
     "pg": "^8.23.0",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.2"
+    "rxjs": "^7.8.2",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@nestjs/testing": "^11.1.29",

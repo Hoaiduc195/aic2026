@@ -47,6 +47,8 @@ import { VqaAnswerService } from './tasks/vqa/vqa-answer.service';
 import { PostgresVqaGroundingRepository, UnavailableVqaGroundingRepository } from './tasks/vqa/vqa-grounding.repository';
 import { R2ObjectStorage } from './storage/r2-object-storage';
 import { UnavailableObjectStorage } from './storage/object-storage';
+import { AgentVerificationController } from './agent/agent-verification.controller';
+import { AgentVerificationService } from './agent/agent-verification.service';
 
 function createBranches(database: DatabaseClient, embedder: QueryEmbeddingProvider): RetrievalBranch[] {
   if (database.isConfigured) {
@@ -97,6 +99,7 @@ function createTaskRegistry(config: ReturnType<typeof loadConfig>): TaskExecutor
     SubmissionController,
     VqaAnswerController,
     QueryImproverController,
+    AgentVerificationController,
   ],
   providers: [
     { provide: APP_CONFIG, useFactory: loadConfig },
@@ -222,6 +225,7 @@ function createTaskRegistry(config: ReturnType<typeof loadConfig>): TaskExecutor
     MediaService,
     VqaAnswerService,
     QueryImproverService,
+    AgentVerificationService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })

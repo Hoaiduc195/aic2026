@@ -23,6 +23,14 @@ export interface FrameThumbnail {
   readonly bytes: Buffer;
 }
 
+export interface FrameBatchItem {
+  readonly video_id: string;
+  readonly keyframe_no: number;
+  readonly original_frame_id: number;
+  readonly timestamp_ms: number;
+  readonly thumbnail_uri: string;
+}
+
 function imageMimeType(value: string | null, fallback: ImageMimeType): ImageMimeType {
   const normalized = value?.split(';', 1)[0]?.trim().toLowerCase();
   return normalized === 'image/jpeg' || normalized === 'image/png'
@@ -134,6 +142,28 @@ export class MediaService {
         timestamp_ms: Number(frame.timestamp_ms),
         thumbnail_uri: await this.storage.signReadUrl(frame.thumbnail_object_key),
       }))),
+    };
+  }
+
+  /** Return a bounded, chronological keyframe page for agent verification. */
+  async getFrameBatch(videoId: string, afterOriginalFrameId: number, limit: number) {
+    if (!this.storage.isConfigured) throw new ServiceUnavailableException('R2 object storage is not configured');
+    const rows = await this.repository.findFramesPage(videoId, afterOriginalFrameId, limit + 1);
+    const hasMore = rows.length > limit;
+    const frames = rows.slice(0, limit);
+    const items: FrameBatchItem[] = await Promise.all(frames.map(async (frame) => ({
+      video_id: frame.video_id,
+      keyframe_no: Number(frame.keyframe_no),
+      original_frame_id: Number(frame.original_frame_id),
+      timestamp_ms: Number(frame.timestamp_ms),
+      thumbnail_uri: await this.storage.signReadUrl(frame.thumbnail_object_key),
+    })));
+    return {
+      video_id: videoId,
+      after_original_frame_id: afterOriginalFrameId,
+      frames: items,
+      has_more: hasMore,
+      next_cursor: items.length > 0 ? items[items.length - 1].original_frame_id : null,
     };
   }
 

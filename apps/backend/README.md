@@ -92,6 +92,11 @@ các trường `base_url`, `api_key`, `model`, `timeout_ms`, `max_tokens` và
 | `GET` | `/v1/queries/:id/selection` | Revision lựa chọn gần nhất |
 | `PUT` | `/v1/queries/:id/selection` | Lưu revision manual mới |
 | `POST` | `/v1/submissions/preview` | Validate và tạo JSON/CSV; không submit |
+| `POST` | `/v1/agent/frame-search` | Tạo coarse-search run và xếp hạng video cho agent |
+| `GET` | `/v1/agent/frame-search/:runId/batch` | Lấy batch keyframe tiếp theo để agent xem |
+| `POST` | `/v1/agent/frame-search/:runId/judgments` | Ghi judgment cho toàn bộ frame trong batch |
+| `GET` | `/v1/agent/frame-search/:runId` | Tiến độ, coverage và các match liên quan |
+| `POST` | `/v1/agent/frame-search/:runId/stop` | Dừng run nhưng giữ checkpoint |
 
 Ví dụ search:
 
@@ -158,3 +163,95 @@ npm run build
 Coverage gate: statements/lines/functions từ 80%, branches từ 70%. Integration
 test dùng Supertest kiểm tra operator auth, search, media, manual selection và
 submission preview.
+
+## Agent kiểm tra exhaustive theo video
+
+Backend có thêm một luồng dành cho agent: search feature trước, gom các
+`video_id` khác nhau từ top-k frame, xếp hạng video theo seed score, sau đó
+trả toàn bộ keyframe đã index của từng video theo batch nhỏ. Agent phải
+gửi judgment cho từng frame trong batch; checkpoint nằm trong
+`agent_verification_runs` nên có thể tiếp tục sau khi mất session. Luồng này
+duyệt keyframe đã lưu trong `frames`, không tự địa giải mọi frame raw trong
+video; raw-video decode chỉ dùng khi cần preview exact frame.
+
+Chạy migration một lần sau khi đã chọn Neon development branch:
+
+```powershell
+cd D:\VSCode\AIC\aic2026\apps\backend
+npm run db:migrate
+npm run db:verify
+npm run start:dev
+```
+
+### Gọi trực tiếp (nhanh nhất để test)
+
+Từ một PowerShell khác, tạo run từ coarse search:
+
+```powershell
+$body = @{
+  query = 'a person enters a room carrying a red bag'
+  task = 'textual_kis'
+  top_k = 20
+  video_budget = 10
+  frame_batch_size = 8
+} | ConvertTo-Json
+
+$start = Invoke-RestMethod -Method Post `
+  -Uri http://localhost:4000/v1/agent/frame-search `
+  -ContentType 'application/json' -Body $body
+$runId = $start.run.run_id
+
+# Lấy batch thumbnail có signed URL
+Invoke-RestMethod http://localhost:4000/v1/agent/frame-search/$runId/batch
+```
+
+Nếu backend đặt `OPERATOR_TOKEN`, thêm
+`-Headers @{ Authorization = "Bearer $env:OPERATOR_TOKEN" }` vào mỗi
+`Invoke-RestMethod`; không dán token vào notebook, commit hoặc tin nhắn.
+
+Sau khi agent xem batch, gửi đúng mỗi frame một judgment (không bỏ sót,
+không lặp):
+
+```powershell
+$judgments = @{
+  judgments = @(
+    @{ video_id='L26_V076'; original_frame_id=120; relevant=$true;  score=0.9; reason='red bag visible' },
+    @{ video_id='L26_V076'; original_frame_id=135; relevant=$false; score=0.1; reason='wrong object' }
+  )
+} | ConvertTo-Json -Depth 5
+
+Invoke-RestMethod -Method Post `
+  -Uri "http://localhost:4000/v1/agent/frame-search/$runId/judgments" `
+  -ContentType 'application/json' -Body $judgments
+```
+
+Lặp lại endpoint `/batch` và `/judgments` cho đến khi `status=completed`;
+`GET /v1/agent/frame-search/$runId` cho biết `coverage_ratio`, số video/frame
+đã duyệt và trả `matches` (các frame được agent đánh dấu `relevant`, gồm
+`video_id` + `original_frame_id`, tối đa 100 match điểm cao nhất). Có thể dùng
+`POST .../$runId/stop` để dừng mà không mất checkpoint.
+
+### Ra lệnh qua MCP/Codex
+
+MCP bridge không truy cập trực tiếp Neon/R2; nó chỉ chuyển năm tool
+bounded tới backend: `start_frame_verification`, `get_next_frame_batch`,
+`submit_frame_judgments`, `get_frame_verification_status`,
+`stop_frame_verification`. Backend phải chạy trước, sau đó MCP client khởi
+động process stdio:
+
+```powershell
+cd D:\VSCode\AIC\aic2026\apps\backend
+$env:BACKEND_URL = 'http://localhost:4000'
+# Chi dat dong nay neu backend bat OPERATOR_TOKEN; khong ghi token vao git.
+# $env:BACKEND_OPERATOR_TOKEN = $env:OPERATOR_TOKEN
+npm run agent:mcp
+```
+
+Trong phần MCP settings của Codex/Claude, khai báo server stdio với command
+`npx` và args `tsx`, `D:\VSCode\AIC\aic2026\apps\backend\src\agent\mcp-server.ts`.
+Tool `get_next_frame_batch` mặc định tải thumbnail signed URL thành MCP image
+blocks để agent nhìn trực tiếp; truyền `include_images=false` nếu chỉ cần
+metadata/URL và muốn tiết kiệm context. Không nhập DATABASE_URL, R2 secret hay API key vào tool. MCP là cách
+tiện nhất để ra lệnh từ Codex, nhưng gọi REST/worker trực tiếp nhanh
+và tốn ít token hơn; production nên dùng worker/queue backend, MCP chỉ
+giám sát hoặc chạy bài test.

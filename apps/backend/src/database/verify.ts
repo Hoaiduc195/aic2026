@@ -5,6 +5,7 @@ import { Client } from 'pg';
 const EXPECTED_EXTENSIONS = ['pg_trgm', 'vector'] as const;
 const EXPECTED_TABLES = [
   'clip_embeddings',
+  'agent_verification_runs',
   'evidence',
   'feature_artifacts',
   'feature_sets',
