@@ -237,7 +237,7 @@ export function buildDeterministicPlan(
     display_k: Math.min(limits.displayK, 1000),
     near_frame_window_ms: Math.max(0, Math.min(limits.nearFrameWindowMs ?? 1000, MAX_NEAR_FRAME_WINDOW_MS)),
     rrf_k: Math.min(limits.rrfK, 1000),
-    latency_budget_ms: Math.max(1, limits.latencyBudgetMs ?? 15_000),
+    latency_budget_ms: limits.latencyBudgetMs,
     fallback_policy: request.task === 'vqa' ? 'expand_then_abstain' : 'expand_then_clarify',
     planner_version: PLANNER_VERSION,
     fusion: 'rrf',

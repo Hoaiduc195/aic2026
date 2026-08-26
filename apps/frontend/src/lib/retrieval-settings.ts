@@ -71,10 +71,10 @@ export function validateRetrievalSettings(settings: RetrievalSettings): string |
     return 'Khoảng cách frame gần nhau phải nằm trong khoảng 0–100000 ms.';
   }
   const vlm = settings.vlm_rerank;
-  if (vlm && (!Number.isSafeInteger(vlm.top_k ?? 15) || (vlm.top_k ?? 15) < 1 || (vlm.top_k ?? 15) > 100)) {
+  if (vlm && (!Number.isSafeInteger(vlm.top_k) || vlm.top_k < 1 || vlm.top_k > 100)) {
     return 'VLM top-k phải nằm trong khoảng 1–100.';
   }
-  if (vlm && (!Number.isFinite(vlm.weight ?? 0.6) || (vlm.weight ?? 0.6) < 0 || (vlm.weight ?? 0.6) > 1)) {
+  if (vlm && (!Number.isFinite(vlm.weight) || vlm.weight < 0 || vlm.weight > 1)) {
     return 'VLM weight phải nằm trong khoảng 0–1.';
   }
   return null;

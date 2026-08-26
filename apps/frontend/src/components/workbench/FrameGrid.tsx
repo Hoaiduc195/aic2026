@@ -36,9 +36,6 @@ interface Props {
   onAddToQueue?: (frame: FrameCandidate) => void;
   onFillQueue?: () => void;
   queueLabel?: string;
-  kisNeighborK?: number;
-  onKisNeighborKChange?: (value: number) => void;
-  onAddWithNeighborsToQueue?: (frame: FrameCandidate) => void;
   batchTopK?: string;
   onBatchTopKChange?: (value: string) => void;
   onRunBatchVqa?: () => void;
@@ -74,9 +71,6 @@ export function FrameGrid({
   onAddToQueue,
   onFillQueue,
   queueLabel,
-  kisNeighborK,
-  onKisNeighborKChange,
-  onAddWithNeighborsToQueue,
   batchTopK = '10',
   onBatchTopKChange,
   onRunBatchVqa,
@@ -321,40 +315,8 @@ export function FrameGrid({
           <span className="result-summary">
             {loading ? 'Đang tìm' : searched ? `${frames.length} frame` : 'Chưa tìm kiếm'}
           </span>
-          {(onFillQueue || onExportTrakeCsv || kisNeighborK !== undefined) && searched && (
-            <div className={onRunBatchVqa ? 'vqa-result-toolbar' : kisNeighborK !== undefined ? 'kis-result-toolbar' : 'result-queue-toolbar'} aria-label="Công cụ hàng đợi">
-              {kisNeighborK !== undefined && (
-                <>
-                  <label className="batch-k-control">
-                    <span>Frame lân cận (±k, cách 5)</span>
-                    <input
-                      aria-label="Số frame lân cận k"
-                      type="number"
-                      min="0"
-                      max="20"
-                      inputMode="numeric"
-                      value={kisNeighborK}
-                      onChange={(event) => {
-                        const val = Math.max(0, Math.min(20, Number(event.target.value) || 0));
-                        onKisNeighborKChange?.(val);
-                      }}
-                    />
-                  </label>
-                  {onAddWithNeighborsToQueue && kisNeighborK > 0 && selectedKey && (
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => {
-                        const sel = frames.find((f) => f.result_key === selectedKey);
-                        if (sel) onAddWithNeighborsToQueue(sel);
-                      }}
-                      title={`Thêm frame đang chọn kèm ±${kisNeighborK} frame lân cận (mỗi frame cách 5 frame)`}
-                    >
-                      + Thêm lân cận (±{kisNeighborK})
-                    </button>
-                  )}
-                </>
-              )}
+          {(onFillQueue || onExportTrakeCsv) && searched && (
+            <div className={onRunBatchVqa ? 'vqa-result-toolbar' : 'result-queue-toolbar'} aria-label="Công cụ hàng đợi">
               {onFillQueue && (
                 <button
                   type="button"
@@ -526,20 +488,8 @@ export function FrameGrid({
                     aria-label={queued ? `Frame ${resultLabel} đã ở hàng đợi` : `Thêm ${resultLabel} vào hàng đợi`}
                     disabled={queued}
                     onClick={() => onAddToQueue(frame)}
-                    title="Thêm frame này vào hàng đợi"
                   >
                     {queued ? '✓' : '+'}
-                  </button>
-                )}
-                {onAddWithNeighborsToQueue && kisNeighborK !== undefined && kisNeighborK > 0 && (
-                  <button
-                    type="button"
-                    className="queue-card-action"
-                    aria-label={`Thêm ${resultLabel} kèm ±${kisNeighborK} frame lân cận`}
-                    onClick={() => onAddWithNeighborsToQueue(frame)}
-                    title={`Thêm frame kèm ±${kisNeighborK} frame lân cận (cách 5 frame)`}
-                  >
-                    ±k
                   </button>
                 )}
                 {onMoveToTop && (

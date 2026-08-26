@@ -125,114 +125,6 @@ export function buildRankedTextualSubmission(
   return buildSubmission('textual_kis', queryId, answers);
 }
 
-export function reorderAnswers<T extends QualificationAnswer>(
-  answers: readonly T[],
-  from: number,
-  to: number,
-): T[] {
-  if (
-    from < 0
-    || from >= answers.length
-    || to < 0
-    || to >= answers.length
-    || from === to
-  ) {
-    return [...answers];
-  }
-
-  const next = [...answers];
-  const [moved] = next.splice(from, 1);
-  next.splice(to, 0, moved);
-  return next;
-}
-
-export interface FrameLike {
-  video_id: string;
-  original_frame_id: number;
-  timestamp_ms?: number;
-}
-
-export const KIS_NEIGHBOR_STRIDE = 5;
-
-/**
- * Extracts candidate frame plus up to k neighboring frames before and after in the same video,
- * spaced by stride frames (default 5 frames apart) to ensure comprehensive temporal coverage.
- */
-export function extractNearbyFrames(
-  anchor: FrameLike,
-  availableFrames?: readonly FrameLike[],
-  k = 2,
-  stride = KIS_NEIGHBOR_STRIDE,
-): TextualKisAnswer[] {
-  const normalizedK = Math.max(0, Math.floor(k));
-  if (normalizedK === 0) {
-    return [{ video_id: anchor.video_id, frame_id: anchor.original_frame_id }];
-  }
-
-  // Prefer the canonical frame rows returned by the backend. This prevents
-  // queueing synthetic IDs when a video has variable frame-rate or sparse
-  // keyframe coverage. The arithmetic fallback remains useful for pure model
-  // tests and offline callers that do not have a frame index available.
-  if (availableFrames && availableFrames.length > 0) {
-    const sameVideo = availableFrames
-      .filter((frame) => frame.video_id === anchor.video_id && Number.isSafeInteger(frame.original_frame_id))
-      .filter((frame) => frame.original_frame_id !== anchor.original_frame_id)
-      .sort((left, right) => left.original_frame_id - right.original_frame_id);
-    const before = sameVideo.filter((frame) => frame.original_frame_id < anchor.original_frame_id).slice(-normalizedK);
-    const after = sameVideo.filter((frame) => frame.original_frame_id > anchor.original_frame_id).slice(0, normalizedK);
-    const selected = [anchor, ...before, ...after]
-      .sort((left, right) => left.original_frame_id - right.original_frame_id)
-      .slice(0, normalizedK * 2 + 1);
-    return selected.map((frame) => ({ video_id: frame.video_id, frame_id: frame.original_frame_id }));
-  }
-
-  const normalizedStride = Math.max(1, Math.floor(stride));
-  const neighborIds: number[] = [];
-
-  for (let i = -normalizedK; i <= normalizedK; i++) {
-    if (i === 0) continue;
-    const fid = anchor.original_frame_id + (i * normalizedStride);
-    if (fid >= 0 && fid !== anchor.original_frame_id) {
-      neighborIds.push(fid);
-    }
-  }
-
-  const sortedNeighbors = Array.from(new Set(neighborIds)).sort((a, b) => a - b);
-  const finalFrameIds = [anchor.original_frame_id, ...sortedNeighbors];
-
-  return finalFrameIds.map((frameId) => ({
-    video_id: anchor.video_id,
-    frame_id: frameId,
-  }));
-}
-
-export function appendKisAnswers(
-  existing: readonly TextualKisAnswer[],
-  newAnswers: readonly TextualKisAnswer[],
-  limit = 100,
-): TextualKisAnswer[] {
-  const maxItems = Math.max(0, Math.min(100, Math.floor(limit)));
-  const incomingKeys = new Set(newAnswers.map((ans) => `${ans.video_id}\u0000${ans.frame_id}`));
-
-  // Automatically remove duplicate frames that were previously in the queue
-  const filteredExisting = existing
-    .filter((ans) => !incomingKeys.has(`${ans.video_id}\u0000${ans.frame_id}`))
-    .map((ans) => ({ ...ans }));
-
-  const seen = new Set<string>();
-  const uniqueNew: TextualKisAnswer[] = [];
-
-  for (const ans of newAnswers) {
-    const key = `${ans.video_id}\u0000${ans.frame_id}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      uniqueNew.push({ video_id: ans.video_id, frame_id: ans.frame_id });
-    }
-  }
-
-  return [...filteredExisting, ...uniqueNew].slice(0, maxItems);
-}
-
 export function fillTextualKisAnswers(
   existing: readonly TextualKisAnswer[],
   frames: readonly FrameCandidate[],
@@ -430,9 +322,8 @@ export function groupEvidence(evidence: readonly SearchEvidence[], frameTimestam
 
 export const TRAKE_FRAME_COUNT = 4;
 
-export function validateTrakeSequence(frames: readonly FrameCandidate[], expectedCount?: number): boolean {
-  if (frames.length === 0) return false;
-  if (typeof expectedCount === 'number' && expectedCount > 0 && frames.length !== expectedCount) return false;
+export function validateTrakeSequence(frames: readonly FrameCandidate[]): boolean {
+  if (frames.length !== TRAKE_FRAME_COUNT) return false;
   const videoId = frames[0].video_id;
   return frames.every((frame, index) => (
     frame.video_id === videoId
@@ -441,15 +332,14 @@ export function validateTrakeSequence(frames: readonly FrameCandidate[], expecte
   ));
 }
 
-export function emptyTrakeFrameSlots(count = TRAKE_FRAME_COUNT): Array<FrameCandidate | null> {
-  return Array.from({ length: Math.max(1, count) }, () => null);
+export function emptyTrakeFrameSlots(): Array<FrameCandidate | null> {
+  return Array.from({ length: TRAKE_FRAME_COUNT }, () => null);
 }
 
 export function normalizeTrakeFrameSlots(
   frames: readonly (FrameCandidate | null)[],
-  count = TRAKE_FRAME_COUNT,
 ): Array<FrameCandidate | null> {
-  return Array.from({ length: Math.max(1, count) }, (_, index) => frames[index] ?? null);
+  return Array.from({ length: TRAKE_FRAME_COUNT }, (_, index) => frames[index] ?? null);
 }
 
 export function sortTrakeFrames(frames: readonly FrameCandidate[]): FrameCandidate[] {
@@ -459,15 +349,13 @@ export function sortTrakeFrames(frames: readonly FrameCandidate[]): FrameCandida
 }
 
 /**
- * Automatically selects chronological frames for TRAKE from available video frames or studio frames.
+ * Automatically selects 4 chronological frames for TRAKE from available video frames or studio frames.
  */
 export function autoSelectNearbyTrakeFrames(
   anchor: FrameCandidate,
   availableFrames: readonly (StudioFrame | FrameCandidate)[],
   asrSpans: readonly StudioAsrSpan[] = [],
-  targetCount = TRAKE_FRAME_COUNT,
 ): FrameCandidate[] {
-  const count = Math.max(1, targetCount);
   const converted: FrameCandidate[] = availableFrames
     .filter((frame) => frame.video_id === anchor.video_id)
     .map((frame) => ('result_key' in frame ? frame : applyStudioFrameToCandidate(anchor, frame, asrSpans)));
@@ -484,11 +372,11 @@ export function autoSelectNearbyTrakeFrames(
 
   const sorted = sortTrakeFrames(Array.from(uniqueMap.values()));
 
-  if (sorted.length >= count) {
+  if (sorted.length >= TRAKE_FRAME_COUNT) {
     const anchorIdx = sorted.findIndex((frame) => frame.original_frame_id === anchor.original_frame_id);
-    const startIdx = Math.max(0, Math.min(anchorIdx >= 0 ? anchorIdx : 0, sorted.length - count));
-    const selected = sorted.slice(startIdx, startIdx + count);
-    if (validateTrakeSequence(selected, count)) {
+    const startIdx = Math.max(0, Math.min(anchorIdx >= 0 ? anchorIdx : 0, sorted.length - TRAKE_FRAME_COUNT));
+    const selected = sorted.slice(startIdx, startIdx + TRAKE_FRAME_COUNT);
+    if (validateTrakeSequence(selected)) {
       return selected;
     }
   }
@@ -502,9 +390,7 @@ export function autoSelectNearbyTrakeFrames(
 export function autoBuildTrakeAnswers(
   rankedFrames: readonly FrameCandidate[],
   maxCount = 100,
-  targetCount = TRAKE_FRAME_COUNT,
 ): TrakeAnswer[] {
-  const count = Math.max(1, targetCount);
   const byVideo = new Map<string, FrameCandidate[]>();
   for (const frame of rankedFrames) {
     const list = byVideo.get(frame.video_id) ?? [];
@@ -521,13 +407,13 @@ export function autoBuildTrakeAnswers(
     ));
 
     let frameIds: number[];
-    if (unique.length >= count) {
-      frameIds = unique.slice(0, count).map((frame) => frame.original_frame_id);
+    if (unique.length >= TRAKE_FRAME_COUNT) {
+      frameIds = unique.slice(0, TRAKE_FRAME_COUNT).map((frame) => frame.original_frame_id);
     } else {
       frameIds = [];
     }
 
-    if (frameIds.length === count) {
+    if (frameIds.length === TRAKE_FRAME_COUNT) {
       answers.push({
         video_id: videoId,
         frame_ids: frameIds,

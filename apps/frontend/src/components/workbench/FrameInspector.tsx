@@ -36,8 +36,6 @@ interface Props {
   onSuggestVqaAnswer?: () => void;
   vqaAnswerLoading?: boolean;
   onAddAnswer: () => void;
-  onAddWithNeighbors?: () => void;
-  kisNeighborK?: number;
   onSelectAssignedFrame: (index: number) => void;
   onAutoSelectNearbyFrames?: () => void;
 }
@@ -68,8 +66,6 @@ export function FrameInspector({
   onSuggestVqaAnswer,
   vqaAnswerLoading = false,
   onAddAnswer,
-  onAddWithNeighbors,
-  kisNeighborK,
   onSelectAssignedFrame,
   onAutoSelectNearbyFrames,
 }: Props) {
@@ -168,12 +164,11 @@ export function FrameInspector({
         {task === 'qa' && (
           <label className="input-field compact-field">
             <span>Câu trả lời</span>
-            <textarea
+            <input
               aria-label="Câu trả lời"
               value={qaAnswer}
               maxLength={2000}
-              rows={2}
-              placeholder="Nhập câu trả lời ngắn gọn hoặc chi tiết…"
+              placeholder="Nhập câu trả lời ngắn gọn…"
               onChange={(event) => onQaAnswerChange(event.target.value)}
             />
           </label>
@@ -191,21 +186,11 @@ export function FrameInspector({
             <button type="button" className="primary-button full-width" onClick={onAddAnswer}>
               Thêm vào đáp án
             </button>
-            {onAddWithNeighbors && kisNeighborK !== undefined && kisNeighborK > 0 && (
-              <button
-                type="button"
-                className="secondary-button full-width"
-                onClick={onAddWithNeighbors}
-                title={`Thêm frame này cùng ±${kisNeighborK} frame lân cận (mỗi frame cách nhau 5 frame)`}
-              >
-                + Thêm kèm ±{kisNeighborK} frame lân cận (cách 5 frame)
-              </button>
-            )}
           </div>
         ) : task === 'trake' ? (
           <div className="trake-frame-selection">
             <div className="trake-selection-header">
-              <p className="muted-copy">Chọn đủ {assignedFrames.length} frame trong Video Studio hoặc tự động gán frame lân cận.</p>
+              <p className="muted-copy">Chọn đủ 4 frame trong Video Studio hoặc tự động gán frame lân cận.</p>
               {onAutoSelectNearbyFrames && (
                 <button
                   type="button"
@@ -213,11 +198,11 @@ export function FrameInspector({
                   style={{ marginBottom: '8px' }}
                   onClick={onAutoSelectNearbyFrames}
                 >
-                  ⚡ Tự động chọn {assignedFrames.length} frame lân cận
+                  ⚡ Tự động chọn 4 frame lân cận
                 </button>
               )}
             </div>
-            <div className="trake-frame-slots" aria-label={`Các frame TRAKE đã chọn (${assignedFrames.length} frame)`}>
+            <div className="trake-frame-slots" aria-label="Bốn frame TRAKE đã chọn">
               {assignedFrames.map((frame, index) => {
                 const objects = frame ? groupEvidence(frame.evidence, frame.timestamp_ms).object : [];
                 return frame ? (
@@ -237,27 +222,15 @@ export function FrameInspector({
                 );
               })}
             </div>
-            <span className="trake-frame-count">{assignedFrames.filter(Boolean).length}/{assignedFrames.length} frame đã chọn</span>
+            <span className="trake-frame-count">{assignedFrames.filter(Boolean).length}/4 frame đã chọn</span>
             <button type="button" className="primary-button full-width" onClick={onAddAnswer}>
               Thêm chuỗi vào đáp án
             </button>
           </div>
         ) : (
-          <div className="answer-builder-actions">
-            <button type="button" className="primary-button full-width" onClick={onAddAnswer}>
-              Thêm vào đáp án
-            </button>
-            {onAddWithNeighbors && kisNeighborK !== undefined && kisNeighborK > 0 && (
-              <button
-                type="button"
-                className="secondary-button full-width"
-                onClick={onAddWithNeighbors}
-                title={`Thêm frame này cùng ±${kisNeighborK} frame lân cận (mỗi frame cách nhau 5 frame)`}
-              >
-                + Thêm kèm ±{kisNeighborK} frame lân cận (cách 5 frame)
-              </button>
-            )}
-          </div>
+          <button type="button" className="primary-button full-width" onClick={onAddAnswer}>
+            Thêm vào đáp án
+          </button>
         )}
       </section>
 

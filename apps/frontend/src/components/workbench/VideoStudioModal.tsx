@@ -22,7 +22,6 @@ interface Props {
   onSelectFrames?: (frames: readonly StudioFrame[]) => void;
   selectionMode?: 'single' | 'multiple';
   initialSelectedFrameIds?: readonly number[];
-  targetFrameCount?: number;
   loadExactFrame?: (frameId: number, signal?: AbortSignal) => Promise<CanonicalFrameResponse>;
 }
 
@@ -44,7 +43,6 @@ export function VideoStudioModal({
   onSelectFrames,
   selectionMode = 'single',
   initialSelectedFrameIds = [],
-  targetFrameCount = 4,
   loadExactFrame,
 }: Props) {
   const isMultiSelect = selectionMode === 'multiple';
@@ -88,7 +86,7 @@ export function VideoStudioModal({
     )),
     [selectedFrames],
   );
-  const selectionIsValid = orderedSelectedFrames.length === targetFrameCount
+  const selectionIsValid = orderedSelectedFrames.length === 4
     && orderedSelectedFrames.every((frame, index) => (
       index === 0 || orderedSelectedFrames[index - 1].timestamp_ms < frame.timestamp_ms
     ));
@@ -298,7 +296,7 @@ export function VideoStudioModal({
   function confirmSelection() {
     if (!isMultiSelect) return;
     if (!selectionIsValid || !onSelectFrames) {
-      setSelectionError(`TRAKE cần đúng ${targetFrameCount} frame khác nhau, tăng dần theo thời gian.`);
+      setSelectionError('TRAKE cần đúng 4 frame khác nhau, tăng dần theo thời gian.');
       return;
     }
     onSelectFrames(orderedSelectedFrames);
@@ -398,16 +396,16 @@ export function VideoStudioModal({
             </div>
 
             {isMultiSelect && (
-              <section className="studio-selected-set" aria-label={targetFrameCount === 4 ? 'Bộ 4 frame đã chọn' : `Bộ ${targetFrameCount} frame đã chọn`}>
+              <section className="studio-selected-set" aria-label="Bộ 4 frame đã chọn">
                 <div className="studio-selected-set-heading">
                   <div>
                     <p className="eyebrow">TRAKE</p>
-                    <h3>{targetFrameCount === 4 ? 'Bộ 4 frame đã chọn' : `Bộ ${targetFrameCount} frame đã chọn`}</h3>
+                    <h3>Bộ 4 frame đã chọn</h3>
                   </div>
-                  <strong>{orderedSelectedFrames.length}/{targetFrameCount} frame đã chọn</strong>
+                  <strong>{orderedSelectedFrames.length}/4 frame đã chọn</strong>
                 </div>
                 <div className="studio-selected-set-grid">
-                  {Array.from({ length: targetFrameCount }, (_, index) => {
+                  {Array.from({ length: 4 }, (_, index) => {
                     const frame = orderedSelectedFrames[index];
                     return frame ? (
                       <article className={targetSlotIndex === index ? 'studio-selected-slot is-target' : 'studio-selected-slot'} key={frame.original_frame_id}>
@@ -417,22 +415,22 @@ export function VideoStudioModal({
                           <span>Slot {index + 1} · frame {frame.original_frame_id}</span>
                           <small>{formatMs(frame.timestamp_ms)} · {frame.objects.length > 0 ? frame.objects.map((object) => object.label).join(', ') : 'Không có object'}</small>
                         </button>
-                        <button type="button" className="studio-selected-slot-remove" onClick={() => removeSelectedFrame(index)} aria-label={`Xóa frame ${frame.original_frame_id} khỏi bộ ${targetFrameCount}`}>×</button>
+                        <button type="button" className="studio-selected-slot-remove" onClick={() => removeSelectedFrame(index)} aria-label={`Xóa frame ${frame.original_frame_id} khỏi bộ 4`}>×</button>
                       </article>
                     ) : (
                       <div className={targetSlotIndex === index ? 'studio-selected-slot is-empty is-target' : 'studio-selected-slot is-empty'} key={`empty-${index}`}>
-                        <b>Slot {index + 1}</b>
-                        <small>{targetSlotIndex === index ? 'Sẽ chèn vào đây' : 'Chưa chọn frame'}</small>
+                        <span>Slot {index + 1}</span>
+                        <small>Chọn frame rồi thêm vào đây</small>
                       </div>
                     );
                   })}
                 </div>
                 <div className="studio-selected-set-actions">
-                  {selectionError && <p className="inline-error" role="alert">{selectionError}</p>}
-                  <button type="button" className="primary-button full-width" disabled={!selectionIsValid} onClick={confirmSelection}>
-                    Xác nhận bộ {targetFrameCount} frame
+                  <button type="button" className="primary-button" onClick={confirmSelection} disabled={!selectionIsValid}>
+                    Xác nhận bộ 4 frame
                   </button>
                 </div>
+                {selectionError && <p className="inline-error" role="alert">{selectionError}</p>}
               </section>
             )}
           </section>
@@ -499,11 +497,11 @@ export function VideoStudioModal({
                     {showBoxes ? 'Ẩn bounding box' : 'Hiện bounding box'}
                   </button>
                   {isMultiSelect ? (
-                    <button type="button" className="primary-button" onClick={addCurrentFrameToSelection} disabled={selectedFrames.length >= targetFrameCount && targetSlotIndex === null}>
+                    <button type="button" className="primary-button" onClick={addCurrentFrameToSelection} disabled={selectedFrames.length >= 4 && targetSlotIndex === null}>
                       {targetSlotIndex !== null
                         ? `Thay frame vào slot ${targetSlotIndex + 1}`
-                        : selectedFrames.length < targetFrameCount
-                          ? `Thêm frame đang xem vào bộ ${targetFrameCount}`
+                        : selectedFrames.length < 4
+                          ? 'Thêm frame đang xem vào bộ 4'
                           : 'Chọn slot để thay frame'}
                     </button>
                   ) : (

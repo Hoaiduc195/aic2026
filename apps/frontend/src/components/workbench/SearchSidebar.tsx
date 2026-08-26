@@ -465,7 +465,7 @@ export function SearchSidebar({
               min="1"
               max="100"
               step="1"
-              value={displayNumberInput(vlmRerank.top_k ?? 15)}
+              value={displayNumberInput(vlmRerank.top_k)}
               onChange={(event) => onRetrievalChange({
                 ...retrievalSettings,
                 vlm_rerank: { ...vlmRerank, top_k: parseNumberInput(event.target.value) },
@@ -482,7 +482,7 @@ export function SearchSidebar({
               max="1"
               step="0.05"
               inputMode="decimal"
-              value={displayNumberInput(vlmRerank.weight ?? 0.6)}
+              value={displayNumberInput(vlmRerank.weight)}
               onChange={(event) => onRetrievalChange({
                 ...retrievalSettings,
                 vlm_rerank: { ...vlmRerank, weight: parseNumberInput(event.target.value) },

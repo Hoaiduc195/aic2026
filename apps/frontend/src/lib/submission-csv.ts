@@ -1,7 +1,7 @@
 import type { QualificationAnswer, QualificationTask } from './contracts';
 
 export const MAX_CSV_ROWS = 100;
-export const MAX_QA_ANSWER_CHARACTERS = 2000;
+export const MAX_QA_ANSWER_CHARACTERS = 100;
 
 export class CsvExportError extends Error {
   constructor(message: string) {
