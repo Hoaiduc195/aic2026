@@ -71,15 +71,16 @@ describe('PostgresClipBranch', () => {
     await branch.search('a bicycle', plan);
 
     const [sql] = vi.mocked(database.query).mock.calls[0];
-    const cteStart = sql.indexOf('WITH top_clips AS (');
-    const outerSelect = sql.indexOf('SELECT e.evidence_id', cteStart);
-    expect(cteStart).toBeGreaterThanOrEqual(0);
-    expect(outerSelect).toBeGreaterThan(cteStart);
+    const existsStart = sql.indexOf('WHERE EXISTS (');
+    const orderBy = sql.indexOf('ORDER BY c.embedding <=> $1::vector');
+    expect(sql).not.toContain('WITH top_clips AS');
+    expect(existsStart).toBeGreaterThanOrEqual(0);
+    expect(orderBy).toBeGreaterThan(existsStart);
 
-    const topClipsSql = sql.slice(cteStart, outerSelect);
-    expect(topClipsSql).toContain("ir.status = 'active'");
-    expect(topClipsSql).toContain('ir.index_version = $3');
-    expect(topClipsSql).toMatch(/ORDER BY c\.embedding <=> \$1::vector\s+LIMIT \$4/);
+    const filteredSql = sql.slice(existsStart, orderBy);
+    expect(filteredSql).toContain("ir.status = 'active'");
+    expect(filteredSql).toContain('ir.index_version = $3');
+    expect(sql).toMatch(/ORDER BY c\.embedding <=> \$1::vector\s+LIMIT \$4/);
   });
 
   it('uses a supplied frame vector without invoking text encoding', async () => {
