@@ -45,6 +45,43 @@ describe('PostgresClipBranch', () => {
     expect(parameters).toEqual([expect.any(String), 1024, 'v1', 10]);
   });
 
+  it('filters active index rows before applying the vector top-k limit', async () => {
+    const database: DatabaseClient = {
+      isConfigured: true,
+      health: vi.fn(async () => true),
+      query: vi.fn(async () => ({ rows: [] as never[], rowCount: 0 })),
+    };
+    const encoder: QueryEmbeddingProvider = {
+      isConfigured: true,
+      dimensions: 1024,
+      embedText: vi.fn(async () => Array.from({ length: 1024 }, () => 0.1)),
+    };
+    const branch = new PostgresClipBranch(database, encoder);
+    const plan = {
+      query_id: 'q', task: 'textual_kis', language: 'en', original_query: 'a bicycle',
+      query_variants: ['a bicycle'], concepts: ['bicycle'], query_atoms: [], negative_concepts: [],
+      text_constraints: [], audio_concepts: [], object_terms: ['bicycle'],
+      object_constraints: { class_filters: ['bicycle'], excluded_classes: [], min_confidence: 0.25, counts: {}, spatial: [] },
+      query_views: { clip: 'a bicycle' }, channel_weights: { clip: 1 }, temporal_relations: [],
+      target_granularities: ['frame'], branches: ['clip'], top_k_per_branch: 10, fusion_k: 10,
+      display_k: 10, rrf_k: 60, latency_budget_ms: 5000, fallback_policy: 'none', planner_version: 'test',
+      fusion: 'rrf', index_version: 'v1', hard_filters: {}, transformations: [],
+    } satisfies RetrievalExecutionPlan;
+
+    await branch.search('a bicycle', plan);
+
+    const [sql] = vi.mocked(database.query).mock.calls[0];
+    const cteStart = sql.indexOf('WITH top_clips AS (');
+    const outerSelect = sql.indexOf('SELECT e.evidence_id', cteStart);
+    expect(cteStart).toBeGreaterThanOrEqual(0);
+    expect(outerSelect).toBeGreaterThan(cteStart);
+
+    const topClipsSql = sql.slice(cteStart, outerSelect);
+    expect(topClipsSql).toContain("ir.status = 'active'");
+    expect(topClipsSql).toContain('ir.index_version = $3');
+    expect(topClipsSql).toMatch(/ORDER BY c\.embedding <=> \$1::vector\s+LIMIT \$4/);
+  });
+
   it('uses a supplied frame vector without invoking text encoding', async () => {
     const database: DatabaseClient = {
       isConfigured: true,
