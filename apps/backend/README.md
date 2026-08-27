@@ -239,6 +239,17 @@ Lặp lại endpoint `/batch` và `/judgments` cho đến khi `status=completed`
 
 ### Chạy REST worker tự động (khuyến nghị)
 
+Trên Windows, cách dễ nhất là dùng launcher có sẵn; script hỏi query, chọn
+profile VLM, kiểm tra service và có thể tự khởi động backend:
+
+```powershell
+cd D:\VSCode\AIC\aic2026
+.\scripts\run_agent.ps1
+```
+
+Xem bảng giải thích toàn bộ argument và profile Luna tại
+[`docs/agent-worker-guide.md`](../../docs/agent-worker-guide.md).
+
 Worker gọi REST API nên prompt, ảnh và lịch sử tool không đi qua context MCP/Codex.
 Mỗi lệnh không có `--run-id` tạo một UUID `run_id` mới; vì vậy hai worker phải
 dùng hai `worker-id` và hai run khác nhau. Lease/heartbeat ngăn hai process cùng

@@ -186,6 +186,42 @@ describe('OpenAI-compatible vision model', () => {
     });
   });
 
+  it('passes Luna reasoning effort and low-detail image settings when configured', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({ score: 75, match: true, reason: 'visible' }) } }],
+    }), { status: 200 })));
+    const client = new OpenAICompatibleVisionClient({
+      ...clientOptions,
+      model: 'gpt-5.6-luna',
+      reasoningEffort: 'low',
+      imageDetail: 'low',
+    });
+
+    await client.verifyImageRelevance({ query: 'person walking', imageUrl: 'https://signed.test/frame.jpg' });
+
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)) as {
+      reasoning_effort?: string;
+      max_completion_tokens?: number;
+      max_tokens?: number;
+      temperature?: number;
+      response_format?: { type: string };
+      messages: Array<{
+        role: string;
+        content: Array<{ type: string; image_url?: { url: string; detail?: string } }>;
+      }>;
+    };
+    expect(body.reasoning_effort).toBe('low');
+    expect(body.max_completion_tokens).toBe(256);
+    expect(body.max_tokens).toBeUndefined();
+    expect(body.temperature).toBeUndefined();
+    expect(body.response_format).toEqual({ type: 'json_object' });
+    expect(body.messages[0].role).toBe('developer');
+    expect(body.messages[1].content[1]).toEqual({
+      type: 'image_url',
+      image_url: { url: 'https://signed.test/frame.jpg', detail: 'low' },
+    });
+  });
+
   it('retries on 429 rate-limit response and succeeds on second attempt', async () => {
     vi.useFakeTimers();
     let callCount = 0;

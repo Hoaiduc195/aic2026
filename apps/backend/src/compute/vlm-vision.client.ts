@@ -46,6 +46,8 @@ export interface OpenAICompatibleVisionClientOptions {
   readonly maxTokens?: number;
   readonly temperature?: number;
   readonly retries?: number;
+  readonly reasoningEffort?: 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  readonly imageDetail?: 'low' | 'high' | 'auto';
 }
 
 interface OpenAIChatResponse {
@@ -100,6 +102,9 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
   private readonly maxTokens: number;
   private readonly temperature: number;
   private readonly retries: number;
+  private readonly reasoningEffort?: OpenAICompatibleVisionClientOptions['reasoningEffort'];
+  private readonly imageDetail?: OpenAICompatibleVisionClientOptions['imageDetail'];
+  private readonly usesModernOpenAIChatParameters: boolean;
 
   constructor(options: OpenAICompatibleVisionClientOptions) {
     const baseUrl = options.baseUrl.trim().replace(/\/+$/, '');
@@ -110,6 +115,9 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
     this.maxTokens = options.maxTokens ?? 512;
     this.temperature = options.temperature ?? 0;
     this.retries = options.retries ?? 1;
+    this.reasoningEffort = options.reasoningEffort;
+    this.imageDetail = options.imageDetail;
+    this.usesModernOpenAIChatParameters = /^gpt-5\.6(?:-|$)/i.test(this.modelName);
   }
 
   async verifyImageRelevance(input: { readonly query: string; readonly imageUrl: string }): Promise<VlmRelevanceResult> {
@@ -258,7 +266,10 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
   ): Promise<string> {
     const userContent = input.content ?? [
       { type: 'text', text: input.prompt },
-      ...(input.imageUrl ? [{ type: 'image_url', image_url: { url: input.imageUrl } }] : []),
+      ...(input.imageUrl ? [{
+        type: 'image_url',
+        image_url: { url: input.imageUrl, ...(this.imageDetail ? { detail: this.imageDetail } : {}) },
+      }] : []),
     ];
     const response = await fetch(this.endpoint, {
       method: 'POST',
@@ -269,14 +280,18 @@ export class OpenAICompatibleVisionClient implements VisionLanguageModel {
       body: JSON.stringify({
         model: this.modelName,
         messages: [
-          { role: 'system', content: input.system },
+          { role: this.usesModernOpenAIChatParameters ? 'developer' : 'system', content: input.system },
           {
             role: 'user',
             content: userContent,
           },
         ],
-        temperature: this.temperature,
-        max_tokens: this.maxTokens,
+        ...(!this.usesModernOpenAIChatParameters ? { temperature: this.temperature } : {}),
+        ...(this.usesModernOpenAIChatParameters
+          ? { max_completion_tokens: this.maxTokens }
+          : { max_tokens: this.maxTokens }),
+        ...(this.reasoningEffort ? { reasoning_effort: this.reasoningEffort } : {}),
+        ...(this.usesModernOpenAIChatParameters ? { response_format: { type: 'json_object' } } : {}),
         stream: false,
       }),
       signal: AbortSignal.timeout(this.timeoutMs),

@@ -175,7 +175,10 @@ async function writeState(path: string, state: unknown): Promise<void> {
 }
 
 function createVlm(): OpenAICompatibleVisionClient {
-  const baseUrl = process.env.VLM_BASE_URL?.trim() || process.env.LLM_BASE_URL?.trim();
+  const agentBaseUrl = process.env.AGENT_WORKER_VLM_BASE_URL?.trim();
+  const baseUrl = agentBaseUrl
+    || process.env.VLM_BASE_URL?.trim()
+    || process.env.LLM_BASE_URL?.trim();
   const model = process.env.AGENT_WORKER_VLM_MODEL?.trim()
     || process.env.VLM_MODEL?.trim()
     || process.env.LLM_MODEL?.trim();
@@ -183,7 +186,12 @@ function createVlm(): OpenAICompatibleVisionClient {
   return new OpenAICompatibleVisionClient({
     baseUrl,
     model,
-    apiKey: process.env.VLM_API_KEY?.trim() || process.env.LLM_API_KEY?.trim() || undefined,
+    apiKey: process.env.AGENT_WORKER_VLM_API_KEY?.trim()
+      || process.env.OPENAI_API_KEY?.trim()
+      || (!agentBaseUrl
+        ? (process.env.VLM_API_KEY?.trim() || process.env.LLM_API_KEY?.trim())
+        : undefined)
+      || undefined,
     timeoutMs: integer(
       process.env.AGENT_WORKER_VLM_TIMEOUT_MS ?? process.env.VLM_TIMEOUT_MS,
       45_000,
@@ -193,7 +201,27 @@ function createVlm(): OpenAICompatibleVisionClient {
     maxTokens: integer(process.env.AGENT_WORKER_VLM_MAX_TOKENS ?? process.env.LLM_MAX_TOKENS, 128, 16, 4096),
     temperature: 0,
     retries: 2,
+    reasoningEffort: reasoningEffort(process.env.AGENT_WORKER_REASONING_EFFORT),
+    imageDetail: imageDetail(process.env.AGENT_WORKER_IMAGE_DETAIL),
   });
+}
+
+function reasoningEffort(value: string | undefined) {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (!['none', 'low', 'medium', 'high', 'xhigh', 'max'].includes(normalized)) {
+    throw new Error('AGENT_WORKER_REASONING_EFFORT must be none, low, medium, high, xhigh or max');
+  }
+  return normalized as 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+}
+
+function imageDetail(value: string | undefined) {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (!['low', 'high', 'auto'].includes(normalized)) {
+    throw new Error('AGENT_WORKER_IMAGE_DETAIL must be low, high or auto');
+  }
+  return normalized as 'low' | 'high' | 'auto';
 }
 
 export async function judgeBatch(
