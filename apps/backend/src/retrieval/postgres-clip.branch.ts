@@ -39,9 +39,22 @@ export class PostgresClipBranch implements RetrievalBranch {
     const vector = `[${embedding.join(',')}]`;
     const result = await this.database.query<ClipRow>(`
       WITH top_clips AS (
-        SELECT evidence_id, 1 - (embedding <=> $1::vector) AS rank_score
-        FROM clip_embeddings
-        ORDER BY embedding <=> $1::vector
+        SELECT c.evidence_id, 1 - (c.embedding <=> $1::vector) AS rank_score
+        FROM clip_embeddings c
+        JOIN evidence e ON e.evidence_id = c.evidence_id
+        JOIN feature_sets fs ON fs.feature_set_id = e.feature_set_id
+        JOIN index_release_features irf
+          ON irf.feature_set_id = fs.feature_set_id
+         AND irf.dataset_version = fs.dataset_version
+         AND irf.modality = fs.modality
+        JOIN index_releases ir
+          ON ir.index_version = irf.index_version
+         AND ir.dataset_version = irf.dataset_version
+        WHERE ir.status = 'active'
+          AND ir.index_version = $3
+          AND fs.modality = 'visual_embedding'
+          AND fs.embedding_dimensions = $2
+        ORDER BY c.embedding <=> $1::vector
         LIMIT $4
       )
       SELECT e.evidence_id, e.video_id, v.object_key AS video_object_key, f.keyframe_no, e.original_frame_id,
@@ -51,19 +64,7 @@ export class PostgresClipBranch implements RetrievalBranch {
       FROM top_clips tc
       JOIN evidence e ON e.evidence_id = tc.evidence_id
       JOIN videos v ON v.video_id = e.video_id
-      JOIN feature_sets fs ON fs.feature_set_id = e.feature_set_id
-      JOIN index_release_features irf
-        ON irf.feature_set_id = fs.feature_set_id
-       AND irf.dataset_version = fs.dataset_version
-       AND irf.modality = fs.modality
-      JOIN index_releases ir
-        ON ir.index_version = irf.index_version
-       AND ir.dataset_version = irf.dataset_version
       LEFT JOIN frames f ON f.video_id = e.video_id AND f.original_frame_id = e.original_frame_id
-      WHERE ir.status = 'active'
-        AND ir.index_version = $3
-        AND fs.modality = 'visual_embedding'
-        AND fs.embedding_dimensions = $2
       ORDER BY tc.rank_score DESC`, [vector, this.encoder.dimensions, plan.index_version, plan.top_k_per_branch], {
         statementTimeoutMs: plan.latency_budget_ms,
         ...(signal ? { signal } : {}),
