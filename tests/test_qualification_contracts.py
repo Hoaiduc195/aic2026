@@ -162,9 +162,7 @@ class QualificationContractTest(unittest.TestCase):
                 "latency_budget_ms": 1500,
             },
         )
-        self.assert_valid(
-            "query_plan",
-            {
+        query_plan = {
                 "query_id": "q_01",
                 "task": "vqa",
                 "language": "vi",
@@ -198,6 +196,8 @@ class QualificationContractTest(unittest.TestCase):
                 "top_k_per_branch": 100,
                 "fusion_k": 100,
                 "display_k": 20,
+                "near_frame_window_ms": 100_000,
+                "rrf_k": 60,
                 "latency_budget_ms": 1500,
                 "fallback_policy": "expand_then_clarify",
                 "planner_version": "deterministic-v1",
@@ -205,7 +205,11 @@ class QualificationContractTest(unittest.TestCase):
                 "index_version": "idx-v1",
                 "hard_filters": {},
                 "transformations": ["unicode_nfkc"],
-            },
+        }
+        self.assert_valid("query_plan", query_plan)
+        self.assert_invalid(
+            "query_plan",
+            {**query_plan, "near_frame_window_ms": 100_001},
         )
         self.assert_valid(
             "branch_result",

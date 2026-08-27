@@ -79,7 +79,7 @@
     "top_k_per_branch": { "type": "integer", "minimum": 1, "maximum": 10000 },
     "fusion_k": { "type": "integer", "minimum": 1, "maximum": 10000 },
     "display_k": { "type": "integer", "minimum": 1, "maximum": 1000 },
-    "near_frame_window_ms": { "type": "integer", "minimum": 0, "maximum": 10000 },
+    "near_frame_window_ms": { "type": "integer", "minimum": 0, "maximum": 100000 },
     "rrf_k": { "type": "integer", "minimum": 1, "maximum": 1000 },
     "latency_budget_ms": { "type": "integer", "minimum": 1 },
     "fallback_policy": { "type": "string", "enum": ["none", "expand_then_clarify", "expand_then_abstain", "clarify_then_abstain"] },
