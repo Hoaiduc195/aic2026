@@ -10,6 +10,8 @@
 - As an agent, I want TRAKE event coverage checked separately from retrieval so that the backend receives only the main query while four events remain auditable.
 - As an operator, I want candidate, selection, VQA, studio and submission-preview APIs exposed read-only so that the agent can inspect the same evidence workflow without mutating state.
 - As an agent, I want bounded batch/context tools and a safe CSV parser so that I can inspect more evidence per turn without losing quoted or multiline answers.
+- As an agent, I want every Textual KIS retrieval to prepare up to 100 CSV rows with a configurable number of leading frames concentrated in one temporal segment, so that the focused evidence is easy to inspect without losing the wider ranking.
+- As an agent, I want every successful VQA and TRAKE retrieval to automatically validate and save its task-specific CSV, so that submission output does not depend on a second user request.
 
 ## Validation
 
@@ -27,15 +29,17 @@
 | New read-only backend endpoints use the expected paths and snake_case request contracts | `tests/backend-client.test.ts` | integration-style unit | PASS |
 | Batch frame context, video context and shared TRAKE sequence checking work without writes | `tests/context-service.test.ts` | unit | PASS |
 | CSV parser preserves quoted commas/multiline answers and rejects invalid rows | `tests/csv-parser.test.ts` | unit | PASS |
+| Top-N focus frames stay in one temporal segment, total rows are capped at 100, and duplicate source frames are removed | `tests/top-video.test.ts` | unit | PASS |
+| MCP exposes `prepare_top100_focus_csv` and returns a 100-row preview with the configured focus count | `tests/protocol.test.ts` | protocol/E2E | PASS |
+| MCP instructions require automatic export for Textual KIS, VQA and TRAKE, concise Vietnamese responses, current-working-directory saves and prompt-provided focus counts | `tests/server-instructions.test.ts` | unit | PASS |
 
 Commands run:
 
 ```text
-npm test                    # 35 tests passed
-npm run test:coverage       # 93.97% statements, 73.36% branches, 100% functions
+npm test                    # 53 tests passed
+npm run test:coverage       # 93.22% statements, 73.77% branches, 99.15% functions
 npm run typecheck           # passed
 npm run build               # passed
-npm audit --audit-level=high # 0 vulnerabilities
 ```
 
 ## Scope and known gaps
@@ -46,3 +50,5 @@ npm audit --audit-level=high # 0 vulnerabilities
 - For TRAKE, events are sent to query improvement and local coverage assessment only. Search and plan requests contain the main query and no four-event payload.
 - Session state is in-memory, capped at 20 entries with a 30-minute TTL, and removes signed preview URLs and image bytes.
 - Visual comparison delegates ranking to the backend's existing frame-query/retrieval path; it does not introduce a second image model.
+- `prepare_top100_focus_csv` is preview-only: the host agent saves the returned CSV after a submittable preview, while the MCP service remains read-only.
+- Automatic VQA and TRAKE export is also preview-only: the host agent saves validated CSV text returned by `preview_submission` under `./submission/<query-id>.csv` in the current working directory, while the MCP service remains read-only.

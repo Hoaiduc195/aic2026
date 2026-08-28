@@ -29,7 +29,8 @@ Set `AIC_BACKEND_URL` and, when backend operator authentication is enabled, `AIC
 - `suggest_vqa_answer` — request a grounded VQA suggestion for one exact frame.
 - `get_candidates` — read persisted retrieval candidates.
 - `get_selection` — read the latest manual selection without changing it.
-- `preview_submission` — validate answer rows and generate a CSV preview; it never submits or saves.
+- `preview_submission` — validate task-specific answer rows and generate a CSV preview; it never submits or saves.
+- `prepare_top100_focus_csv` — return up to 100 ranked Textual KIS rows with a configurable number of top rows concentrated in one temporal segment of the strongest video; it never submits or saves.
 - `parse_submission_csv` — parse quoted, multiline CSV answers without writing or submitting.
 - `rank_frames` — rank by visual reference or textual evidence.
 - `compare_frames` — compare candidates through backend visual retrieval.
@@ -40,6 +41,35 @@ Set `AIC_BACKEND_URL` and, when backend operator authentication is enabled, `AIC
 - `get_backend_health` — inspect branch/dependency degradation.
 
 Use `search_loop` first for VQA, KIS and TRAKE verification. The default limits are five iterations, 30 backend tool calls and 60 seconds; hard caps are eight iterations, 50 calls and 120 seconds. The loop stops only when exact evidence and the configured confidence target support the answer, or reports `uncertain`, `insufficient` or `budget_exhausted`.
+
+For every successful `textual_kis` frame retrieval, the MCP instructions require an
+automatic top-100 CSV workflow. The agent builds a candidate pool, chooses the video
+owned by the strongest deterministically ranked candidate, reads an explicit focus
+count from the prompt (default 20), and calls `prepare_top100_focus_csv`. The tool
+keeps the requested focus rows in one temporal segment, caps the total at 100, and
+reports shortfalls instead of padding. After a successful validated preview, including
+the normal `preview_only` warning, the host agent
+saves the returned headerless UTF-8 CSV in the current working directory as
+`submission/<query-id>.csv`, keeping the exact query filename required by the
+organizer. The focus video, effective focus count and row count are reported in the
+Vietnamese response; the focus count is not appended to the filename.
+
+VQA and TRAKE are also exported automatically after successful evidence verification;
+the agent does not wait for a separate CSV request. VQA uses only answered,
+evidence-backed rows in the official `video_id,frame_id,answer` shape, with up to 100
+rows and the same configurable focus ordering when multiple frames are ranked. It
+calls `suggest_vqa_answer` as needed and then `preview_submission`, saving a
+validated result as `submission/<query-id>.csv`. TRAKE first calls
+`check_trake_sequence`, then `preview_submission` with the official single sequence
+row (`video_id` plus one frame ID per requested event, chronological). TRAKE is not
+forced into 100 rows because that would violate its submission format; its validated
+file is saved to the same exact-name path, `submission/<query-id>.csv`.
+
+All user-facing summaries, warnings and paths are concise Vietnamese. For every task,
+the host agent always saves a non-empty CSV returned by a successful validated preview
+under `./submission/` relative to the current working directory and reports the
+resolved absolute path. A `preview_only` warning means external submission is disabled;
+it does not prevent this local save. Invalid or unsupported results are never saved.
 
 For TRAKE, pass four event descriptions when they are available. The loop uses those events for local four-event coverage/order assessment; `/v1/search` and `/v1/search/plan` receive the main query only, never four event strings. VQA output is a suggestion and must be checked against the returned evidence. Every supported conclusion should cite `videoId`, `originalFrameId` or `keyframeNo`, timestamp and evidence IDs.
 
@@ -54,7 +84,7 @@ command: node
 args: ["D:/workspace/aic/src/mcp_server/dist/main.js"]
 ```
 
-The backend must be running before the agent invokes a tool. The MCP service has no write tools and does not modify query history, queue, answers or submissions. Search sessions are in-memory, expire after 30 minutes, are capped at 20, and retain no operator token, signed URL or image bytes. `preview_submission` is deliberately preview-only.
+The backend must be running before the agent invokes a tool. The MCP service has no write tools and does not modify query history, queue, answers or submissions. Search sessions are in-memory, expire after 30 minutes, are capped at 20, and retain no operator token, signed URL or image bytes. `preview_submission` and `prepare_top100_focus_csv` are deliberately preview-only; the host agent performs the local file save in the current working directory after a successful validated preview.
 
 ## Development
 

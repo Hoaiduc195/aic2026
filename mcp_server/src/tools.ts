@@ -6,10 +6,16 @@ import { checkTrakeSequence, getFrameContextBatch, getVideoContext } from './con
 import { parseSubmissionCsv } from './csv-parser.js';
 import { SearchLoopService } from './search-loop.js';
 import { SearchSessionStore } from './session-store.js';
-import { parseToolLimit, frameRefSchema, taskSchema, videoIdSchema } from './validation.js';
+import {
+  DEFAULT_FOCUS_FRAME_COUNT,
+  selectRankedCsvFrames,
+  TOTAL_CSV_ROW_COUNT,
+} from './top-video.js';
+import { parseToolLimit, taskSchema, videoIdSchema } from './validation.js';
 import { TraceService } from './trace-service.js';
 import type { AppConfig } from './config.js';
-import type { BackendClientPort, FrameRef, SearchLoopInput, SubmissionAnswerInput, TaskType } from './types.js';
+import type { BackendCandidatePage, BackendClientPort, FrameRef, SearchLoopInput, SubmissionAnswerInput, TaskType } from './types.js';
+import type { TopVideoCandidate } from './top-video.js';
 
 const frameRefInput = z.object({
   videoId: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/u),
@@ -21,6 +27,14 @@ const frameRefInput = z.object({
 );
 
 const taskInput = taskSchema.default('textual_kis');
+
+const rankedFrameInput = z.object({
+  videoId: videoIdSchema,
+  originalFrameId: z.number().int().nonnegative(),
+  score: z.number().finite().optional(),
+  sourceRank: z.number().int().positive().optional(),
+  timestampMs: z.number().finite().optional(),
+}).strict();
 
 export interface ToolDependencies {
   readonly backend: BackendClientPort;
@@ -240,6 +254,16 @@ export function registerTools(server: McpServer, dependencies: ToolDependencies)
     return successResult(await backend.previewSubmission({ queryId, task, answers: normalized }));
   });
 
+  server.registerTool('prepare_top100_focus_csv', {
+    title: 'Prepare top-100 CSV with focused segment',
+    description: 'Return up to 100 ranked Textual KIS rows while placing a configurable focus count from one temporal segment of the strongest video first. The default focus count is 20; this is read-only and does not save or submit the file.',
+    inputSchema: z.object({
+      queryId: videoIdSchema,
+      candidates: z.array(rankedFrameInput).max(100).optional(),
+      focusCount: z.number().int().min(1).max(TOTAL_CSV_ROW_COUNT).optional(),
+    }),
+  }, async ({ queryId, candidates, focusCount }) => prepareTop100FocusCsv(backend, queryId, candidates ?? [], focusCount ?? DEFAULT_FOCUS_FRAME_COUNT));
+
   server.registerTool('parse_submission_csv', {
     title: 'Parse AIC submission CSV',
     description: 'Parse answer CSV rows safely, including quoted commas and multiline VQA answers, without writing files or submitting data.',
@@ -352,6 +376,66 @@ export function registerTools(server: McpServer, dependencies: ToolDependencies)
     description: 'Read backend dependency and retrieval branch status to explain degraded search results.',
     inputSchema: z.object({}),
   }, async () => successResult(await backend.getHealth()));
+}
+
+async function prepareTop100FocusCsv(
+  backend: BackendClientPort,
+  queryId: string,
+  suppliedCandidates: readonly TopVideoCandidate[],
+  focusCount: number,
+) {
+  const warnings: string[] = [];
+  let persistedCandidates: TopVideoCandidate[] = [];
+  try {
+    persistedCandidates = toTopVideoCandidates(await backend.getCandidates({ queryId, limit: 100, offset: 0 }));
+  } catch {
+    if (suppliedCandidates.length === 0) return errorResult('candidate page is unavailable; no frames were supplied');
+    warnings.push('candidate_page_unavailable_used_supplied_candidates');
+  }
+
+  const selection = selectRankedCsvFrames([...suppliedCandidates, ...persistedCandidates], focusCount);
+  if (!selection) return errorResult('no valid exact frame candidates were found');
+  if (selection.focusFrames.length !== focusCount) {
+    return errorResult(`best video ${selection.focusVideoId} has only ${selection.focusFrames.length} frames in one segment; ${focusCount} focused frames were requested`);
+  }
+  if (selection.rows.length === 0) return errorResult('no ranked rows are available for CSV export');
+
+  const answerFrames = selection.rows.filter((frame): frame is FrameRef & { readonly originalFrameId: number } => frame.originalFrameId !== undefined);
+  if (answerFrames.length !== selection.rows.length) return errorResult('CSV export requires an originalFrameId for every selected frame');
+  const answers = answerFrames.map((frame) => ({ videoId: frame.videoId, frameId: frame.originalFrameId }));
+  let preview;
+  try {
+    preview = await backend.previewSubmission({ queryId, task: 'textual_kis', answers });
+  } catch {
+    return errorResult('submission CSV preview could not be generated');
+  }
+
+  return successResult({
+    ...preview,
+    focusVideoId: selection.focusVideoId,
+    focusFrameCount: selection.focusFrames.length,
+    requestedFocusCount: focusCount,
+    rowCount: answers.length,
+    targetRowCount: TOTAL_CSV_ROW_COUNT,
+    rowsShortfall: Math.max(0, TOTAL_CSV_ROW_COUNT - answers.length),
+    warnings: [...new Set([
+      ...warnings,
+      ...(answers.length < TOTAL_CSV_ROW_COUNT ? [`row_count_shortfall:${answers.length}/${TOTAL_CSV_ROW_COUNT}`] : []),
+      ...preview.warnings,
+    ])],
+  });
+}
+
+function toTopVideoCandidates(page: BackendCandidatePage): TopVideoCandidate[] {
+  return page.candidates.flatMap((candidate, index) => candidate.original_frame_id === null
+    ? []
+    : [{
+        videoId: candidate.video_id,
+        originalFrameId: candidate.original_frame_id,
+        score: candidate.score,
+        sourceRank: candidate.rank > 0 ? candidate.rank : index + 1,
+        timestampMs: candidate.start_ms,
+      }]);
 }
 
 function successResult(value: unknown) {
