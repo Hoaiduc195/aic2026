@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { VideoFrame } from '@/lib/contracts';
 import { buildNearbyFrameCsv } from '@/lib/nearby-frame-export';
-import { MAX_NEARBY_FRAME_COUNT, parseNearbyFrameCount } from '@/lib/nearby-frame-model';
+import {
+  MAX_NEARBY_FRAME_COUNT,
+  MAX_NEARBY_FRAME_STEP,
+  parseNearbyFrameCount,
+  parseNearbyFrameStep,
+} from '@/lib/nearby-frame-model';
 
 const center = {
   video_id: 'video_01',
@@ -26,12 +31,20 @@ function frame(
 }
 
 describe('nearby frame context', () => {
-  it('accepts an explicit total window size between one and fifty frames', () => {
+  it('accepts an explicit total window size between one and one hundred frames', () => {
     expect(parseNearbyFrameCount('1')).toBe(1);
     expect(parseNearbyFrameCount(String(MAX_NEARBY_FRAME_COUNT))).toBe(MAX_NEARBY_FRAME_COUNT);
     expect(parseNearbyFrameCount('0')).toBeNull();
-    expect(parseNearbyFrameCount('51')).toBeNull();
+    expect(parseNearbyFrameCount('101')).toBeNull();
     expect(parseNearbyFrameCount('2.5')).toBeNull();
+  });
+
+  it('validates the source-frame spacing independently from Top-K', () => {
+    expect(parseNearbyFrameStep('1')).toBe(1);
+    expect(parseNearbyFrameStep(String(MAX_NEARBY_FRAME_STEP))).toBe(MAX_NEARBY_FRAME_STEP);
+    expect(parseNearbyFrameStep('0')).toBeNull();
+    expect(parseNearbyFrameStep(String(MAX_NEARBY_FRAME_STEP + 1))).toBeNull();
+    expect(parseNearbyFrameStep('2.5')).toBeNull();
   });
 
   it('exports the selected center first, removes duplicates, and ignores other videos', () => {

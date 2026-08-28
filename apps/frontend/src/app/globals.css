@@ -764,7 +764,7 @@ textarea:focus-visible,
 
 .nearby-frame-controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(170px, 0.55fr);
+  grid-template-columns: minmax(0, 1fr) minmax(170px, 0.55fr) minmax(190px, 0.7fr);
   gap: 10px;
 }
 

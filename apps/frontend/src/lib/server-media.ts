@@ -37,10 +37,10 @@ export async function getPlayback(videoId: string): Promise<VideoPlayback> {
   };
 }
 
-export async function getFrameContext(videoId: string, centerFrameId: number, limit: number): Promise<VideoFramesResponse> {
+export async function getFrameContext(videoId: string, centerFrameId: number, limit: number, frameStep = 1): Promise<VideoFramesResponse> {
   validateVideoId(videoId);
   const csv = await readFile(mediaPath('map-keyframes-aic25-b1', 'map-keyframes', `${videoId}.csv`), 'utf8');
-  const frames = selectFrameWindow(parseFrameMapCsv(csv, videoId), centerFrameId, limit);
+  const frames = selectFrameWindow(parseFrameMapCsv(csv, videoId), centerFrameId, limit, frameStep);
   return { video_id: videoId, center_frame_id: centerFrameId, frames };
 }
 

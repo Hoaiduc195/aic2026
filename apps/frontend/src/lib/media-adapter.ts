@@ -1,4 +1,5 @@
 import type { VideoFrame } from './contracts';
+import { MAX_NEARBY_FRAME_COUNT } from './nearby-frame-model';
 
 export interface ByteRange {
   start: number;
@@ -35,12 +36,19 @@ export function parseFrameMapCsv(csv: string, videoId: string): VideoFrame[] {
   });
 }
 
-export function selectFrameWindow(frames: readonly VideoFrame[], centerFrameId: number, requestedLimit: number): VideoFrame[] {
+export function selectFrameWindow(
+  frames: readonly VideoFrame[],
+  centerFrameId: number,
+  requestedLimit: number,
+  requestedFrameStep = 1,
+): VideoFrame[] {
   if (frames.length === 0) return [];
-  const limit = Math.min(Math.max(Math.trunc(requestedLimit), 1), 50);
+  const limit = Math.min(Math.max(Math.trunc(requestedLimit), 1), MAX_NEARBY_FRAME_COUNT);
+  const orderedFrames = [...frames].sort(compareFrameIds);
+  const frameStep = Number.isSafeInteger(requestedFrameStep) && requestedFrameStep >= 1 ? requestedFrameStep : 1;
   let centerIndex = 0;
   let smallestDistance = Number.POSITIVE_INFINITY;
-  frames.forEach((frame, index) => {
+  orderedFrames.forEach((frame, index) => {
     const distance = Math.abs(frame.original_frame_id - centerFrameId);
     if (distance < smallestDistance) {
       centerIndex = index;
@@ -48,9 +56,58 @@ export function selectFrameWindow(frames: readonly VideoFrame[], centerFrameId: 
     }
   });
 
-  const windowSize = Math.min(limit, frames.length);
-  const start = Math.min(Math.max(centerIndex - Math.floor(windowSize / 2), 0), frames.length - windowSize);
-  return frames.slice(start, start + windowSize).map((frame) => ({ ...frame }));
+  const windowSize = Math.min(limit, orderedFrames.length);
+  if (frameStep === 1) {
+    const start = Math.min(Math.max(centerIndex - Math.floor(windowSize / 2), 0), orderedFrames.length - windowSize);
+    return orderedFrames.slice(start, start + windowSize).map((frame) => ({ ...frame }));
+  }
+
+  const centerFrame = orderedFrames[centerIndex];
+  const selectedCenterFrameId = centerFrame.original_frame_id;
+  const selected = new Map<number, VideoFrame>([[centerFrame.original_frame_id, centerFrame]]);
+  for (let offset = 1; offset <= orderedFrames.length && selected.size < windowSize; offset += 1) {
+    for (const direction of [-1, 1] as const) {
+      if (selected.size >= windowSize) break;
+      const targetFrameId = selectedCenterFrameId + direction * offset * frameStep;
+      const candidate = nearestFrameOnSide(orderedFrames, targetFrameId, selectedCenterFrameId, direction, selected);
+      if (candidate) selected.set(candidate.original_frame_id, candidate);
+    }
+  }
+
+  if (selected.size < windowSize) {
+    const fallbackFrames = [...orderedFrames].sort((left, right) => (
+      Math.abs(left.original_frame_id - centerFrameId) - Math.abs(right.original_frame_id - centerFrameId)
+      || left.original_frame_id - right.original_frame_id
+    ));
+    for (const frame of fallbackFrames) {
+      if (selected.size >= windowSize) break;
+      if (!selected.has(frame.original_frame_id)) selected.set(frame.original_frame_id, frame);
+    }
+  }
+
+  return [...selected.values()].sort(compareFrameIds).slice(0, windowSize).map((frame) => ({ ...frame }));
+}
+
+function compareFrameIds(left: VideoFrame, right: VideoFrame): number {
+  return left.original_frame_id - right.original_frame_id;
+}
+
+function nearestFrameOnSide(
+  frames: readonly VideoFrame[],
+  targetFrameId: number,
+  centerFrameId: number,
+  direction: -1 | 1,
+  selected: ReadonlyMap<number, VideoFrame>,
+): VideoFrame | null {
+  const candidates = frames.filter((frame) => (
+    !selected.has(frame.original_frame_id)
+      && (direction < 0 ? frame.original_frame_id < centerFrameId : frame.original_frame_id > centerFrameId)
+  ));
+  return candidates.sort((left, right) => (
+    Math.abs(left.original_frame_id - targetFrameId) - Math.abs(right.original_frame_id - targetFrameId)
+    || Math.abs(left.original_frame_id - centerFrameId) - Math.abs(right.original_frame_id - centerFrameId)
+    || left.original_frame_id - right.original_frame_id
+  ))[0] ?? null;
 }
 
 export function parseByteRange(header: string | null, size: number): ByteRange | null {

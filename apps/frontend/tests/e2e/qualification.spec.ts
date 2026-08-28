@@ -245,11 +245,18 @@ test.describe('qualification frame-first workbench', () => {
     await page.getByRole('button', { name: 'Tìm frame' }).click();
     await expect(page.getByRole('heading', { name: 'Frame lân cận' })).toBeVisible();
 
-    const frameCount = page.getByLabel('Số frame trong cửa sổ lân cận');
+    const frameCount = page.getByLabel('Top-K frame bao quát');
     await frameCount.fill('6');
     await page.getByRole('button', { name: 'Tải frame lân cận' }).click();
 
-    await expect(page.getByText('Frame 351')).toBeVisible();
+    await expect(
+      page.getByRole('list', { name: 'Danh sách frame lân cận đã tải' }).getByText('Frame 351'),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('list', { name: 'Danh sách kết quả frame' }).getByRole('button', {
+        name: 'Chọn keyframe video_01 · 4 · source frame 351',
+      }),
+    ).toBeVisible();
     expect(requests.frames).toBe(1);
     const downloadPromise = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Xuất CSV frame lân cận' }).click();

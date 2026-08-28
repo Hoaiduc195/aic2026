@@ -11,6 +11,7 @@ import type {
   StudioFrame,
   TextualKisAnswer,
   TrakeAnswer,
+  VideoFrame,
 } from './contracts';
 import { activeAsrSpans, exactFrameThumbnailUri, frameThumbnailUri, studioFrameThumbnailUri } from './video-studio-model';
 
@@ -194,6 +195,56 @@ export function toFrameCandidates(response: SearchResponse): NormalizedFrames {
   });
 
   return { frames, skipped: response.results.length - frames.length };
+}
+
+export function nearbyFrameToCandidate(frame: VideoFrame): FrameCandidate {
+  const keyframeNo = frame.keyframe_no ?? undefined;
+  return {
+    result_key: frameIdentity(frame),
+    video_id: frame.video_id,
+    ...(keyframeNo === undefined ? {} : { keyframe_no: keyframeNo }),
+    original_frame_id: frame.original_frame_id,
+    timestamp_ms: frame.timestamp_ms,
+    thumbnail_uri: frame.thumbnail_uri,
+    start_ms: frame.timestamp_ms,
+    end_ms: frame.timestamp_ms,
+    score: 0,
+    evidence: [...(frame.evidence ?? [])],
+    matched_modalities: ['context'],
+  };
+}
+
+export function mergeNearbyFrameCandidates(
+  current: readonly FrameCandidate[],
+  nearby: readonly VideoFrame[],
+  centerFrame?: Pick<FrameCandidate, 'video_id' | 'original_frame_id'>,
+): FrameCandidate[] {
+  const existingKeys = new Set(current.map(frameIdentity));
+  const known = new Set(existingKeys);
+  const nearbyCandidates = nearby.map(nearbyFrameToCandidate);
+  const additions = nearbyCandidates.filter((candidate) => {
+    if (known.has(candidate.result_key)) return false;
+    known.add(candidate.result_key);
+    return true;
+  });
+  if (additions.length === 0) return [...current];
+
+  const centerKey = centerFrame
+    ? frameIdentity(centerFrame)
+    : nearbyCandidates.find((candidate) => existingKeys.has(candidate.result_key))?.result_key;
+  const centerIndex = centerKey
+    ? current.findIndex((frame) => frameIdentity(frame) === centerKey)
+    : -1;
+  const insertionIndex = centerIndex >= 0 ? centerIndex + 1 : current.length;
+  return [
+    ...current.slice(0, insertionIndex),
+    ...additions,
+    ...current.slice(insertionIndex),
+  ];
+}
+
+function frameIdentity(frame: Pick<FrameCandidate, 'video_id' | 'original_frame_id'>): string {
+  return `${frame.video_id}\u0000${frame.original_frame_id}`;
 }
 
 export function normalizeFrameCandidate(frame: FrameCandidate): FrameCandidate {

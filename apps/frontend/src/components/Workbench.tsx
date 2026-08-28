@@ -86,7 +86,9 @@ import {
   autoSelectNearbyTrakeFrames,
   emptyTrakeFrameSlots,
   fillTextualKisAnswers,
+  mergeNearbyFrameCandidates,
   moveFrameToBoundary,
+  nearbyFrameToCandidate,
   normalizeFrameCandidate,
   normalizeTrakeFrameSlots,
   reorderFrames,
@@ -97,7 +99,14 @@ import {
 } from '../lib/workbench-model';
 import { buildSubmissionCsv } from '../lib/submission-csv';
 import { buildNearbyFrameCsv } from '../lib/nearby-frame-export';
-import { DEFAULT_NEARBY_FRAME_COUNT, parseNearbyFrameCount } from '../lib/nearby-frame-model';
+import {
+  DEFAULT_NEARBY_FRAME_COUNT,
+  DEFAULT_NEARBY_FRAME_STEP,
+  MAX_NEARBY_FRAME_COUNT,
+  MAX_NEARBY_FRAME_STEP,
+  parseNearbyFrameCount,
+  parseNearbyFrameStep,
+} from '../lib/nearby-frame-model';
 import { parseAnswerCsv, type CsvImportIssue, type ImportedFrameRef } from '../lib/query-import';
 import { useWorkbenchStore } from '../lib/workbench-store';
 import { frameThumbnailUri } from '../lib/video-studio-model';
@@ -155,7 +164,7 @@ interface Props {
   exactFrameSearch: (request: ExactFrameSearchRequest) => Promise<SearchResponse>;
   loadFrame?: (videoId: string, frameId: number, signal?: AbortSignal) => Promise<CanonicalFrameResponse>;
   loadKeyframe?: (videoId: string, keyframeNo: number, signal?: AbortSignal) => Promise<CanonicalFrameResponse>;
-  loadNearbyFrames?: (videoId: string, centerFrameId: number, limit: number, signal?: AbortSignal) => Promise<VideoFramesResponse>;
+  loadNearbyFrames?: (videoId: string, centerFrameId: number, limit: number, frameStep: number, signal?: AbortSignal) => Promise<VideoFramesResponse>;
   loadStudio: (videoId: string, signal?: AbortSignal) => Promise<VideoStudioResponse>;
   saveSelection: (queryId: string, task: QualificationTask, answers: readonly QualificationAnswer[]) => Promise<SelectionRevision>;
   createPreview: (queryId: string, task: QualificationTask, answers: readonly QualificationAnswer[]) => Promise<SubmissionPreview>;
@@ -368,6 +377,7 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
   const [nearbyCenterFrame, setNearbyCenterFrame] = useState<FrameCandidate | null>(null);
   const [nearbyFrames, setNearbyFrames] = useState<VideoFramesResponse['frames']>([]);
   const [nearbyFrameCount, setNearbyFrameCount] = useState(String(DEFAULT_NEARBY_FRAME_COUNT));
+  const [nearbyFrameStep, setNearbyFrameStep] = useState(String(DEFAULT_NEARBY_FRAME_STEP));
   const [nearbyFrameError, setNearbyFrameError] = useState<string | null>(null);
   const [selectedAnchor, setSelectedAnchor] = useState<FrameCandidate | null>(null);
   const [activeFrame, setActiveFrame] = useState<FrameCandidate | null>(null);
@@ -415,13 +425,14 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
     mutationFn: (request: ExactFrameSearchRequest) => exactFrameSearch(request),
   });
   const nearbyFrameMutation = useMutation({
-    mutationFn: ({ videoId, centerFrameId, limit }: {
+    mutationFn: ({ videoId, centerFrameId, limit, frameStep }: {
       videoId: string;
       centerFrameId: number;
       limit: number;
+      frameStep: number;
     }) => {
       if (!loadNearbyFrames) throw new Error('Chưa cấu hình API frame lân cận.');
-      return loadNearbyFrames(videoId, centerFrameId, limit);
+      return loadNearbyFrames(videoId, centerFrameId, limit, frameStep);
     },
   });
   const vqaAnswerMutation = useMutation({
@@ -1198,7 +1209,12 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
     }
     const limit = parseNearbyFrameCount(nearbyFrameCount);
     if (limit === null) {
-      setNearbyFrameError('Số frame lân cận phải là số nguyên từ 1 đến 50.');
+      setNearbyFrameError(`Top-K frame bao quát phải là số nguyên từ 1 đến ${MAX_NEARBY_FRAME_COUNT}.`);
+      return;
+    }
+    const frameStep = parseNearbyFrameStep(nearbyFrameStep);
+    if (frameStep === null) {
+      setNearbyFrameError(`Khoảng cách giữa các frame phải là số nguyên từ 1 đến ${MAX_NEARBY_FRAME_STEP} frame nguồn.`);
       return;
     }
 
@@ -1208,12 +1224,18 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
         videoId: nearbyCenterFrame.video_id,
         centerFrameId: nearbyCenterFrame.original_frame_id,
         limit,
+        frameStep,
       });
       if (result.video_id !== nearbyCenterFrame.video_id || result.center_frame_id !== nearbyCenterFrame.original_frame_id) {
         throw new Error('API trả về cửa sổ frame không khớp với frame tâm đã chọn.');
       }
-      setNearbyFrames(result.frames.filter((frame) => frame.video_id === nearbyCenterFrame.video_id));
-      setNotice(`Đã tải ${result.frames.length} frame quanh ${nearbyCenterFrame.video_id} · frame ${nearbyCenterFrame.original_frame_id}.`);
+      const contextFrames = result.frames.filter((frame) => frame.video_id === nearbyCenterFrame.video_id);
+      const knownResultKeys = new Set(rankedFrames.map((frame) => frame.result_key));
+      const contextCandidates = contextFrames.map(nearbyFrameToCandidate);
+      const addedCount = contextCandidates.filter((frame) => !knownResultKeys.has(frame.result_key)).length;
+      setNearbyFrames(contextFrames);
+      setRankedFrames((current) => mergeNearbyFrameCandidates(current, contextFrames, nearbyCenterFrame));
+      setNotice(`Đã tải ${contextFrames.length} frame quanh ${nearbyCenterFrame.video_id} · frame ${nearbyCenterFrame.original_frame_id}; bổ sung ${addedCount} frame mới vào danh sách kết quả.`);
     } catch (reason) {
       setNearbyFrames([]);
       setNearbyFrameError(readError(reason, 'Không thể tải frame lân cận.'));
@@ -1768,6 +1790,28 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
           style={{ '--inspector-width': `${inspectorWidth}px` } as CSSProperties}
         >
           <div className="results-column">
+            {loadNearbyFrames && response !== null && (
+              <NearbyFramePanel
+                frames={rankedFrames}
+                centerFrame={nearbyCenterFrame}
+                nearbyFrames={nearbyFrames}
+                frameCount={nearbyFrameCount}
+                frameStep={nearbyFrameStep}
+                loading={nearbyFrameMutation.isPending}
+                error={nearbyFrameError}
+                onCenterChange={selectNearbyCenterFrame}
+                onFrameCountChange={(value) => {
+                  setNearbyFrameCount(value);
+                  setNearbyFrameError(null);
+                }}
+                onFrameStepChange={(value) => {
+                  setNearbyFrameStep(value);
+                  setNearbyFrameError(null);
+                }}
+                onLoad={loadNearbyFrameContext}
+                onExport={exportNearbyFrameContext}
+              />
+            )}
             <FrameGrid
               frames={rankedFrames}
               selectedKey={selectedAnchor?.result_key ?? null}
@@ -1799,23 +1843,6 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
               batchVqaLoading={task === 'qa' ? batchVqaLoading : false}
               batchVqaProgress={task === 'qa' ? batchVqaProgress : null}
             />
-            {loadNearbyFrames && response !== null && (
-              <NearbyFramePanel
-                frames={rankedFrames}
-                centerFrame={nearbyCenterFrame}
-                nearbyFrames={nearbyFrames}
-                frameCount={nearbyFrameCount}
-                loading={nearbyFrameMutation.isPending}
-                error={nearbyFrameError}
-                onCenterChange={selectNearbyCenterFrame}
-                onFrameCountChange={(value) => {
-                  setNearbyFrameCount(value);
-                  setNearbyFrameError(null);
-                }}
-                onLoad={loadNearbyFrameContext}
-                onExport={exportNearbyFrameContext}
-              />
-            )}
           </div>
           {selectedAnchor && activeFrame && (
             <FrameInspector

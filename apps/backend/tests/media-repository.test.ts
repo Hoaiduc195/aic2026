@@ -22,6 +22,22 @@ describe('media repositories', () => {
     expect(frames.map((frame) => frame.original_frame_id)).toEqual([10, 20]);
   });
 
+  it('selects spaced keyframes around the center when a source-frame step is requested', async () => {
+    const database = db([
+      { video_id: 'v', keyframe_no: 1, original_frame_id: 0, timestamp_ms: 0, thumbnail_object_key: 'a' },
+      { video_id: 'v', keyframe_no: 2, original_frame_id: 90, timestamp_ms: 3_000, thumbnail_object_key: 'b' },
+      { video_id: 'v', keyframe_no: 3, original_frame_id: 180, timestamp_ms: 6_000, thumbnail_object_key: 'c' },
+      { video_id: 'v', keyframe_no: 4, original_frame_id: 270, timestamp_ms: 9_000, thumbnail_object_key: 'd' },
+      { video_id: 'v', keyframe_no: 5, original_frame_id: 360, timestamp_ms: 12_000, thumbnail_object_key: 'e' },
+    ] as never[]);
+    const repository = new PostgresMediaRepository(database);
+
+    const frames = await repository.findFramesAround('v', 180, 3, 90);
+
+    expect(frames.map((frame) => frame.original_frame_id)).toEqual([90, 180, 270]);
+    expect(vi.mocked(database.query).mock.calls[0][1]).toEqual(['v']);
+  });
+
   it('finds a canonical frame by its keyframe ordinal', async () => {
     const database = db([{
       video_id: 'v', keyframe_no: 7, original_frame_id: 385, timestamp_ms: 12_833,

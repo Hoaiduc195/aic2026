@@ -427,6 +427,20 @@ describe('search API boundary', () => {
     expect(fetchMock.mock.calls[1][0]).toBe('/api/v1/videos/video_01/frames?center_frame_id=385&limit=25');
   });
 
+  it('passes a configurable frame step when loading a spaced nearby window', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      video_id: 'video_01',
+      center_frame_id: 385,
+      frames: [],
+    }), { status: 200 })));
+
+    await expect(getVideoFrames('video_01', 385, 6, 90)).resolves.toMatchObject({ center_frame_id: 385 });
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/v1/videos/video_01/frames?center_frame_id=385&limit=6&frame_step=90',
+      expect.anything(),
+    );
+  });
+
   it('loads and validates the video studio contract', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       video: {

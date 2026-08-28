@@ -1,15 +1,24 @@
 import type { FrameCandidate, VideoFrame } from '../../lib/contracts';
-import { MAX_NEARBY_FRAME_COUNT, MIN_NEARBY_FRAME_COUNT, parseNearbyFrameCount } from '../../lib/nearby-frame-model';
+import {
+  MAX_NEARBY_FRAME_COUNT,
+  MAX_NEARBY_FRAME_STEP,
+  MIN_NEARBY_FRAME_COUNT,
+  MIN_NEARBY_FRAME_STEP,
+  parseNearbyFrameCount,
+  parseNearbyFrameStep,
+} from '../../lib/nearby-frame-model';
 
 interface NearbyFramePanelProps {
   readonly frames: readonly FrameCandidate[];
   readonly centerFrame: FrameCandidate | null;
   readonly nearbyFrames: readonly VideoFrame[];
   readonly frameCount: string;
+  readonly frameStep: string;
   readonly loading: boolean;
   readonly error: string | null;
   readonly onCenterChange: (frame: FrameCandidate) => void;
   readonly onFrameCountChange: (value: string) => void;
+  readonly onFrameStepChange: (value: string) => void;
   readonly onLoad: () => void;
   readonly onExport: () => void;
 }
@@ -19,10 +28,12 @@ export function NearbyFramePanel({
   centerFrame,
   nearbyFrames,
   frameCount,
+  frameStep,
   loading,
   error,
   onCenterChange,
   onFrameCountChange,
+  onFrameStepChange,
   onLoad,
   onExport,
 }: NearbyFramePanelProps) {
@@ -30,6 +41,7 @@ export function NearbyFramePanel({
     ? [centerFrame, ...frames]
     : frames;
   const parsedFrameCount = parseNearbyFrameCount(frameCount);
+  const parsedFrameStep = parseNearbyFrameStep(frameStep);
   const hasCenter = centerFrame !== null;
 
   return (
@@ -39,10 +51,10 @@ export function NearbyFramePanel({
           <p className="section-kicker">Context export</p>
           <h2 id="nearby-frame-title">Frame lân cận</h2>
         </div>
-        <span className="nearby-frame-panel-badge">1–{MAX_NEARBY_FRAME_COUNT}</span>
+        <span className="nearby-frame-panel-badge">1–{MAX_NEARBY_FRAME_COUNT} frame</span>
       </div>
       <p className="nearby-frame-panel-description">
-        Chọn frame tâm từ kết quả hiện tại, đặt số lượng frame trong cửa sổ rồi tải dữ liệu lân cận theo thời gian.
+        Chọn frame tâm, đặt Top-K và khoảng cách theo frame nguồn để bao quát ngữ cảnh lân cận rồi tải dữ liệu.
       </p>
 
       <div className="nearby-frame-controls">
@@ -66,9 +78,9 @@ export function NearbyFramePanel({
           </select>
         </label>
         <label className="input-field compact-field">
-          <span>Số frame trong cửa sổ (gồm frame tâm)</span>
+          <span>Top-K frame bao quát (gồm frame tâm)</span>
           <input
-            aria-label="Số frame trong cửa sổ lân cận"
+            aria-label="Top-K frame bao quát"
             type="number"
             min={MIN_NEARBY_FRAME_COUNT}
             max={MAX_NEARBY_FRAME_COUNT}
@@ -78,13 +90,26 @@ export function NearbyFramePanel({
             onChange={(event) => onFrameCountChange(event.target.value)}
           />
         </label>
+        <label className="input-field compact-field">
+          <span>Khoảng cách giữa các frame (frame nguồn)</span>
+          <input
+            aria-label="Khoảng cách giữa các frame (frame nguồn)"
+            type="number"
+            min={MIN_NEARBY_FRAME_STEP}
+            max={MAX_NEARBY_FRAME_STEP}
+            step="1"
+            inputMode="numeric"
+            value={frameStep}
+            onChange={(event) => onFrameStepChange(event.target.value)}
+          />
+        </label>
       </div>
 
       <div className="nearby-frame-actions">
         <button
           type="button"
           className="primary-button"
-          disabled={!hasCenter || parsedFrameCount === null || loading}
+          disabled={!hasCenter || parsedFrameCount === null || parsedFrameStep === null || loading}
           onClick={onLoad}
         >
           {loading ? 'Đang tải…' : 'Tải frame lân cận'}

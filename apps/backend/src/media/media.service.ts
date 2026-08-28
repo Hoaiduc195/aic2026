@@ -121,9 +121,9 @@ export class MediaService {
     };
   }
 
-  async getFrames(videoId: string, centerFrameId: number, limit: number) {
+  async getFrames(videoId: string, centerFrameId: number, limit: number, frameStep = 1) {
     if (!this.storage.isConfigured) throw new ServiceUnavailableException('R2 object storage is not configured');
-    const frames = await this.repository.findFramesAround(videoId, centerFrameId, limit);
+    const frames = await this.repository.findFramesAround(videoId, centerFrameId, limit, frameStep);
     return {
       video_id: videoId,
       center_frame_id: centerFrameId,

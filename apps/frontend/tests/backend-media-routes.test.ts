@@ -60,12 +60,30 @@ describe('backend-backed media routes', () => {
     }), { status: 200 })));
 
     const response = await getFrames(
-      new NextRequest('http://localhost/api/v1/videos/video_01/frames?center_frame_id=385&limit=25'),
+      new NextRequest('http://localhost/api/v1/videos/video_01/frames?center_frame_id=385&limit=25&frame_step=90'),
       { params: Promise.resolve({ videoId: 'video_01' }) },
     );
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ frames: [{ thumbnail_uri: expect.stringContaining('https://') }] });
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledWith(
+      'http://backend.internal/v1/videos/video_01/frames?center_frame_id=385&limit=25&frame_step=90',
+      expect.any(Object),
+    );
+  });
+
+  it('rejects an out-of-range frame spacing before contacting the backend', async () => {
+    process.env.BACKEND_API_URL = 'http://backend.internal';
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await getFrames(
+      new NextRequest('http://localhost/api/v1/videos/video_01/frames?center_frame_id=385&limit=25&frame_step=100001'),
+      { params: Promise.resolve({ videoId: 'video_01' }) },
+    );
+
+    expect(response.status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('proxies studio metadata with video signing data but no eager thumbnails', async () => {

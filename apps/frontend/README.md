@@ -65,10 +65,12 @@ Backend và database có hướng dẫn riêng tại
 Sau khi có kết quả search, panel `Frame lân cận` cho phép:
 
 - chọn frame tâm từ danh sách kết quả hiện tại;
-- chọn số lượng từ `1` đến `50`, mặc định `4`; số lượng này **đã gồm frame
-  tâm**;
-- gọi `GET /api/v1/videos/:videoId/frames?center_frame_id=...&limit=...`;
+- chọn Top-K từ `1` đến `100`, mặc định `4`; số lượng này **đã gồm frame tâm**;
+- chọn `frame_step` từ `1` đến `100.000` frame nguồn, mặc định `1`, để điều khiển khoảng cách bao quát;
+- gọi `GET /api/v1/videos/:videoId/frames?center_frame_id=...&limit=...&frame_step=...`;
 - xem danh sách frame cùng video theo timeline và đánh dấu frame tâm;
+- sau khi tải, các frame mới được chèn ngay dưới frame tâm trong danh sách `Kết quả frame`, loại trùng theo `(video_id, original_frame_id)`; danh sách này có thể vượt số lượng hiển thị ban đầu;
+- nút fill answer queue luôn chỉ nạp tối đa `100` frame theo thứ tự hiện tại của danh sách kết quả;
 - xuất CSV sau khi tải thành công.
 
 CSV có các cột `video_id`, `original_frame_id`, `keyframe_no`, `timestamp_ms`

@@ -71,7 +71,7 @@ export interface MediaRepository {
   findVideo(videoId: string): Promise<VideoRecord>;
   findFrame(videoId: string, originalFrameId: number): Promise<FrameRecord | null>;
   findFrameByKeyframe(videoId: string, keyframeNo: number): Promise<FrameRecord | null>;
-  findFramesAround(videoId: string, centerFrameId: number, limit: number): Promise<FrameRecord[]>;
+  findFramesAround(videoId: string, centerFrameId: number, limit: number, frameStep?: number): Promise<FrameRecord[]>;
   findNearestStudioFrame(videoId: string, centerFrameId: number): Promise<StudioFrameRecord | null>;
   findAsrSpansAt(videoId: string, timestampMs: number): Promise<readonly StudioAsrSpanRecord[]>;
   findStudio(videoId: string): Promise<VideoStudioRecord>;
@@ -134,7 +134,16 @@ export class PostgresMediaRepository implements MediaRepository {
     return result.rows[0] ?? null;
   }
 
-  async findFramesAround(videoId: string, centerFrameId: number, limit: number): Promise<FrameRecord[]> {
+  async findFramesAround(videoId: string, centerFrameId: number, limit: number, frameStep = 1): Promise<FrameRecord[]> {
+    if (frameStep > 1) {
+      const result = await this.database.query<FrameRow>(`
+        SELECT video_id, keyframe_no, original_frame_id, timestamp_ms, thumbnail_object_key
+        FROM frames
+        WHERE video_id = $1
+        ORDER BY original_frame_id`, [videoId]);
+      return selectSpacedFrameWindow(result.rows, centerFrameId, limit, frameStep);
+    }
+
     const result = await this.database.query<FrameRow>(`
       SELECT video_id, keyframe_no, original_frame_id, timestamp_ms, thumbnail_object_key
       FROM frames
@@ -407,7 +416,7 @@ export class UnavailableMediaRepository implements MediaRepository {
     throw new NotFoundException('media catalog is not configured');
   }
 
-  async findFramesAround(_videoId: string, _centerFrameId: number, _limit: number): Promise<FrameRecord[]> {
+  async findFramesAround(_videoId: string, _centerFrameId: number, _limit: number, _frameStep = 1): Promise<FrameRecord[]> {
     throw new NotFoundException('media catalog is not configured');
   }
 
@@ -422,6 +431,71 @@ export class UnavailableMediaRepository implements MediaRepository {
   async findStudio(_videoId: string): Promise<VideoStudioRecord> {
     throw new NotFoundException('media catalog is not configured');
   }
+}
+
+function selectSpacedFrameWindow(
+  frames: readonly FrameRecord[],
+  centerFrameId: number,
+  requestedLimit: number,
+  requestedFrameStep: number,
+): FrameRecord[] {
+  if (frames.length === 0) return [];
+  const limit = Math.min(Math.max(Math.trunc(requestedLimit), 1), 100);
+  const orderedFrames = [...frames].sort(compareFrameIds);
+  const frameStep = Number.isSafeInteger(requestedFrameStep) && requestedFrameStep >= 1 ? requestedFrameStep : 1;
+  const centerIndex = orderedFrames.reduce((nearestIndex, frame, index) => (
+    Math.abs(frame.original_frame_id - centerFrameId) < Math.abs(orderedFrames[nearestIndex].original_frame_id - centerFrameId)
+      ? index
+      : nearestIndex
+  ), 0);
+  const windowSize = Math.min(limit, orderedFrames.length);
+  const centerFrame = orderedFrames[centerIndex];
+  const selectedCenterFrameId = centerFrame.original_frame_id;
+  const selected = new Map<number, FrameRecord>([[centerFrame.original_frame_id, centerFrame]]);
+
+  for (let offset = 1; offset <= orderedFrames.length && selected.size < windowSize; offset += 1) {
+    for (const direction of [-1, 1] as const) {
+      if (selected.size >= windowSize) break;
+      const targetFrameId = selectedCenterFrameId + direction * offset * frameStep;
+      const candidate = nearestFrameOnSide(orderedFrames, targetFrameId, selectedCenterFrameId, direction, selected);
+      if (candidate) selected.set(candidate.original_frame_id, candidate);
+    }
+  }
+
+  if (selected.size < windowSize) {
+    const fallbackFrames = [...orderedFrames].sort((left, right) => (
+      Math.abs(left.original_frame_id - centerFrameId) - Math.abs(right.original_frame_id - centerFrameId)
+      || left.original_frame_id - right.original_frame_id
+    ));
+    for (const frame of fallbackFrames) {
+      if (selected.size >= windowSize) break;
+      if (!selected.has(frame.original_frame_id)) selected.set(frame.original_frame_id, frame);
+    }
+  }
+
+  return [...selected.values()].sort(compareFrameIds);
+}
+
+function compareFrameIds(left: FrameRecord, right: FrameRecord): number {
+  return left.original_frame_id - right.original_frame_id;
+}
+
+function nearestFrameOnSide(
+  frames: readonly FrameRecord[],
+  targetFrameId: number,
+  centerFrameId: number,
+  direction: -1 | 1,
+  selected: ReadonlyMap<number, FrameRecord>,
+): FrameRecord | null {
+  const candidates = frames.filter((frame) => (
+    !selected.has(frame.original_frame_id)
+      && (direction < 0 ? frame.original_frame_id < centerFrameId : frame.original_frame_id > centerFrameId)
+  ));
+  return candidates.sort((left, right) => (
+    Math.abs(left.original_frame_id - targetFrameId) - Math.abs(right.original_frame_id - targetFrameId)
+    || Math.abs(left.original_frame_id - centerFrameId) - Math.abs(right.original_frame_id - centerFrameId)
+    || left.original_frame_id - right.original_frame_id
+  ))[0] ?? null;
 }
 
 function normalizedBoundingBox(value: number[] | null): [number, number, number, number] | null {

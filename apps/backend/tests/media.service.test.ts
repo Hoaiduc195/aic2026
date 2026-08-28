@@ -74,8 +74,9 @@ describe('MediaService', () => {
 
   it('returns signed neighboring keyframes', async () => {
     const service = new MediaService(repository, storage);
-    const result = await service.getFrames('video-1', 50, 25);
+    const result = await service.getFrames('video-1', 50, 25, 90);
     expect(result.frames[0].thumbnail_uri).toBe('https://media.example/keyframes/video-1/000050.jpg');
+    expect(repository.findFramesAround).toHaveBeenCalledWith('video-1', 50, 25, 90);
   });
 
   it('signs only the video in the studio response and leaves thumbnails lazy', async () => {

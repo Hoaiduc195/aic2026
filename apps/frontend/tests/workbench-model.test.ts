@@ -16,10 +16,12 @@ import {
   reorderFrames,
   resultKey,
   toFrameCandidates,
+  mergeNearbyFrameCandidates,
+  fillTextualKisAnswers,
   validateTrakeSequence,
   normalizeFrameCandidate,
 } from '@/lib/workbench-model';
-import type { FrameCandidate, SearchResponse, SearchResult, StudioFrame } from '@/lib/contracts';
+import type { FrameCandidate, SearchResponse, SearchResult, StudioFrame, VideoFrame } from '@/lib/contracts';
 
 const result: SearchResult = {
   video_id: 'video_01',
@@ -245,6 +247,40 @@ describe('workbench answer model', () => {
     expect(submission?.answers).toHaveLength(100);
     expect(submission?.answers[0]).toEqual({ video_id: 'video_2', frame_id: 2 });
     expect(submission?.answers[99]).toEqual({ video_id: 'video_99', frame_id: 99 });
+  });
+
+  it('merges nearby context frames into ranked results, removes duplicates, and keeps queue fill capped at 100', () => {
+    const nearby: VideoFrame[] = [
+      { video_id: 'video_01', original_frame_id: 385, timestamp_ms: 15_400, thumbnail_uri: '/nearby/385' },
+      { video_id: 'video_01', original_frame_id: 411, timestamp_ms: 16_440, thumbnail_uri: '/nearby/411' },
+    ];
+    const frameAfterCenter = {
+      ...resultToCandidate(),
+      result_key: 'video_02\u0000900',
+      video_id: 'video_02',
+      original_frame_id: 900,
+    };
+    const merged = mergeNearbyFrameCandidates(
+      [resultToCandidate(), frameAfterCenter],
+      nearby,
+      resultToCandidate(),
+    );
+
+    expect(merged).not.toHaveLength(2);
+    expect(merged.map((frame) => frame.original_frame_id)).toEqual([385, 411, 900]);
+    expect(merged[1]).toMatchObject({
+      result_key: 'video_01\u0000411',
+      start_ms: 16_440,
+      end_ms: 16_440,
+      score: 0,
+      matched_modalities: ['context'],
+    });
+    expect(fillTextualKisAnswers([], Array.from({ length: 150 }, (_, index) => ({
+      ...merged[1],
+      result_key: `context\u0000${index}`,
+      video_id: 'context',
+      original_frame_id: index,
+    })), 100)).toHaveLength(100);
   });
 
   it('moves a ranked frame directly to the top or bottom without mutating the input', () => {

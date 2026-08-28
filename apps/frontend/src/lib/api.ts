@@ -114,11 +114,15 @@ export async function getVideoFrames(
   videoId: string,
   centerFrameId: number,
   limit = 25,
+  frameStepOrSignal: number | AbortSignal = 1,
   signal?: AbortSignal,
 ): Promise<VideoFramesResponse> {
+  const frameStep = typeof frameStepOrSignal === 'number' ? frameStepOrSignal : 1;
+  const requestSignal = typeof frameStepOrSignal === 'number' ? signal : frameStepOrSignal;
+  const frameStepQuery = frameStep > 1 ? `&frame_step=${frameStep}` : '';
   const response = await fetch(
-    `${API_BASE}/v1/videos/${encodeURIComponent(videoId)}/frames?center_frame_id=${centerFrameId}&limit=${limit}`,
-    { signal },
+    `${API_BASE}/v1/videos/${encodeURIComponent(videoId)}/frames?center_frame_id=${centerFrameId}&limit=${limit}${frameStepQuery}`,
+    { signal: requestSignal },
   );
   const payload = await response.json().catch(() => null);
   if (!response.ok) throw apiError(payload, response.status, 'Không thể tải các frame cùng video.');

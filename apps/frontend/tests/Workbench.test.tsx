@@ -255,6 +255,7 @@ describe('qualification frame-first workbench', () => {
       videoId: string,
       centerFrameId: number,
       limit: number,
+      frameStep: number,
     ): Promise<VideoFramesResponse> => ({
       video_id: videoId,
       center_frame_id: centerFrameId,
@@ -280,14 +281,28 @@ describe('qualification frame-first workbench', () => {
     await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
     await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
 
-    const frameCount = await screen.findByLabelText('Số frame trong cửa sổ lân cận');
+    const frameCount = await screen.findByLabelText('Top-K frame bao quát');
     expect(frameCount).toHaveValue(4);
     await user.clear(frameCount);
     await user.type(frameCount, '6');
+    const frameStep = screen.getByLabelText('Khoảng cách giữa các frame (frame nguồn)');
+    await user.clear(frameStep);
+    await user.type(frameStep, '90');
     await user.click(screen.getByRole('button', { name: 'Tải frame lân cận' }));
 
-    await waitFor(() => expect(loadNearbyFrames).toHaveBeenCalledWith('video_01', 385, 6));
-    expect(await screen.findByText(/Frame 350/)).toBeInTheDocument();
+    await waitFor(() => expect(loadNearbyFrames).toHaveBeenCalledWith('video_01', 385, 6, 90));
+    const resultList = screen.getByRole('list', { name: 'Danh sách kết quả frame' });
+    expect(within(resultList).getByRole('button', { name: 'Chọn keyframe video_01 · 4 · source frame 350' })).toBeInTheDocument();
+    expect(within(resultList).getByText('Frame lân cận · Context')).toBeInTheDocument();
+    expect(screen.getByText('2 frame')).toBeInTheDocument();
+    expect(within(resultList).getAllByRole('button', { name: /^Chọn / }).map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Chọn frame video_01 · 385',
+      'Chọn keyframe video_01 · 4 · source frame 350',
+    ]);
+
+    const nearbyHeading = screen.getByRole('heading', { name: 'Frame lân cận' });
+    const resultHeading = screen.getByRole('heading', { name: 'Kết quả frame' });
+    expect(nearbyHeading.compareDocumentPosition(resultHeading)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 
     const createObjectURL = vi.fn((_blob: Blob) => 'blob:nearby-csv');
     const revokeObjectURL = vi.fn();

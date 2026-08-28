@@ -80,8 +80,10 @@ R2; vector local được ghi trực tiếp vào `clip_embeddings`.
 ## Media và exact frame
 
 Các route frame dùng `original_frame_id` zero-based. `GET /v1/videos/:id/frames`
-trả cửa sổ quanh `center_frame_id`; `limit` backend nhận từ `1` đến `100`.
-Workbench hiện giới hạn UI ở `1`–`50` và dùng frame tâm để xuất CSV.
+trả cửa sổ quanh `center_frame_id`; `limit` nhận từ `1` đến `100`. Tham số
+tuỳ chọn `frame_step` nhận từ `1` đến `100.000` và chọn các keyframe gần những
+mốc cách nhau theo frame nguồn; mặc định là `1`. Workbench dùng frame tâm để
+xuất CSV.
 
 Nếu thumbnail exact frame chưa tồn tại, backend seek về codec keyframe và gọi
 FFmpeg để decode đúng source frame. `frame_count` (nếu có) được dùng để từ

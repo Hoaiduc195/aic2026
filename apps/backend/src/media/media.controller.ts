@@ -38,11 +38,13 @@ export class MediaController {
     @Param('videoId') videoId: string,
     @Query('center_frame_id') centerFrameId: string | undefined,
     @Query('limit') limit: string | undefined,
+    @Query('frame_step') frameStep: string | undefined,
   ) {
     return this.media.getFrames(
       identifier(videoId, 'video_id'),
       integer(centerFrameId, 'center_frame_id', 0, 2_147_483_647),
       integer(limit, 'limit', 1, 100, 25),
+      integer(frameStep, 'frame_step', 1, 100_000, 1),
     );
   }
 

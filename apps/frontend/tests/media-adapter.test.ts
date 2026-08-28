@@ -19,6 +19,13 @@ describe('local media adapter', () => {
     expect(selected[1]).toMatchObject({ keyframe_no: 5, timestamp_ms: 13_700 });
   });
 
+  it('selects sparse frames around the center using a configurable source-frame step', () => {
+    const frames = parseFrameMapCsv(csv, 'L21_V001');
+    const selected = selectFrameWindow(frames, 385, 4, 90);
+
+    expect(selected.map((frame) => frame.original_frame_id)).toEqual([261, 351, 411, 531]);
+  });
+
   it('validates video IDs and byte ranges without allowing traversal', () => {
     expect(isSafeVideoId('L21_V001')).toBe(true);
     expect(isSafeVideoId('../L21_V001')).toBe(false);

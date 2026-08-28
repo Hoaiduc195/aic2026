@@ -25,7 +25,7 @@ describe('backend HTTP API', () => {
   };
   const media = {
     getPlayback: vi.fn(async (videoId) => ({ video_id: videoId, playback_uri: 'https://signed/video', duration_ms: 10, fps: 25, mime_type: 'video/mp4' })),
-    getFrames: vi.fn(async (videoId, centerFrameId) => ({ video_id: videoId, center_frame_id: centerFrameId, frames: [] })),
+    getFrames: vi.fn(async (videoId, centerFrameId, _limit, frameStep = 1) => ({ video_id: videoId, center_frame_id: centerFrameId, frame_step: frameStep, frames: [] })),
     getFrameByKeyframe: vi.fn(async (videoId, keyframeNo) => ({ video_id: videoId, keyframe_no: keyframeNo, original_frame_id: 385 })),
   };
   const store = {
@@ -109,6 +109,12 @@ describe('backend HTTP API', () => {
       .expect(({ body }) => expect(body.playback_uri).toContain('https://'));
     await request(app.getHttpServer()).get('/v1/videos/video-1/frames?center_frame_id=2&limit=25')
       .set('x-operator-token', 'operator-secret').expect(200);
+    await request(app.getHttpServer()).get('/v1/videos/video-1/frames?center_frame_id=2&limit=25&frame_step=90')
+      .set('x-operator-token', 'operator-secret').expect(200)
+      .expect(({ body }) => expect(body.frame_step).toBe(90));
+    expect(media.getFrames).toHaveBeenLastCalledWith('video-1', 2, 25, 90);
+    await request(app.getHttpServer()).get('/v1/videos/video-1/frames?center_frame_id=2&limit=25&frame_step=100001')
+      .set('x-operator-token', 'operator-secret').expect(400);
     await request(app.getHttpServer()).get('/v1/videos/bad%20id/playback')
       .set('x-operator-token', 'operator-secret').expect(400);
   });

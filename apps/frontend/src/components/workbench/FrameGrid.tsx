@@ -431,9 +431,11 @@ export function FrameGrid({
           const resultLabel = frameCandidateLabel(frame);
           const displayLabel = frameCandidateDisplayLabel(frame);
           const selectedTrakeFrames = trakeFrameSelections[frame.result_key] ?? [];
+          const isContextFrame = frame.matched_modalities.includes('context');
           return (
             <li
               className={`frame-card frame-list-item frame-list-item--spacious${entry.dragging ? ' frame-list-item--dragging' : ''}${selected ? ' selected' : ''}`}
+              data-frame-origin={isContextFrame ? 'context' : 'search'}
               data-queued={queued ? 'true' : undefined}
               data-frame-key={frame.result_key}
               key={frame.result_key}
@@ -470,7 +472,7 @@ export function FrameGrid({
                   <div className="frame-card-body">
                     <strong>{frame.video_id}</strong>
                     <span>{displayLabel} · {formatMs(frame.timestamp_ms)}</span>
-                    <small>{modalityLabel || '—'}</small>
+                    <small>{isContextFrame ? 'Frame lân cận · Context' : modalityLabel || '—'}</small>
                     {selectedTrakeFrames.length > 0 && (
                       <small className="trake-selection-summary">
                         Đang chọn: {selectedTrakeFrames.map((selectedFrame) => selectedFrame.original_frame_id).join(' → ')}
@@ -610,6 +612,7 @@ function DragPreview({
   size: { width: number; height: number } | null;
 }) {
   const modalityLabel = displayMatchedModalities(frame.matched_modalities);
+  const isContextFrame = frame.matched_modalities.includes('context');
   const resultLabel = frameCandidateLabel(frame);
   const displayLabel = frameCandidateDisplayLabel(frame);
   return (
@@ -635,7 +638,7 @@ function DragPreview({
           <div className="frame-card-body">
             <strong>{frame.video_id}</strong>
             <span>{displayLabel} · {formatMs(frame.timestamp_ms)}</span>
-            <small>{modalityLabel || '—'}</small>
+            <small>{isContextFrame ? 'Frame lân cận · Context' : modalityLabel || '—'}</small>
           </div>
         </div>
       </div>
