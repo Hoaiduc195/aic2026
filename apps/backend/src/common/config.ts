@@ -40,7 +40,9 @@ export interface BackendConfig {
   readonly agentClipAcceptAbove: number;
   readonly agentWorkerLeaseMs: number;
   readonly ffmpegPath: string;
+  readonly ffprobePath: string;
   readonly frameDecodeTimeoutMs: number;
+  readonly videoProbeTimeoutMs: number;
   readonly datasetVersion: string;
   readonly pipelineVersion: string;
   readonly indexVersion: string;
@@ -170,7 +172,9 @@ export function loadConfig(): BackendConfig {
     agentClipAcceptAbove,
     agentWorkerLeaseMs: positiveInteger(process.env.AGENT_WORKER_LEASE_MS, 60_000),
     ffmpegPath: optionalEnv('FFMPEG_PATH') ?? 'ffmpeg',
+    ffprobePath: optionalEnv('FFPROBE_PATH') ?? 'ffprobe',
     frameDecodeTimeoutMs: positiveInteger(process.env.FRAME_DECODE_TIMEOUT_MS, 15000),
+    videoProbeTimeoutMs: positiveInteger(process.env.VIDEO_PROBE_TIMEOUT_MS, 20 * 60_000),
     datasetVersion: optionalEnv('DATASET_VERSION') ?? 'local',
     pipelineVersion: optionalEnv('PIPELINE_VERSION') ?? 'preprocessing-artifacts',
     indexVersion,

@@ -18,6 +18,8 @@ class TextEmbeddingEncoder(Protocol):
 
     def embed_image(self, image: bytes, mime_type: str) -> Sequence[float]: ...
 
+    def embed_images(self, images: Sequence[tuple[bytes, str]]) -> Sequence[Sequence[float]]: ...
+
 
 def validate_embedding(values: Sequence[float], dimensions: int) -> list[float]:
     """Validate the fixed CLIPA query-vector contract and return a new list."""
@@ -71,7 +73,14 @@ class OpenClipTextEncoder:
             settings.device == "auto" and torch.cuda.is_available()
         ) else "cpu"
         device = torch.device(device_name)
-        model, preprocess = open_clip.create_model_from_pretrained(settings.model_name, device=device)
+        if settings.pretrained:
+            model, _, preprocess = open_clip.create_model_and_transforms(
+                settings.model_name,
+                pretrained=settings.pretrained,
+                device=device,
+            )
+        else:
+            model, preprocess = open_clip.create_model_from_pretrained(settings.model_name, device=device)
         model.eval()
         tokenizer = open_clip.get_tokenizer(settings.model_name)
         return cls(model, tokenizer, preprocess, torch, device, settings)
@@ -88,18 +97,27 @@ class OpenClipTextEncoder:
         return matrix[0].astype("float32", copy=False).tolist()
 
     def embed_image(self, image: bytes, mime_type: str) -> list[float]:
-        del mime_type
+        return self.embed_images([(image, mime_type)])[0]
+
+    def embed_images(self, images: Sequence[tuple[bytes, str]]) -> list[list[float]]:
         from io import BytesIO
 
         from PIL import Image
 
-        decoded = Image.open(BytesIO(image)).convert("RGB")
+        if not images:
+            raise ValueError("images must not be empty")
+        decoded = []
+        for image, mime_type in images:
+            del mime_type
+            with Image.open(BytesIO(image)) as opened:
+                decoded.append(self._preprocess(opened.convert("RGB")))
         torch = self._torch
-        tensor = self._preprocess(decoded).unsqueeze(0).to(self._device)
+        tensor = torch.stack(decoded).to(self._device)
         with torch.inference_mode():
             features = self._model.encode_image(tensor)
             normalized = torch.nn.functional.normalize(features.float(), dim=-1)
         matrix = normalized.detach().cpu().numpy()
-        if matrix.ndim != 2 or matrix.shape != (1, self.dimensions):
-            raise ValueError(f"model returned shape {matrix.shape}, expected (1, {self.dimensions})")
-        return matrix[0].astype("float32", copy=False).tolist()
+        expected_shape = (len(images), self.dimensions)
+        if matrix.ndim != 2 or matrix.shape != expected_shape:
+            raise ValueError(f"model returned shape {matrix.shape}, expected {expected_shape}")
+        return matrix.astype("float32", copy=False).tolist()

@@ -4,6 +4,21 @@ export interface AgentStartOptions {
   readonly topK: number;
   readonly videoBudget: number;
   readonly frameBatchSize: number;
+  readonly scanMode: AgentScanMode;
+  readonly temporalWindowSeconds: number;
+  readonly temporalMergeGapSeconds: number;
+  readonly temporalWindowsPerVideo: number;
+  readonly temporalSampleFps: number;
+}
+
+export type AgentScanMode = 'sparse' | 'dense' | 'temporal_zoom';
+
+export interface VerificationTemporalFrame {
+  readonly original_frame_id: number;
+  readonly timestamp_ms: number;
+  readonly window_id: number;
+  readonly window_start_ms: number;
+  readonly window_end_ms: number;
 }
 
 export interface VerificationVideo {
@@ -11,6 +26,8 @@ export interface VerificationVideo {
   readonly video_rank: number;
   readonly seed_score: number;
   readonly seed_frames: readonly number[];
+  readonly seed_timestamps_ms: readonly number[];
+  readonly temporal_frames: readonly VerificationTemporalFrame[];
   readonly frames_total: number;
 }
 

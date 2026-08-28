@@ -1,10 +1,11 @@
 import { BadRequestException, Inject, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 
-import { FRAME_DECODER, IMAGE_COMPRESSOR, MEDIA_REPOSITORY, OBJECT_STORAGE } from '../common/tokens';
+import { FRAME_DECODER, IMAGE_COMPRESSOR, MEDIA_REPOSITORY, OBJECT_STORAGE, VIDEO_PROBE } from '../common/tokens';
 import type { ObjectStorage } from '../storage/object-storage';
 import type { FrameDecoder } from './frame-decoder';
 import type { ImageCompressor } from './image-compressor';
 import type { MediaRepository, StudioAsrSpanRecord, StudioFrameRecord } from './media.repository';
+import type { VideoProbe } from './video-probe';
 
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const COMPRESSED_IMAGE_TARGET_BYTES = 8 * 1024 * 1024;
@@ -25,10 +26,22 @@ export interface FrameThumbnail {
 
 export interface FrameBatchItem {
   readonly video_id: string;
-  readonly keyframe_no: number;
+  readonly keyframe_no: number | null;
   readonly original_frame_id: number;
   readonly timestamp_ms: number;
   readonly thumbnail_uri: string;
+  readonly frame_source: 'keyframe' | 'raw_video' | 'temporal_sample';
+  readonly window_id?: number;
+  readonly window_start_ms?: number;
+  readonly window_end_ms?: number;
+}
+
+export interface TemporalFrameSpec {
+  readonly original_frame_id: number;
+  readonly timestamp_ms: number;
+  readonly window_id: number;
+  readonly window_start_ms: number;
+  readonly window_end_ms: number;
 }
 
 function imageMimeType(value: string | null, fallback: ImageMimeType): ImageMimeType {
@@ -95,6 +108,7 @@ export class MediaService {
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Optional() @Inject(FRAME_DECODER) private readonly decoder?: FrameDecoder,
     @Optional() @Inject(IMAGE_COMPRESSOR) private readonly compressor?: ImageCompressor,
+    @Optional() @Inject(VIDEO_PROBE) private readonly videoProbe?: VideoProbe,
   ) {}
 
   async getPlayback(videoId: string) {
@@ -145,6 +159,61 @@ export class MediaService {
     };
   }
 
+  /** Return a persisted exact frame count, probing the source video once when metadata is missing. */
+  async ensureExactFrameCount(videoId: string): Promise<number> {
+    if (!this.storage.isConfigured) throw new ServiceUnavailableException('R2 object storage is not configured');
+    const video = await this.repository.findVideo(videoId);
+    const stored = Number(video.frame_count);
+    if (Number.isSafeInteger(stored) && stored > 0) return stored;
+    if (!this.videoProbe) {
+      throw new ServiceUnavailableException(
+        `video ${videoId} is missing frame_count and FFprobe is not configured`,
+      );
+    }
+    const videoUrl = await this.storage.signReadUrl(video.object_key);
+    try {
+      const count = await this.videoProbe.countFrames(videoUrl);
+      await this.repository.updateVideoFrameCount(videoId, count);
+      return count;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown probe error';
+      throw new ServiceUnavailableException(`could not count frames for ${videoId}: ${message}`);
+    }
+  }
+
+  async getVideoFrameMetadata(videoId: string) {
+    const frameCount = await this.ensureExactFrameCount(videoId);
+    const video = await this.repository.findVideo(videoId);
+    return {
+      video_id: videoId,
+      fps: Number(video.fps),
+      frame_count: frameCount,
+      duration_ms: Number(video.duration_ms),
+    };
+  }
+
+  /**
+   * Return metadata suitable for bounded temporal sampling without forcing an
+   * expensive full-video FFprobe over R2. An estimated final frame is harmless
+   * here because FFmpeg clamps the sampled window to the actual video duration.
+   * Dense exhaustive scans continue to use getVideoFrameMetadata/ensureExactFrameCount.
+   */
+  async getTemporalFrameMetadata(videoId: string) {
+    const video = await this.repository.findVideo(videoId);
+    const fps = Number(video.fps);
+    const durationMs = Number(video.duration_ms);
+    const storedFrameCount = Number(video.frame_count);
+    const estimatedFrameCount = Math.max(1, Math.floor((durationMs / 1000) * fps));
+    return {
+      video_id: videoId,
+      fps,
+      frame_count: Number.isSafeInteger(storedFrameCount) && storedFrameCount > 0
+        ? storedFrameCount
+        : estimatedFrameCount,
+      duration_ms: durationMs,
+    };
+  }
+
   /** Return a bounded, chronological keyframe page for agent verification. */
   async getFrameBatch(videoId: string, afterOriginalFrameId: number, limit: number) {
     if (!this.storage.isConfigured) throw new ServiceUnavailableException('R2 object storage is not configured');
@@ -157,11 +226,80 @@ export class MediaService {
       original_frame_id: Number(frame.original_frame_id),
       timestamp_ms: Number(frame.timestamp_ms),
       thumbnail_uri: await this.storage.signReadUrl(frame.thumbnail_object_key),
+      frame_source: 'keyframe' as const,
     })));
     return {
       video_id: videoId,
       after_original_frame_id: afterOriginalFrameId,
       frames: items,
+      has_more: hasMore,
+      next_cursor: items.length > 0 ? items[items.length - 1].original_frame_id : null,
+    };
+  }
+
+  /** Generate a chronological page over every original frame without materializing raw JPEGs. */
+  async getDenseFrameBatch(videoId: string, afterOriginalFrameId: number, limit: number) {
+    if (!this.storage.isConfigured) throw new ServiceUnavailableException('R2 object storage is not configured');
+    const frameCount = await this.ensureExactFrameCount(videoId);
+    const video = await this.repository.findVideo(videoId);
+    const firstFrameId = Math.max(0, afterOriginalFrameId + 1);
+    const exclusiveEnd = Math.min(frameCount, firstFrameId + limit);
+    const items: FrameBatchItem[] = [];
+    for (let frameId = firstFrameId; frameId < exclusiveEnd; frameId += 1) {
+      items.push({
+        video_id: videoId,
+        keyframe_no: null,
+        original_frame_id: frameId,
+        timestamp_ms: Math.round((frameId / Number(video.fps)) * 1000),
+        thumbnail_uri: `/v1/videos/${encodeURIComponent(videoId)}/frames/${frameId}/thumbnail`,
+        frame_source: 'raw_video',
+      });
+    }
+    return {
+      video_id: videoId,
+      after_original_frame_id: afterOriginalFrameId,
+      frames: items,
+      video_uri: await this.storage.signReadUrl(video.object_key),
+      fps: Number(video.fps),
+      has_more: exclusiveEnd < frameCount,
+      next_cursor: items.length > 0 ? items[items.length - 1].original_frame_id : null,
+    };
+  }
+
+  /** Page the precomputed coarse samples of one retrieval-guided temporal window. */
+  async getTemporalFrameBatch(
+    videoId: string,
+    candidates: readonly TemporalFrameSpec[],
+    afterOriginalFrameId: number,
+    limit: number,
+  ) {
+    if (!this.storage.isConfigured) throw new ServiceUnavailableException('R2 object storage is not configured');
+    const video = await this.repository.findVideo(videoId);
+    const remaining = candidates
+      .filter((frame) => frame.original_frame_id > afterOriginalFrameId)
+      .sort((left, right) => left.original_frame_id - right.original_frame_id);
+    const first = remaining[0];
+    const sameWindow = first ? remaining.filter((frame) => frame.window_id === first.window_id) : [];
+    const selected = sameWindow.slice(0, limit);
+    const selectedIds = new Set(selected.map((frame) => frame.original_frame_id));
+    const hasMore = remaining.some((frame) => !selectedIds.has(frame.original_frame_id));
+    const items: FrameBatchItem[] = selected.map((frame) => ({
+      video_id: videoId,
+      keyframe_no: null,
+      original_frame_id: frame.original_frame_id,
+      timestamp_ms: frame.timestamp_ms,
+      thumbnail_uri: `/v1/videos/${encodeURIComponent(videoId)}/frames/${frame.original_frame_id}/thumbnail`,
+      frame_source: 'temporal_sample',
+      window_id: frame.window_id,
+      window_start_ms: frame.window_start_ms,
+      window_end_ms: frame.window_end_ms,
+    }));
+    return {
+      video_id: videoId,
+      after_original_frame_id: afterOriginalFrameId,
+      frames: items,
+      video_uri: await this.storage.signReadUrl(video.object_key),
+      fps: Number(video.fps),
       has_more: hasMore,
       next_cursor: items.length > 0 ? items[items.length - 1].original_frame_id : null,
     };

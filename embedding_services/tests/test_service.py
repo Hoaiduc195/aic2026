@@ -25,6 +25,10 @@ class FakeEncoder:
         self.last_image = (image, mime_type)
         return [1.0 / math.sqrt(self.dimensions)] * self.dimensions
 
+    def embed_images(self, images: list[tuple[bytes, str]]) -> list[list[float]]:
+        self.last_image = images[-1]
+        return [[1.0 / math.sqrt(self.dimensions)] * self.dimensions for _ in images]
+
 
 class WrongDimensionEncoder(FakeEncoder):
     def embed_text(self, text: str) -> list[float]:
@@ -112,6 +116,25 @@ class EmbeddingServiceTests(unittest.TestCase):
             ).status_code,
             413,
         )
+
+    def test_embeds_an_image_batch_in_one_model_call(self) -> None:
+        import base64
+
+        encoder = FakeEncoder()
+        client = TestClient(create_app(encoder=encoder))
+        response = client.post("/embed/images", json={"images": [
+            {"mime_type": "image/jpeg", "data_base64": base64.b64encode(b"one").decode("ascii")},
+            {"mime_type": "image/png", "data_base64": base64.b64encode(b"two").decode("ascii")},
+        ]})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()["embeddings"]), 2)
+        self.assertEqual(len(response.json()["embeddings"][0]), 1024)
+        self.assertEqual(encoder.last_image, (b"two", "image/png"))
+
+        invalid = client.post("/embed/images", json={"images": [
+            {"mime_type": "image/jpeg", "data_base64": "not-base64"},
+        ]})
+        self.assertEqual(invalid.status_code, 422)
 
 
 if __name__ == "__main__":

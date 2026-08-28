@@ -30,6 +30,7 @@ class ServiceSettings:
     port: int = 8001
     token: str | None = None
     model_name: str = MODEL_NAME
+    pretrained: str | None = None
     model_version: str = MODEL_VERSION
     dimensions: int = EMBEDDING_DIMENSIONS
     device: str = "auto"
@@ -47,8 +48,9 @@ class ServiceSettings:
             port=_positive_int("EMBEDDING_PORT", 8001),
             token=_optional_env("EMBEDDING_TOKEN"),
             model_name=_optional_env("EMBEDDING_MODEL_NAME") or MODEL_NAME,
+            pretrained=_optional_env("EMBEDDING_PRETRAINED"),
             model_version=_optional_env("EMBEDDING_MODEL_VERSION") or MODEL_VERSION,
-            dimensions=EMBEDDING_DIMENSIONS,
+            dimensions=min(_positive_int("EMBEDDING_DIMENSIONS", EMBEDDING_DIMENSIONS), 4096),
             device=device,
             max_text_chars=min(_positive_int("EMBEDDING_MAX_TEXT_CHARS", 2000), 2000),
             max_image_bytes=min(_positive_int("EMBEDDING_MAX_IMAGE_BYTES", 12 * 1024 * 1024), 12 * 1024 * 1024),

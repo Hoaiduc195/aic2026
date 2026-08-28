@@ -28,18 +28,32 @@ function integer(value: unknown, field: string, minimum: number, maximum: number
   return value as number;
 }
 
+function scanMode(value: unknown): 'sparse' | 'dense' | 'temporal_zoom' {
+  if (value === undefined) return 'sparse';
+  if (value !== 'sparse' && value !== 'dense' && value !== 'temporal_zoom') {
+    throw new BadRequestException('scan_mode must be sparse, temporal_zoom or dense');
+  }
+  return value;
+}
+
 function parseStart(value: unknown) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new BadRequestException('request body must be an object');
   }
   const body = value as Record<string, unknown>;
   const search = parseSearchRequest(body);
+  const mode = scanMode(body.scan_mode);
   return {
     search,
     options: {
       topK: integer(body.top_k, 'top_k', 1, 100, 20),
       videoBudget: integer(body.video_budget, 'video_budget', 1, 50, 10),
-      frameBatchSize: integer(body.frame_batch_size, 'frame_batch_size', 1, 32, 8),
+      frameBatchSize: integer(body.frame_batch_size, 'frame_batch_size', 1, 512, mode === 'temporal_zoom' ? 16 : 256),
+      scanMode: mode,
+      temporalWindowSeconds: integer(body.temporal_window_seconds, 'temporal_window_seconds', 5, 120, 20),
+      temporalMergeGapSeconds: integer(body.temporal_merge_gap_seconds, 'temporal_merge_gap_seconds', 0, 120, 15),
+      temporalWindowsPerVideo: integer(body.temporal_windows_per_video, 'temporal_windows_per_video', 1, 10, 2),
+      temporalSampleFps: integer(body.temporal_sample_fps, 'temporal_sample_fps', 1, 5, 1),
     },
   };
 }
@@ -49,8 +63,8 @@ function parseJudgments(value: unknown): VerificationJudgment[] {
     throw new BadRequestException('request body must be an object');
   }
   const raw = (value as Record<string, unknown>).judgments;
-  if (!Array.isArray(raw) || raw.length < 1 || raw.length > 32) {
-    throw new BadRequestException('judgments must contain 1-32 items');
+  if (!Array.isArray(raw) || raw.length < 1 || raw.length > 512) {
+    throw new BadRequestException('judgments must contain 1-512 items');
   }
   return raw.map((item, index) => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) {
@@ -144,5 +158,10 @@ export class AgentVerificationController {
   @Post(':runId/stop')
   stop(@Param('runId') value: string) {
     return this.service.stop(runId(value));
+  }
+
+  @Post(':runId/complete')
+  complete(@Param('runId') value: string, @Headers('x-agent-worker-id') owner?: string) {
+    return this.service.complete(runId(value), workerId(owner));
   }
 }

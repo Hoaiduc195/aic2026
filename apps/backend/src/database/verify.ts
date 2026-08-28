@@ -6,6 +6,7 @@ const EXPECTED_EXTENSIONS = ['pg_trgm', 'vector'] as const;
 const EXPECTED_TABLES = [
   'clip_embeddings',
   'agent_verification_runs',
+  'agent_verification_judgments',
   'evidence',
   'feature_artifacts',
   'feature_sets',
@@ -53,15 +54,23 @@ async function verify(): Promise<void> {
         AND c.relname = 'clip_embeddings'
         AND a.attname = 'embedding'
         AND NOT a.attisdropped`);
+    const denseAgentResult = await client.query<{ scan_mode: string }>(`
+      SELECT column_name AS scan_mode
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'agent_verification_runs'
+        AND column_name = 'scan_mode'`);
 
     const missingExtensions = missing(EXPECTED_EXTENSIONS, extensionResult.rows.map((row) => row.extname));
     const missingTables = missing(EXPECTED_TABLES, tableResult.rows.map((row) => row.tablename));
     const embeddingType = typeResult.rows[0]?.embedding_type;
-    if (missingExtensions.length || missingTables.length || embeddingType !== 'vector(1024)') {
+    if (missingExtensions.length || missingTables.length || embeddingType !== 'vector(1024)'
+      || !denseAgentResult.rows[0]) {
       throw new Error([
         missingExtensions.length ? `missing extensions: ${missingExtensions.join(', ')}` : '',
         missingTables.length ? `missing tables: ${missingTables.join(', ')}` : '',
         embeddingType !== 'vector(1024)' ? `embedding type is ${embeddingType ?? 'missing'}, expected vector(1024)` : '',
+        !denseAgentResult.rows[0] ? 'agent_verification_runs.scan_mode is missing' : '',
       ].filter(Boolean).join('; '));
     }
 

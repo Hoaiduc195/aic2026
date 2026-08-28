@@ -1,18 +1,30 @@
 # Hướng dẫn chạy Agent tìm frame
 
+> Tài liệu sử dụng đầy đủ và mới nhất nằm tại
+> [`agent-dense-cascade-guide.md`](./agent-dense-cascade-guide.md). Trong vòng thi,
+> dùng `temporal_zoom`; các ví dụ `dense` trong tài liệu này chỉ phục vụ benchmark
+> và tương thích với run cũ.
+
 ## 1. Kiến trúc đang dùng
 
 Agent worker không đưa toàn bộ frame vào hội thoại Codex/MCP. Luồng thực tế:
 
 1. Backend search caption, OCR, ASR, object và CLIP trên feature local.
 2. Top-k frame được gom thành danh sách video tiềm năng.
-3. Worker duyệt frame của từng video theo batch.
-4. CLIP tự loại score thấp và tự nhận score cao.
-5. Chỉ frame nằm giữa hai ngưỡng mới gửi sang VLM.
-6. Judgment và cursor được lưu trong PostgreSQL local theo `run_id`.
+3. `sparse`: worker duyệt keyframe đã import; `dense`: worker sinh dãy ID từ
+   `0..frame_count-1` và giải mã đúng từng frame từ video R2 bằng FFmpeg.
+4. Dense chạy CLIP local trên mọi raw frame. Frame chắc chắn sai/đúng được route
+   tự động; chỉ vùng điểm mơ hồ mới gửi sang VLM.
+5. Judgment được ghi từng hàng và cursor checkpoint được lưu theo `run_id`.
 
-Video/keyframe vẫn nằm trên R2. Feature và pgvector nằm local. Hai worker phải
+Raw frame không được upload hoặc lưu cố định trên R2: chỉ tồn tại trong bộ nhớ
+worker dưới dạng data URL trong lúc gọi VLM. Video/keyframe vẫn nằm trên R2.
+Feature và pgvector nằm local. Hai worker phải
 dùng hai `run_id` và `worker_id` khác nhau.
+
+Dense cần `videos.frame_count`. Nếu DB còn thiếu, backend dùng FFprobe đọc video
+R2 một lần, cache số frame chính xác vào PostgreSQL rồi mới tạo run. Máy chạy
+backend vì vậy phải có cả `ffmpeg` và `ffprobe`.
 
 ## 2. Chọn model và reasoning
 
@@ -81,6 +93,7 @@ Chạy pilot một batch:
 ```powershell
 .\scripts\run_agent.ps1 `
   -Query "a person walking outdoors" `
+  -ScanMode dense `
   -Profile balanced `
   -VideoBudget 1 `
   -BatchSize 4 `
@@ -94,6 +107,7 @@ Chạy đầy đủ:
   -Query "a person walking outdoors" `
   -Task textual_kis `
   -Profile balanced `
+  -ScanMode dense `
   -TopK 10 `
   -VideoBudget 10 `
   -BatchSize 8
@@ -130,10 +144,13 @@ Resume từ checkpoint:
 | `-Query` | hỏi khi chạy | Câu mô tả frame cần tìm. Không dùng khi chỉ resume |
 | `-Task` | `textual_kis` | Một trong `textual_kis`, `vqa`, `trake` |
 | `-Profile` | `balanced` | Bộ cấu hình tốc độ/chất lượng VLM |
+| `-ScanMode` | `dense` | `dense` quét mọi frame raw; `sparse` chỉ duyệt keyframe |
 | `-Model` | `gpt-5.6-luna` | Model VLM nhận các frame mơ hồ |
 | `-TopK` | `10` | Số frame seed từ retrieval trước khi gom video |
 | `-VideoBudget` | `10` | Số video tối đa worker sẽ duyệt sâu |
-| `-BatchSize` | `8` | Số frame lấy và commit trong mỗi batch |
+| `-BatchSize` | `256` | Số raw frame trong mỗi checkpoint; dense nên dùng 128–256 |
+| `-PrefilterCandidateRatio` | `0.05` | Tỷ lệ raw frame tối đa được đưa qua CLIP |
+| `-VlmCandidateRatio` | `0.005` | Tỷ lệ raw frame tối đa được đưa qua VLM |
 | `-MaxBatches` | `0` | `0` là chạy hết; số dương giới hạn batch của lượt này |
 | `-Pilot` | tắt | Tự đặt `MaxBatches=1` nếu chưa chỉ định |
 | `-RunId` | trống | Resume checkpoint đã có, không tạo coarse search mới |
@@ -148,13 +165,15 @@ Resume từ checkpoint:
 - `BatchSize` không thay đổi tổng frame, nhưng batch nhỏ checkpoint thường xuyên
   hơn; batch lớn giảm số REST call nhưng mất nhiều việc hơn nếu process bị dừng.
 - `MaxBatches` là phanh an toàn để pilot hoặc đánh giá chi phí.
+- Dense với `MaxBatches=0` và không bật `Pilot` mới quét hết toàn bộ inventory.
+- Dense prefilter nhẹ toàn bộ `frame_count`, nhưng CLIP mặc định chỉ nhận khoảng
+  5% và VLM khoảng 0,5% theo từng chunk. Luôn pilot 1 video/1 chunk trước khi mở rộng.
 
 ### Tác động của các biến môi trường
 
-- `AGENT_CLIP_REJECT_BELOW`: dưới ngưỡng này không gọi VLM và đánh dấu không khớp.
-- `AGENT_CLIP_ACCEPT_ABOVE`: trên ngưỡng này không gọi VLM và đánh dấu khớp.
-- Khoảng giữa hai ngưỡng là vùng VLM review. Ngưỡng phải được calibrate trên
-  ground truth; không tăng auto-accept chỉ để làm pipeline nhanh hơn.
+- `AGENT_PREFILTER_CANDIDATE_RATIO`: trần tỷ lệ frame được MobileCLIP xếp hạng.
+- `AGENT_VLM_CANDIDATE_RATIO`: trần tỷ lệ frame vào grid VLM; frame tốt nhất
+  trong mỗi grid được xác nhận riêng.
 - `AGENT_WORKER_VLM_CONCURRENCY`: số request VLM chạy song song. Luna có thể chịu
   throughput cao, nhưng nên bắt đầu từ 2 để tránh rate limit và nghẽn mạng.
 - `AGENT_WORKER_REASONING_EFFORT`: lượng reasoning trước khi trả judgment.

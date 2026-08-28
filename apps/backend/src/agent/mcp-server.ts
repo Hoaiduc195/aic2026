@@ -52,8 +52,9 @@ async function imageBlock(url: string): Promise<{
   type: 'image'; data: string; mimeType: string;
 } | null> {
   try {
-    const response = await fetch(url, {
+    const response = await fetch(url.startsWith('/') ? `${backendUrl}${url}` : url, {
       redirect: 'error',
+      headers: backendOperatorToken ? { authorization: `Bearer ${backendOperatorToken}` } : undefined,
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) return null;
@@ -89,7 +90,8 @@ async function batchResult(payload: any, includeImages: boolean) {
     const { thumbnail_uri: _thumbnailUri, ...metadata } = frame;
     return { ...metadata, image_index: images[index] ? index : null };
   });
-  const safePayload = { ...payload, batch: { ...payload.batch, frames } };
+  const { video_uri: _videoUri, ...safeBatch } = payload.batch;
+  const safePayload = { ...payload, batch: { ...safeBatch, frames } };
   const content: any[] = [{ type: 'text', text: JSON.stringify(safePayload) }];
   images.forEach((image, index) => {
     if (image) content.push({ type: 'text', text: `image_index=${index}` }, image);
@@ -104,19 +106,30 @@ const server = new McpServer({ name: 'aic2026-frame-verification', version: '0.1
 const registerTool: any = server.registerTool.bind(server);
 
 registerTool('start_frame_verification', {
-  description: 'Run feature retrieval, rank distinct source videos, and create an exhaustive keyframe verification run.',
+  description: 'Run feature retrieval, rank distinct source videos, and create a sparse-keyframe or dense raw-frame verification run.',
   inputSchema: {
     query: z.string().min(1).max(2000),
     task: z.enum(['textual_kis', 'vqa', 'trake']).default('textual_kis'),
     top_k: z.number().int().min(1).max(100).default(20),
     video_budget: z.number().int().min(1).max(50).default(10),
-    frame_batch_size: z.number().int().min(1).max(32).default(8),
+    frame_batch_size: z.number().int().min(1).max(512).default(32),
+    scan_mode: z.enum(['sparse', 'temporal_zoom', 'dense']).default('temporal_zoom'),
+    temporal_window_seconds: z.number().int().min(5).max(120).default(20),
+    temporal_merge_gap_seconds: z.number().int().min(0).max(120).default(15),
+    temporal_windows_per_video: z.number().int().min(1).max(10).default(2),
+    temporal_sample_fps: z.number().int().min(1).max(5).default(1),
   },
-}, async ({ query, task, top_k, video_budget, frame_batch_size }: any) => {
+}, async ({
+  query, task, top_k, video_budget, frame_batch_size, scan_mode,
+  temporal_window_seconds, temporal_merge_gap_seconds, temporal_windows_per_video, temporal_sample_fps,
+}: any) => {
   try {
     return result(await backendJson('/v1/agent/frame-search', {
       method: 'POST',
-      body: JSON.stringify({ query, task, top_k, video_budget, frame_batch_size }),
+      body: JSON.stringify({
+        query, task, top_k, video_budget, frame_batch_size, scan_mode,
+        temporal_window_seconds, temporal_merge_gap_seconds, temporal_windows_per_video, temporal_sample_fps,
+      }),
     }));
   } catch (error) {
     return failure(error);
@@ -124,7 +137,7 @@ registerTool('start_frame_verification', {
 });
 
 registerTool('get_next_frame_batch', {
-  description: 'Get the next bounded batch of signed keyframe thumbnails for the current verification run.',
+  description: 'Get the next bounded image batch. Dense runs decode exact raw frames from the R2 video on demand.',
   inputSchema: {
     run_id: z.string().min(1).max(100),
     include_images: z.boolean().default(true),
@@ -148,7 +161,7 @@ registerTool('submit_frame_judgments', {
       relevant: z.boolean(),
       score: z.number().min(0).max(1).optional(),
       reason: z.string().max(200).optional(),
-    })).min(1).max(32),
+    })).min(1).max(512),
   },
 }, async ({ run_id, judgments }: any) => {
   try {

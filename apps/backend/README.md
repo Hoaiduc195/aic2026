@@ -170,15 +170,19 @@ Coverage gate: statements/lines/functions từ 80%, branches từ 70%. Integrati
 test dùng Supertest kiểm tra operator auth, search, media, manual selection và
 submission preview.
 
-## Agent kiểm tra exhaustive theo video
+## Agent tìm frame theo video
 
-Backend có thêm một luồng dành cho agent: search feature trước, gom các
-`video_id` khác nhau từ top-k frame, xếp hạng video theo seed score, sau đó
-trả toàn bộ keyframe đã index của từng video theo batch nhỏ. Agent phải
-gửi judgment cho từng frame trong batch; checkpoint nằm trong
-`agent_verification_runs` nên có thể tiếp tục sau khi mất session. Luồng này
-duyệt keyframe đã lưu trong `frames`, không tự địa giải mọi frame raw trong
-video; raw-video decode chỉ dùng khi cần preview exact frame.
+Backend hỗ trợ ba chế độ sau coarse retrieval: `sparse` duyệt keyframe,
+`temporal_zoom` tạo cửa sổ raw quanh timestamp retrieval và `dense` duyệt toàn bộ
+frame gốc. `temporal_zoom` là mặc định khi thi: worker seek video R2, gửi storyboard
+cho Luna rồi chỉ decode FPS gốc trong vùng cuối. Dense sinh ID `0..frame_count-1`
+và chỉ nên dùng benchmark offline. Cả ba chế độ không lưu raw frame trở lại object
+storage. Cursor nằm trong `agent_verification_runs`, còn
+judgment từng frame nằm trong `agent_verification_judgments`, nên run dài có thể
+resume mà không phải ghi lại một JSON ngày càng lớn.
+
+Nếu `videos.frame_count` còn trống, backend dùng FFprobe đếm chính xác một lần
+từ video R2 và cache kết quả vào PostgreSQL local trước khi bắt đầu dense run.
 
 Chạy migration trên PostgreSQL local:
 
@@ -200,6 +204,7 @@ $body = @{
   top_k = 20
   video_budget = 10
   frame_batch_size = 8
+  scan_mode = 'dense'
 } | ConvertTo-Json
 
 $start = Invoke-RestMethod -Method Post `
@@ -207,7 +212,7 @@ $start = Invoke-RestMethod -Method Post `
   -ContentType 'application/json' -Body $body
 $runId = $start.run.run_id
 
-# Lấy batch thumbnail có signed URL
+# Sparse trả signed keyframe URL; dense trả endpoint giải mã raw frame local
 Invoke-RestMethod http://localhost:4000/v1/agent/frame-search/$runId/batch
 ```
 
@@ -248,7 +253,9 @@ cd D:\VSCode\AIC\aic2026
 ```
 
 Xem bảng giải thích toàn bộ argument và profile Luna tại
-[`docs/agent-worker-guide.md`](../../docs/agent-worker-guide.md).
+[`docs/agent-worker-guide.md`](../../docs/agent-worker-guide.md). Hướng dẫn trực
+quan cho kiến trúc quét raw-frame nhiều tầng nằm tại
+[`docs/agent-dense-cascade-guide.md`](../../docs/agent-dense-cascade-guide.md).
 
 Worker gọi REST API nên prompt, ảnh và lịch sử tool không đi qua context MCP/Codex.
 Mỗi lệnh không có `--run-id` tạo một UUID `run_id` mới; vì vậy hai worker phải
@@ -260,15 +267,17 @@ Mỗi run chỉ encode query một lần, sau đó so với vector frame đã l�
 ```powershell
 cd D:\VSCode\AIC\aic2026\apps\backend
 npm run agent:worker -- --query "a person walking outdoors" `
-  --task textual_kis --top-k 10 --video-budget 10 --batch-size 8 `
+  --task textual_kis --top-k 10 --video-budget 10 --batch-size 256 `
   --worker-id worker-1
 ```
 
-Pipeline worker là CLIP cascade: score thấp được auto-reject, score cao được
-auto-accept, chỉ vùng mơ hồ mới gọi VLM. Điều chỉnh bằng
-`AGENT_CLIP_REJECT_BELOW`/`AGENT_CLIP_ACCEPT_ABOVE`. Có thể đặt riêng model ảnh
-qua `AGENT_WORKER_VLM_MODEL`; model này phải thực sự nhận image input. Pilot an
-toàn dùng `--max-batches 1`; state JSON ghi atomic trong `data/tmp/agent-worker`.
+Dense worker giữ một FFmpeg stream cho từng video: prefilter nhẹ xem 100% frame,
+CLIP batch xếp hạng một tập nhỏ và Luna chỉ xem top candidate theo grid rồi xác
+nhận riêng frame tốt nhất. Điều chỉnh trần chi phí bằng
+`AGENT_PREFILTER_CANDIDATE_RATIO` và `AGENT_VLM_CANDIDATE_RATIO`. Có thể đặt riêng
+model ảnh qua `AGENT_WORKER_VLM_MODEL`; model này phải thực sự nhận image input.
+Pilot an toàn dùng `--max-batches 1`; state JSON ghi atomic trong
+`data/tmp/agent-worker`.
 Resume một run đang dở:
 
 ```powershell

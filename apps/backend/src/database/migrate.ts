@@ -7,8 +7,54 @@ import { Client } from 'pg';
 
 const MIGRATION_LOCK = 2_026_081_501;
 
+export function canonicalSql(value: string): string {
+  return value.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+}
+
 function checksum(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
+  return createHash('sha256').update(canonicalSql(value), 'utf8').digest('hex');
+}
+
+async function baselineSchemaIsCompatible(client: Client): Promise<boolean> {
+  const result = await client.query<{ compatible: boolean }>(`
+    WITH required_tables(name) AS (VALUES
+      ('videos'), ('feature_sets'), ('index_releases'), ('index_release_features'),
+      ('feature_artifacts'), ('frames'), ('evidence'), ('text_evidence'),
+      ('object_evidence'), ('clip_embeddings'), ('ingestion_runs'),
+      ('retrieval_runs'), ('retrieval_candidates'), ('manual_selections')
+    ), required_columns(table_name, column_name) AS (VALUES
+      ('videos', 'frame_count'), ('videos', 'object_key'),
+      ('frames', 'original_frame_id'), ('frames', 'timestamp_ms'),
+      ('evidence', 'feature_set_id'), ('evidence', 'original_frame_id'),
+      ('clip_embeddings', 'embedding'), ('retrieval_candidates', 'fusion_trace')
+    )
+    SELECT
+      NOT EXISTS (
+        SELECT 1 FROM required_tables
+        WHERE to_regclass('public.' || name) IS NULL
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM required_columns required
+        WHERE NOT EXISTS (
+          SELECT 1 FROM information_schema.columns actual
+          WHERE actual.table_schema = 'public'
+            AND actual.table_name = required.table_name
+            AND actual.column_name = required.column_name
+        )
+      )
+      AND EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector')
+      AND EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm')
+      AND EXISTS (
+        SELECT 1
+        FROM pg_attribute attribute
+        JOIN pg_class relation ON relation.oid = attribute.attrelid
+        JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+        WHERE namespace.nspname = 'public'
+          AND relation.relname = 'clip_embeddings'
+          AND attribute.attname = 'embedding'
+          AND format_type(attribute.atttypid, attribute.atttypmod) = 'vector(1024)'
+      ) AS compatible`);
+  return result.rows[0]?.compatible === true;
 }
 
 async function migrate(): Promise<void> {
@@ -33,7 +79,7 @@ async function migrate(): Promise<void> {
       )`);
 
     for (const version of migrationFiles) {
-      const sql = await readFile(resolve(migrationDirectory, version), 'utf8');
+      const sql = canonicalSql(await readFile(resolve(migrationDirectory, version), 'utf8'));
       const digest = checksum(sql);
       const existing = await client.query<{ checksum_sha256: string }>(
         'SELECT checksum_sha256 FROM schema_migrations WHERE version = $1',
@@ -41,7 +87,19 @@ async function migrate(): Promise<void> {
       );
       if (existing.rows[0]) {
         if (existing.rows[0].checksum_sha256 !== digest) {
-          throw new Error(`migration checksum mismatch for ${version}; never edit an applied migration`);
+          if (version === '001_initial.sql' && await baselineSchemaIsCompatible(client)) {
+            await client.query(
+              'UPDATE schema_migrations SET checksum_sha256 = $2 WHERE version = $1',
+              [version, digest],
+            );
+            process.stdout.write(
+              `Reconciled ${version} checksum after verifying the existing baseline schema\n`,
+            );
+            continue;
+          }
+          throw new Error(
+            `migration checksum mismatch for ${version}; schema compatibility repair was not safe`,
+          );
         }
         process.stdout.write(`Skipped ${version} (already applied)\n`);
         continue;

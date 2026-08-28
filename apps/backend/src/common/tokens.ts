@@ -14,4 +14,5 @@ export const VLM_RERANKER = Symbol('VLM_RERANKER');
 export const VLM_QUERY_EXPANDER = Symbol('VLM_QUERY_EXPANDER');
 export const VQA_GROUNDING_REPOSITORY = Symbol('VQA_GROUNDING_REPOSITORY');
 export const FRAME_DECODER = Symbol('FRAME_DECODER');
+export const VIDEO_PROBE = Symbol('VIDEO_PROBE');
 export const IMAGE_COMPRESSOR = Symbol('IMAGE_COMPRESSOR');

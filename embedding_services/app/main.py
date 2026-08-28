@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
 import secrets
 from contextlib import asynccontextmanager
@@ -9,7 +11,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 
 from .config import ServiceSettings
 from .model import OpenClipTextEncoder, TextEmbeddingEncoder, validate_embedding
-from .schemas import EmbedRequest, EmbedResponse
+from .schemas import EmbedImagesRequest, EmbedImagesResponse, EmbedRequest, EmbedResponse
 
 logger = logging.getLogger(__name__)
 SUPPORTED_IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
@@ -134,6 +136,48 @@ def create_app(
             logger.exception("image embedding inference failed")
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="embedding inference failed") from None
         return EmbedResponse(embedding=values)
+
+    @app.post("/embed/images", response_model=EmbedImagesResponse, dependencies=[Depends(authenticate)])
+    async def embed_images(request: EmbedImagesRequest) -> EmbedImagesResponse:
+        if loaded_encoder is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="embedding service is not ready")
+        decoded: list[tuple[bytes, str]] = []
+        total_bytes = 0
+        for index, item in enumerate(request.images):
+            mime_type = item.mime_type.strip().lower()
+            if mime_type not in SUPPORTED_IMAGE_MIME_TYPES:
+                raise HTTPException(
+                    status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                    detail=f"images[{index}].mime_type is not supported",
+                )
+            try:
+                image = base64.b64decode(item.data_base64, validate=True)
+            except (binascii.Error, ValueError):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"images[{index}].data_base64 is invalid",
+                ) from None
+            if not image or len(image) > resolved_settings.max_image_bytes:
+                raise HTTPException(
+                    status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                    detail=f"images[{index}] must contain between 1 byte and {resolved_settings.max_image_bytes} bytes",
+                )
+            total_bytes += len(image)
+            if total_bytes > resolved_settings.max_image_bytes * 32:
+                raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="image batch is too large")
+            decoded.append((image, mime_type))
+        try:
+            raw_embeddings = loaded_encoder.embed_images(decoded)
+            if len(raw_embeddings) != len(decoded):
+                raise ValueError("encoder returned the wrong batch size")
+            embeddings = [
+                validate_embedding(values, resolved_settings.dimensions)
+                for values in raw_embeddings
+            ]
+        except Exception:
+            logger.exception("batch image embedding inference failed")
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="embedding inference failed") from None
+        return EmbedImagesResponse(embeddings=embeddings)
 
     return app
 

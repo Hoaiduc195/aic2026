@@ -49,6 +49,39 @@ function config(overrides: Partial<BackendConfig> = {}): BackendConfig {
 }
 
 describe('OpenAI-compatible vision model', () => {
+  it('sends one storyboard image and maps every cell back to its original frame id', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({
+        frames: [
+          { id: 100, score: 10, match: false, reason: 'wrong scene' },
+          { id: 125, score: 92, match: true, reason: 'target action' },
+        ],
+      }) } }],
+      usage: { prompt_tokens: 200, completion_tokens: 20, total_tokens: 220 },
+    }), { status: 200 })));
+
+    const result = await new OpenAICompatibleVisionClient({ ...clientOptions, imageDetail: 'low' })
+      .verifyStoryboardRelevance({
+        query: 'person closes a fuel cap',
+        storyboardUrl: 'data:image/jpeg;base64,c3Rvcnlib2FyZA==',
+        frameIds: [100, 125],
+        columns: 2,
+      });
+
+    expect(result.frames).toEqual([
+      expect.objectContaining({ id: 100, score: 10, match: false }),
+      expect.objectContaining({ id: 125, score: 92, match: true }),
+    ]);
+    expect(result.usage?.total_tokens).toBe(220);
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)) as {
+      messages: Array<{ content: unknown }>;
+    };
+    expect(body.messages[1].content).toEqual([
+      expect.objectContaining({ type: 'text', text: expect.stringContaining('100, 125') }),
+      expect.objectContaining({ type: 'image_url', image_url: expect.objectContaining({ detail: 'low' }) }),
+    ]);
+  });
+
   it('uses a 15-second timeout when no timeout is configured', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
       choices: [{ message: { content: JSON.stringify({
@@ -192,7 +225,7 @@ describe('OpenAI-compatible vision model', () => {
     }), { status: 200 })));
     const client = new OpenAICompatibleVisionClient({
       ...clientOptions,
-      model: 'gpt-5.6-luna',
+      model: 'cx/gpt-5.6-luna',
       reasoningEffort: 'low',
       imageDetail: 'low',
     });
@@ -220,6 +253,36 @@ describe('OpenAI-compatible vision model', () => {
       type: 'image_url',
       image_url: { url: 'https://signed.test/frame.jpg', detail: 'low' },
     });
+  });
+
+  it('scores a low-detail image grid and exposes provider token usage', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({ frames: [
+        { id: 10, score: 15, match: false, reason: 'not visible' },
+        { id: 11, score: 92, match: true, reason: 'clear match' },
+      ] }) } }],
+      usage: { prompt_tokens: 900, completion_tokens: 60, total_tokens: 960, cost: 0.012 },
+    }), { status: 200 })));
+    const client = new OpenAICompatibleVisionClient({ ...clientOptions, imageDetail: 'low' });
+
+    const result = await client.verifyImageBatchRelevance({
+      query: 'person opens a red door',
+      images: [
+        { id: 10, imageUrl: 'data:image/jpeg;base64,b25l' },
+        { id: 11, imageUrl: 'data:image/jpeg;base64,dHdv' },
+      ],
+    });
+
+    expect(result.frames).toEqual([
+      expect.objectContaining({ id: 10, score: 15, match: false }),
+      expect.objectContaining({ id: 11, score: 92, match: true }),
+    ]);
+    expect(result.usage).toEqual({ input_tokens: 900, output_tokens: 60, total_tokens: 960, cost: 0.012 });
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)) as {
+      messages: Array<{ content: Array<{ type: string; image_url?: { detail?: string } }> }>;
+    };
+    expect(body.messages[1].content.filter((item) => item.type === 'image_url')).toHaveLength(2);
+    expect(body.messages[1].content[2].image_url?.detail).toBe('low');
   });
 
   it('retries on 429 rate-limit response and succeeds on second attempt', async () => {
@@ -261,6 +324,53 @@ describe('OpenAI-compatible vision model', () => {
     const result = await resultPromise;
     expect(result.score).toBe(70);
     expect(callCount).toBe(2);
+    vi.useRealTimers();
+  });
+
+  it('retries an empty reasoning response with a larger bounded completion budget', async () => {
+    vi.useFakeTimers();
+    let callCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      callCount++;
+      if (callCount === 1) {
+        return new Response(JSON.stringify({
+          choices: [{ finish_reason: 'length', message: { content: null } }],
+          usage: { prompt_tokens: 100, completion_tokens: 128, total_tokens: 228 },
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        choices: [{ finish_reason: 'stop', message: {
+          content: JSON.stringify({ score: 82, match: true, reason: 'visible after retry' }),
+        } }],
+        usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 },
+      }), { status: 200 });
+    }));
+    const client = new OpenAICompatibleVisionClient({
+      ...clientOptions,
+      model: 'gpt-5.6-luna',
+      maxTokens: 128,
+      retries: 1,
+      reasoningEffort: 'low',
+    });
+
+    const resultPromise = client.verifyImageRelevance({
+      query: 'person at a fuel station',
+      imageUrl: 'https://signed.test/frame.jpg',
+    });
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+
+    expect(result).toMatchObject({ score: 82, match: true });
+    expect(result.usage).toEqual({ input_tokens: 200, output_tokens: 148, total_tokens: 348 });
+    expect(callCount).toBe(2);
+    const firstBody = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)) as {
+      max_completion_tokens: number;
+    };
+    const secondBody = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body)) as {
+      max_completion_tokens: number;
+    };
+    expect(firstBody.max_completion_tokens).toBe(128);
+    expect(secondBody.max_completion_tokens).toBe(256);
     vi.useRealTimers();
   });
 

@@ -20,6 +20,7 @@ const repository: MediaRepository = {
     video_id: 'video-1', keyframe_no: 2, original_frame_id: 50,
     timestamp_ms: 2000, thumbnail_object_key: 'keyframes/video-1/000050.jpg',
   })),
+  updateVideoFrameCount: vi.fn(async () => undefined),
   findFramesPage: vi.fn(async () => []),
   findNearestStudioFrame: vi.fn(async () => ({
     video_id: 'video-1', keyframe_no: 2, original_frame_id: 50, timestamp_ms: 2000,
@@ -77,6 +78,45 @@ describe('MediaService', () => {
     const service = new MediaService(repository, storage);
     const result = await service.getFrames('video-1', 50, 25);
     expect(result.frames[0].thumbnail_uri).toBe('https://media.example/keyframes/video-1/000050.jpg');
+  });
+
+  it('pages every original frame for dense agent scan without storing raw JPEGs', async () => {
+    vi.mocked(repository.findVideo).mockResolvedValueOnce({
+      video_id: 'video-1', object_key: 'videos/video-1.mp4', duration_ms: 480,
+      fps: 25, frame_count: 12, mime_type: 'video/mp4' as const,
+    });
+    const service = new MediaService(repository, storage);
+
+    const result = await service.getDenseFrameBatch('video-1', 7, 3);
+
+    expect(result).toMatchObject({
+      after_original_frame_id: 7,
+      has_more: true,
+      next_cursor: 10,
+    });
+    expect(result.frames).toEqual([
+      expect.objectContaining({ original_frame_id: 8, timestamp_ms: 320, frame_source: 'raw_video' }),
+      expect.objectContaining({ original_frame_id: 9, timestamp_ms: 360, frame_source: 'raw_video' }),
+      expect.objectContaining({ original_frame_id: 10, timestamp_ms: 400, frame_source: 'raw_video' }),
+    ]);
+    expect(result.frames[0].thumbnail_uri).toBe('/v1/videos/video-1/frames/8/thumbnail');
+    expect(storage.signReadUrl).toHaveBeenCalledWith('videos/video-1.mp4');
+  });
+
+  it('refuses dense scan when exact frame_count is unavailable', async () => {
+    const service = new MediaService(repository, storage);
+    await expect(service.getDenseFrameBatch('video-1', -1, 8)).rejects.toThrow('missing frame_count');
+  });
+
+  it('estimates temporal frame metadata without probing the whole R2 video', async () => {
+    const videoProbe = { countFrames: vi.fn(async () => 999_999) };
+    const service = new MediaService(repository, storage, undefined, undefined, videoProbe);
+
+    await expect(service.getTemporalFrameMetadata('video-1')).resolves.toMatchObject({
+      video_id: 'video-1', fps: 25, duration_ms: 60_000, frame_count: 1_500,
+    });
+    expect(videoProbe.countFrames).not.toHaveBeenCalled();
+    expect(storage.signReadUrl).not.toHaveBeenCalled();
   });
 
   it('signs only the video in the studio response and leaves thumbnails lazy', async () => {

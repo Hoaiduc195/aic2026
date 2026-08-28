@@ -69,6 +69,7 @@ export interface VideoStudioRecord {
 
 export interface MediaRepository {
   findVideo(videoId: string): Promise<VideoRecord>;
+  updateVideoFrameCount(videoId: string, frameCount: number): Promise<void>;
   findFrame(videoId: string, originalFrameId: number): Promise<FrameRecord | null>;
   findFrameByKeyframe(videoId: string, keyframeNo: number): Promise<FrameRecord | null>;
   findFramesPage(videoId: string, afterOriginalFrameId: number, limit: number): Promise<FrameRecord[]>;
@@ -133,6 +134,14 @@ export class PostgresMediaRepository implements MediaRepository {
       FROM frames
       WHERE video_id = $1 AND keyframe_no = $2`, [videoId, keyframeNo]);
     return result.rows[0] ?? null;
+  }
+
+  async updateVideoFrameCount(videoId: string, frameCount: number): Promise<void> {
+    const result = await this.database.query(
+      'UPDATE videos SET frame_count = $2 WHERE video_id = $1 RETURNING video_id',
+      [videoId, frameCount],
+    );
+    if (!result.rows[0]) throw new NotFoundException(`video ${videoId} was not found`);
   }
 
   async findFramesPage(videoId: string, afterOriginalFrameId: number, limit: number): Promise<FrameRecord[]> {
@@ -415,6 +424,10 @@ export class UnavailableMediaRepository implements MediaRepository {
   }
 
   async findFrameByKeyframe(_videoId: string, _keyframeNo: number): Promise<FrameRecord | null> {
+    throw new NotFoundException('media catalog is not configured');
+  }
+
+  async updateVideoFrameCount(_videoId: string, _frameCount: number): Promise<void> {
     throw new NotFoundException('media catalog is not configured');
   }
 

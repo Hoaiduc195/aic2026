@@ -79,4 +79,8 @@ data/refined/
 *.parquet
 *.npy
 *.dump
-*.sql
+*.sql
+!apps/backend/sql/006_dense_agent_scan.sql
+!apps/backend/sql/007_agent_cascade_chunks.sql
+!apps/backend/sql/008_agent_temporal_zoom.sql
+apps/frontend/.next-stale-*/
