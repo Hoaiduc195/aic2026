@@ -77,8 +77,8 @@ export function restoreVqaQueueFromAnswers(
       video_id: answer.video_id,
       original_frame_id: answer.frame_id,
     }));
-    const answerText = answer.answer.trim();
-    if (!frame || !answerText) return [];
+    const answerText = answer.answer;
+    if (!frame || !answerText.trim()) return [];
 
     const key = queueKey(frame);
     if (seen.has(key)) return [];
@@ -107,11 +107,23 @@ export function applyAnswerToPending(
   existing: readonly VqaQueueItem[],
   answer: string,
 ): VqaQueueItem[] {
-  const normalized = answer.trim();
-  if (!normalized) return existing.map((item) => ({ ...item }));
+  if (!answer.trim()) return existing.map((item) => ({ ...item }));
   return existing.map((item) => item.status !== 'answered'
-    ? { ...item, status: 'answered', answer: normalized, error: undefined }
+    ? { ...item, status: 'answered', answer, error: undefined }
     : { ...item });
+}
+
+export function applyAnswerToAll(
+  existing: readonly VqaQueueItem[],
+  answer: string,
+): VqaQueueItem[] {
+  if (!answer.trim()) return existing.map((item) => ({ ...item }));
+  return existing.map((item) => ({
+    ...item,
+    status: 'answered',
+    answer,
+    error: undefined,
+  }));
 }
 
 export function applyVqaBatchResults(
@@ -170,7 +182,7 @@ export function moveVqaQueueItem(existing: readonly VqaQueueItem[], from: number
 export function completedVqaAnswers(existing: readonly VqaQueueItem[]): QaAnswer[] {
   return existing
     .filter((item): item is VqaQueueItem & { readonly answer: string } => item.status === 'answered' && Boolean(item.answer?.trim()))
-    .map((item) => ({ video_id: item.video_id, frame_id: item.frame_id, answer: item.answer.trim() }));
+    .map((item) => ({ video_id: item.video_id, frame_id: item.frame_id, answer: item.answer }));
 }
 
 /**

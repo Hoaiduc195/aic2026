@@ -21,6 +21,7 @@ interface Props {
   onSelectFrame?: (frame: StudioFrame) => void;
   onSelectFrames?: (frames: readonly StudioFrame[]) => void;
   selectionMode?: 'single' | 'multiple';
+  selectionLimit?: number;
   initialSelectedFrameIds?: readonly number[];
   loadExactFrame?: (frameId: number, signal?: AbortSignal) => Promise<CanonicalFrameResponse>;
 }
@@ -42,6 +43,7 @@ export function VideoStudioModal({
   onSelectFrame,
   onSelectFrames,
   selectionMode = 'single',
+  selectionLimit = 4,
   initialSelectedFrameIds = [],
   loadExactFrame,
 }: Props) {
@@ -86,7 +88,7 @@ export function VideoStudioModal({
     )),
     [selectedFrames],
   );
-  const selectionIsValid = orderedSelectedFrames.length === 4
+  const selectionIsValid = orderedSelectedFrames.length === selectionLimit
     && orderedSelectedFrames.every((frame, index) => (
       index === 0 || orderedSelectedFrames[index - 1].timestamp_ms < frame.timestamp_ms
     ));
@@ -140,10 +142,10 @@ export function VideoStudioModal({
       .map((frameId) => studio.frames.find((frame) => frame.original_frame_id === frameId))
       .filter((frame): frame is StudioFrame => frame !== undefined)
       .sort((left, right) => left.timestamp_ms - right.timestamp_ms)
-      .slice(0, 4));
+      .slice(0, selectionLimit));
     setTargetSlotIndex(null);
     setSelectionError(null);
-  }, [initialFrameIds, selectedFrameIdsKey, isMultiSelect, studio.frames]);
+  }, [initialFrameIds, selectedFrameIdsKey, isMultiSelect, selectionLimit, studio.frames]);
 
   useEffect(() => {
     if (!loadExactFrame || initialFrameId < 0 || studio.frames.some((frame) => frame.original_frame_id === initialFrameId)) {
@@ -252,13 +254,13 @@ export function VideoStudioModal({
 
   function addFrameToSelection(frame: StudioFrame) {
     const existingIndex = selectedFrames.findIndex((item) => item.original_frame_id === frame.original_frame_id);
-    const slotIndex = targetSlotIndex ?? (selectedFrames.length < 4 ? selectedFrames.length : null);
+    const slotIndex = targetSlotIndex ?? (selectedFrames.length < selectionLimit ? selectedFrames.length : null);
     if (existingIndex >= 0 && existingIndex !== slotIndex) {
-      setSelectionError(`Frame ${frame.original_frame_id} đã có trong bộ 4.`);
+      setSelectionError(`Frame ${frame.original_frame_id} đã có trong bộ ${selectionLimit}.`);
       return;
     }
     if (slotIndex === null) {
-      setSelectionError('Bộ 4 đã đủ frame. Hãy chọn một slot để thay thế.');
+      setSelectionError(`Bộ ${selectionLimit} đã đủ frame. Hãy chọn một slot để thay thế.`);
       return;
     }
     setSelectedFrames((current) => {
@@ -296,7 +298,7 @@ export function VideoStudioModal({
   function confirmSelection() {
     if (!isMultiSelect) return;
     if (!selectionIsValid || !onSelectFrames) {
-      setSelectionError('TRAKE cần đúng 4 frame khác nhau, tăng dần theo thời gian.');
+      setSelectionError(`TRAKE cần đúng ${selectionLimit} frame khác nhau, tăng dần theo thời gian.`);
       return;
     }
     onSelectFrames(orderedSelectedFrames);
@@ -396,16 +398,16 @@ export function VideoStudioModal({
             </div>
 
             {isMultiSelect && (
-              <section className="studio-selected-set" aria-label="Bộ 4 frame đã chọn">
+              <section className="studio-selected-set" aria-label={`Bộ ${selectionLimit} frame đã chọn`}>
                 <div className="studio-selected-set-heading">
                   <div>
                     <p className="eyebrow">TRAKE</p>
-                    <h3>Bộ 4 frame đã chọn</h3>
+                    <h3>Bộ {selectionLimit} frame đã chọn</h3>
                   </div>
-                  <strong>{orderedSelectedFrames.length}/4 frame đã chọn</strong>
+                  <strong>{orderedSelectedFrames.length}/{selectionLimit} frame đã chọn</strong>
                 </div>
                 <div className="studio-selected-set-grid">
-                  {Array.from({ length: 4 }, (_, index) => {
+                  {Array.from({ length: selectionLimit }, (_, index) => {
                     const frame = orderedSelectedFrames[index];
                     return frame ? (
                       <article className={targetSlotIndex === index ? 'studio-selected-slot is-target' : 'studio-selected-slot'} key={frame.original_frame_id}>
@@ -415,7 +417,7 @@ export function VideoStudioModal({
                           <span>Slot {index + 1} · frame {frame.original_frame_id}</span>
                           <small>{formatMs(frame.timestamp_ms)} · {frame.objects.length > 0 ? frame.objects.map((object) => object.label).join(', ') : 'Không có object'}</small>
                         </button>
-                        <button type="button" className="studio-selected-slot-remove" onClick={() => removeSelectedFrame(index)} aria-label={`Xóa frame ${frame.original_frame_id} khỏi bộ 4`}>×</button>
+                        <button type="button" className="studio-selected-slot-remove" onClick={() => removeSelectedFrame(index)} aria-label={`Xóa frame ${frame.original_frame_id} khỏi bộ ${selectionLimit}`}>×</button>
                       </article>
                     ) : (
                       <div className={targetSlotIndex === index ? 'studio-selected-slot is-empty is-target' : 'studio-selected-slot is-empty'} key={`empty-${index}`}>
@@ -427,7 +429,7 @@ export function VideoStudioModal({
                 </div>
                 <div className="studio-selected-set-actions">
                   <button type="button" className="primary-button" onClick={confirmSelection} disabled={!selectionIsValid}>
-                    Xác nhận bộ 4 frame
+                    Xác nhận bộ {selectionLimit} frame
                   </button>
                 </div>
                 {selectionError && <p className="inline-error" role="alert">{selectionError}</p>}
@@ -497,11 +499,11 @@ export function VideoStudioModal({
                     {showBoxes ? 'Ẩn bounding box' : 'Hiện bounding box'}
                   </button>
                   {isMultiSelect ? (
-                    <button type="button" className="primary-button" onClick={addCurrentFrameToSelection} disabled={selectedFrames.length >= 4 && targetSlotIndex === null}>
+                    <button type="button" className="primary-button" onClick={addCurrentFrameToSelection} disabled={selectedFrames.length >= selectionLimit && targetSlotIndex === null}>
                       {targetSlotIndex !== null
                         ? `Thay frame vào slot ${targetSlotIndex + 1}`
-                        : selectedFrames.length < 4
-                          ? 'Thêm frame đang xem vào bộ 4'
+                        : selectedFrames.length < selectionLimit
+                          ? `Thêm frame đang xem vào bộ ${selectionLimit}`
                           : 'Chọn slot để thay frame'}
                     </button>
                   ) : (

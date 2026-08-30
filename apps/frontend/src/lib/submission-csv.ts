@@ -1,6 +1,7 @@
 import type { QualificationAnswer, QualificationTask } from './contracts';
 
 export const MAX_CSV_ROWS = 100;
+// Qualification rules: Q&A answers are limited to 100 characters.
 export const MAX_QA_ANSWER_CHARACTERS = 100;
 
 export class CsvExportError extends Error {
@@ -42,8 +43,8 @@ export function buildSubmissionCsv(
         throw new CsvExportError('Đáp án không đúng format Q&A.');
       }
       validateFrameId(answer.frame_id);
-      const text = normalizeAnswer(answer.answer);
-      if (!text) {
+      const text = answer.answer;
+      if (!text.trim()) {
         throw new CsvExportError('Q&A phải có câu trả lời.');
       }
       if (Array.from(text).length > MAX_QA_ANSWER_CHARACTERS) {
@@ -67,10 +68,6 @@ export function buildSubmissionCsv(
   return `${rows.join('\r\n')}\r\n`;
 }
 
-function normalizeAnswer(value: string): string {
-  return value.trim();
-}
-
 function validateFrameId(value: number): void {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new CsvExportError('Frame ID phải là số nguyên không âm.');
@@ -82,11 +79,8 @@ function videoFilename(value: string): string {
 }
 
 function csvCell(value: string | number): string {
-  const rawText = String(value);
-  const text = /^[=+\-@]/.test(rawText) ? `'${rawText}` : rawText;
-  // Quote whitespace-bearing text as well as delimiter characters. The
-  // competition accepts unquoted simple answers, but quoting these values
-  // keeps the answer in one field for spreadsheet and CSV readers that
-  // handle free-form text inconsistently.
-  return /[",\r\n\s]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+  const text = String(value);
+  // Preserve answer content exactly. Quotes are required only for CSV special
+  // characters; leading/trailing whitespace must not be trimmed or changed.
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }

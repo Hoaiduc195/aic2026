@@ -17,6 +17,14 @@ import {
   formatMs,
 } from '../../lib/workbench-model';
 import { queueKey } from '../../lib/vqa-queue-model';
+import {
+  MAX_NEARBY_FRAME_COUNT,
+  MAX_NEARBY_FRAME_STEP,
+  MIN_NEARBY_FRAME_COUNT,
+  MIN_NEARBY_FRAME_STEP,
+  parseNearbyFrameCount,
+  parseNearbyFrameStep,
+} from '../../lib/nearby-frame-model';
 
 interface Props {
   frames: readonly FrameCandidate[];
@@ -29,7 +37,6 @@ interface Props {
   onMoveToTop?: (frame: FrameCandidate) => void;
   onMoveToBottom?: (frame: FrameCandidate) => void;
   onQueryFrame?: (frame: FrameCandidate) => void;
-  onExportTrakeCsv?: () => void;
   trakeFrameSelections?: Readonly<Record<string, readonly FrameCandidate[]>>;
   queueKeys?: ReadonlySet<string>;
   queueCount?: number;
@@ -42,6 +49,14 @@ interface Props {
   onStopBatchVqa?: () => void;
   batchVqaLoading?: boolean;
   batchVqaProgress?: { completed: number; total: number; failed: number } | null;
+  nearbyFrameCount?: string;
+  nearbyFrameStep?: string;
+  nearbyFrameLoading?: boolean;
+  nearbyFrameError?: string | null;
+  nearbyLoadedCount?: number;
+  onNearbyFrameCountChange?: (value: string) => void;
+  onNearbyFrameStepChange?: (value: string) => void;
+  onAddNearbyFrames?: () => void;
 }
 
 interface PendingPointerDrag {
@@ -64,7 +79,6 @@ export function FrameGrid({
   onMoveToTop,
   onMoveToBottom,
   onQueryFrame,
-  onExportTrakeCsv,
   trakeFrameSelections = {},
   queueKeys = new Set<string>(),
   queueCount = 0,
@@ -77,6 +91,14 @@ export function FrameGrid({
   onStopBatchVqa,
   batchVqaLoading = false,
   batchVqaProgress = null,
+  nearbyFrameCount,
+  nearbyFrameStep,
+  nearbyFrameLoading = false,
+  nearbyFrameError = null,
+  nearbyLoadedCount = 0,
+  onNearbyFrameCountChange,
+  onNearbyFrameStepChange,
+  onAddNearbyFrames,
 }: Props) {
   const cardRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const listRef = useRef<HTMLOListElement | null>(null);
@@ -315,7 +337,7 @@ export function FrameGrid({
           <span className="result-summary">
             {loading ? 'Đang tìm' : searched ? `${frames.length} frame` : 'Chưa tìm kiếm'}
           </span>
-          {(onFillQueue || onExportTrakeCsv) && searched && (
+          {(onFillQueue || onAddNearbyFrames) && searched && (
             <div className={onRunBatchVqa ? 'vqa-result-toolbar' : 'result-queue-toolbar'} aria-label="Công cụ hàng đợi">
               {onFillQueue && (
                 <button
@@ -357,20 +379,52 @@ export function FrameGrid({
                   )}
                 </>
               )}
-              {onExportTrakeCsv && (
-                <button
-                  type="button"
-                  className="primary-button"
-                  disabled={frames.length === 0}
-                  onClick={onExportTrakeCsv}
-                >
-                  Xuất CSV top 100
-                </button>
+              {onAddNearbyFrames && nearbyFrameCount !== undefined && nearbyFrameStep !== undefined && (
+                <div className="nearby-queue-controls" aria-label="Thêm frame lân cận Top 1">
+                  <label>
+                    <span>Số frame lân cận</span>
+                    <input
+                      aria-label="Số frame lân cận thêm vào queue"
+                      type="number"
+                      min={MIN_NEARBY_FRAME_COUNT}
+                      max={MAX_NEARBY_FRAME_COUNT}
+                      step="1"
+                      value={nearbyFrameCount}
+                      onChange={(event) => onNearbyFrameCountChange?.(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>Bước frame</span>
+                    <input
+                      aria-label="Khoảng cách frame lân cận"
+                      type="number"
+                      min={MIN_NEARBY_FRAME_STEP}
+                      max={MAX_NEARBY_FRAME_STEP}
+                      step="1"
+                      value={nearbyFrameStep}
+                      onChange={(event) => onNearbyFrameStepChange?.(event.target.value)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={frames.length === 0
+                      || nearbyFrameLoading
+                      || parseNearbyFrameCount(nearbyFrameCount) === null
+                      || parseNearbyFrameStep(nearbyFrameStep) === null}
+                    onClick={onAddNearbyFrames}
+                  >
+                    {nearbyFrameLoading ? 'Đang thêm…' : 'Thêm quanh Top 1'}
+                  </button>
+                  {nearbyLoadedCount > 0 && <span className="nearby-queue-count">{nearbyLoadedCount} frame gần nhất</span>}
+                </div>
               )}
             </div>
           )}
         </div>
       </header>
+
+      {nearbyFrameError && <p className="inline-error" role="alert">{nearbyFrameError}</p>}
 
       {skipped > 0 && (
         <p className="inline-warning" role="status">

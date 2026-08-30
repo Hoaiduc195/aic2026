@@ -59,7 +59,7 @@ function parseAnswerRow(cells: readonly string[], task: QualificationTask): {
   readonly answer: QualificationAnswer;
   readonly frame_refs: readonly ImportedFrameRef[];
 } {
-  const videoId = cells[0]?.trim() ?? '';
+  const videoId = (cells[0]?.trim() ?? '').replace(/\.mp4$/i, '');
   if (!SAFE_VIDEO_ID.test(videoId)) throw new Error('video_id không hợp lệ.');
 
   if (task === 'textual_kis') {
@@ -74,8 +74,8 @@ function parseAnswerRow(cells: readonly string[], task: QualificationTask): {
   if (task === 'qa') {
     if (cells.length !== 3) throw new Error('Q&A cần đúng 3 cột.');
     const frameId = parseFrameId(cells[1]);
-    const answer = cells[2].trim();
-    if (!answer) throw new Error('Q&A phải có câu trả lời.');
+    const answer = cells[2] ?? '';
+    if (!answer.trim()) throw new Error('Q&A phải có câu trả lời.');
     if (Array.from(answer).length > MAX_QA_ANSWER_CHARACTERS) {
       throw new Error(`Câu trả lời Q&A không được vượt quá ${MAX_QA_ANSWER_CHARACTERS} ký tự.`);
     }

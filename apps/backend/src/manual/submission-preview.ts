@@ -57,23 +57,24 @@ function validateAnswer(task: TaskType, answer: Answer, index: number): Record<s
 }
 
 function csvCell(value: unknown): string {
-  const rawValue = String(value);
-  const stringValue = /^[=+\-@]/.test(rawValue) ? `'${rawValue}` : rawValue;
-  // Quote whitespace-bearing text too, so free-form answers remain one field
-  // in spreadsheet and CSV readers with less capable parsing.
-  return /[",\r\n\s]/.test(stringValue)
+  const stringValue = String(value);
+  return /[",\r\n]/.test(stringValue)
     ? `"${stringValue.replaceAll('"', '""')}"`
     : stringValue;
 }
 
+function videoFilename(value: unknown): string {
+  return String(value).replace(/\.mp4$/i, '');
+}
+
 function csv(task: TaskType, answers: readonly Record<string, unknown>[]): string {
   if (task === 'textual_kis') {
-    return `${answers.map((answer) => `${csvCell(answer.video_id)},${csvCell(answer.frame_id)}`).join('\r\n')}\r\n`;
+    return `${answers.map((answer) => `${csvCell(videoFilename(answer.video_id))},${csvCell(answer.frame_id)}`).join('\r\n')}\r\n`;
   }
   if (task === 'vqa') {
-    return `${answers.map((answer) => `${csvCell(answer.video_id)},${csvCell(answer.frame_id)},${csvCell(answer.answer)}`).join('\r\n')}\r\n`;
+    return `${answers.map((answer) => `${csvCell(videoFilename(answer.video_id))},${csvCell(answer.frame_id)},${csvCell(answer.answer)}`).join('\r\n')}\r\n`;
   }
-  return `${answers.map((answer) => [answer.video_id, ...(answer.frame_ids as number[])].map(csvCell).join(',')).join('\r\n')}\r\n`;
+  return `${answers.map((answer) => [videoFilename(answer.video_id), ...(answer.frame_ids as number[])].map(csvCell).join(',')).join('\r\n')}\r\n`;
 }
 
 export function parseSubmissionInput(value: unknown): SubmissionInput {

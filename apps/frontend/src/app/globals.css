@@ -878,6 +878,40 @@ textarea:focus-visible,
   gap: 6px;
 }
 
+.nearby-queue-controls {
+  display: inline-flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-left: 6px;
+  border-left: 1px solid var(--line);
+}
+
+.nearby-queue-controls label {
+  display: grid;
+  gap: 2px;
+  color: var(--ink-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.nearby-queue-controls input {
+  width: 64px;
+  min-height: 31px;
+  padding: 0 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+.nearby-queue-count {
+  align-self: center;
+  color: var(--ink-muted);
+  font-size: 10px;
+}
+
 .batch-k-control {
   display: inline-flex;
   align-items: center;
@@ -1638,9 +1672,33 @@ textarea:focus-visible,
   font-weight: 700;
 }
 
+.answer-drag-handle {
+  cursor: grab;
+  user-select: none;
+}
+
+.answer-drag-handle:active {
+  cursor: grabbing;
+}
+
+.answer-row.is-dragging {
+  opacity: 0.45;
+}
+
 .answer-row strong,
 .answer-row small {
   display: block;
+}
+
+.answer-edit-input {
+  width: 100%;
+  min-height: 32px;
+  margin-top: 7px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink);
 }
 
 .answer-row strong {
@@ -1722,6 +1780,32 @@ textarea:focus-visible,
   display: flex;
   gap: 6px;
   margin-left: auto;
+}
+
+.csv-filename-field {
+  flex: 1 0 100%;
+  display: grid;
+  gap: 5px;
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.csv-filename-field > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.csv-filename-field input {
+  min-width: 0;
+  flex: 1;
+  min-height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink);
 }
 
 .answer-sync-actions button,

@@ -9,7 +9,6 @@ import type {
   SubmissionPreview,
 } from '../../lib/contracts';
 import { buildSubmissionCsv } from '../../lib/submission-csv';
-import { buildSubmission } from '../../lib/workbench-model';
 import {
   incompleteTrakeQueueCount,
   isCompleteTrakeQueueItem,
@@ -30,12 +29,14 @@ interface Props {
   vqaQueue?: readonly VqaQueueItem[];
   onRemoveVqaQueueItem?: (key: string) => void;
   onMoveVqaQueueItem?: (from: number, to: number) => void;
-  onApplyAnswerToPending?: (answer: string) => void;
+  onUpdateVqaAnswer?: (key: string, answer: string) => void;
+  onApplyAnswerToAll?: (answer: string) => void;
   trakeQueue?: readonly TrakeQueueItem[];
   onRemoveTrakeQueueItem?: (key: string) => void;
   onMoveTrakeQueueItem?: (from: number, to: number) => void;
   onCompleteMissingTrakeQueue?: () => void;
   trakeQueueLoading?: boolean;
+  trakeFrameCount?: number;
 }
 
 export function AnswerDrawer({
@@ -51,17 +52,19 @@ export function AnswerDrawer({
   vqaQueue = [],
   onRemoveVqaQueueItem,
   onMoveVqaQueueItem,
-  onApplyAnswerToPending,
+  onUpdateVqaAnswer,
+  onApplyAnswerToAll,
   trakeQueue = [],
   onRemoveTrakeQueueItem,
   onMoveTrakeQueueItem,
   onCompleteMissingTrakeQueue,
   trakeQueueLoading = false,
+  trakeFrameCount = 4,
 }: Props) {
-  const [copied, setCopied] = useState(false);
-  const [exported, setExported] = useState(false);
   const [csvExported, setCsvExported] = useState(false);
+  const [csvFilename, setCsvFilename] = useState(() => safeFilenamePart(queryId));
   const [bulkAnswer, setBulkAnswer] = useState('');
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [revision, setRevision] = useState<number | null>(null);
@@ -69,26 +72,36 @@ export function AnswerDrawer({
   const [actionError, setActionError] = useState<string | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
+  const onCloseRef = useRef(onClose);
   const isVqa = task === 'qa';
   const isTrake = task === 'trake';
   const queueCount = isVqa ? vqaQueue.length : isTrake ? trakeQueue.length : answers.length;
-  const pendingCount = isVqa ? vqaQueue.filter((item) => item.status !== 'answered').length : 0;
-  const missingTrakeCount = isTrake ? incompleteTrakeQueueCount(trakeQueue) : 0;
-  const completeTrakeCount = isTrake ? trakeQueue.filter(isCompleteTrakeQueueItem).length : 0;
+  const missingTrakeCount = isTrake ? incompleteTrakeQueueCount(trakeQueue, trakeFrameCount) : 0;
+  const completeTrakeCount = isTrake
+    ? trakeQueue.filter((item) => isCompleteTrakeQueueItem(item, trakeFrameCount)).length
+    : 0;
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    setCsvFilename(safeFilenamePart(queryId));
+  }, [queryId]);
 
   useEffect(() => {
     if (!open) return;
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeButtonRef.current?.focus();
     function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') onCloseRef.current();
     }
     window.addEventListener('keydown', closeOnEscape);
     return () => {
       window.removeEventListener('keydown', closeOnEscape);
       previouslyFocused?.focus();
     };
-  }, [onClose, open]);
+  }, [open]);
 
   function trapFocus(event: React.KeyboardEvent<HTMLElement>) {
     if (event.key !== 'Tab') return;
@@ -109,43 +122,15 @@ export function AnswerDrawer({
 
   if (!open) return null;
 
-  async function copyPayload() {
-    const payload = buildSubmission(task, queryId, answers);
-    if (!payload || !navigator.clipboard) return;
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      setActionError('Không thể sao chép JSON.');
-    }
-  }
-
-  function exportPayload() {
-    const payload = buildSubmission(task, queryId, answers);
-    if (!payload) return;
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `aic-${safeFilenamePart(queryId)}-${task}.json`;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-    setExported(true);
-    window.setTimeout(() => setExported(false), 1500);
-  }
-
   function exportCsv() {
     if (!answers.length) return;
     try {
       const csv = buildSubmissionCsv(task, answers);
-      const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `aic-${safeFilenamePart(queryId)}-${task}.csv`;
+      link.download = `${safeFilenamePart(csvFilename.replace(/\.csv$/i, ''))}.csv`;
       document.body.append(link);
       link.click();
       link.remove();
@@ -160,9 +145,15 @@ export function AnswerDrawer({
 
   function applyBulkAnswer() {
     const normalized = bulkAnswer.trim();
-    if (!normalized || !onApplyAnswerToPending || pendingCount === 0) return;
-    onApplyAnswerToPending(normalized);
+    if (!normalized || !onApplyAnswerToAll || vqaQueue.length === 0) return;
+    onApplyAnswerToAll(normalized);
     setBulkAnswer('');
+  }
+
+  function dropQueueItem(to: number, move?: (from: number, to: number) => void) {
+    if (draggedIndex === null) return;
+    move?.(draggedIndex, to);
+    setDraggedIndex(null);
   }
 
   async function saveAnswers() {
@@ -212,8 +203,19 @@ export function AnswerDrawer({
         <div className="answer-list">
           {queueCount === 0 && <p className="drawer-empty">Chưa có đáp án.</p>}
           {isVqa ? vqaQueue.map((item, index) => (
-            <article className={`answer-row answer-row--${item.status}`} key={item.key}>
-              <span className="answer-rank">{String(index + 1).padStart(2, '0')}</span>
+            <article
+              className={`answer-row answer-row--${item.status}${draggedIndex === index ? ' is-dragging' : ''}`}
+              key={item.key}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={() => dropQueueItem(index, onMoveVqaQueueItem)}
+            >
+              <span
+                className="answer-rank answer-drag-handle"
+                draggable
+                title="Kéo để đổi thứ hạng"
+                onDragStart={() => setDraggedIndex(index)}
+                onDragEnd={() => setDraggedIndex(null)}
+              >{String(index + 1).padStart(2, '0')}</span>
               <div>
                 <strong>{item.video_id} · frame {item.frame_id}</strong>
                 <small>
@@ -221,6 +223,14 @@ export function AnswerDrawer({
                     ? item.answer ?? 'Không biết'
                     : item.status === 'error' ? `Lỗi: ${item.error}` : 'Đang chờ answer'}
                 </small>
+                <input
+                  className="answer-edit-input"
+                  aria-label={`Đáp án VQA frame ${item.frame_id}`}
+                  value={item.answer ?? ''}
+                  maxLength={100}
+                  placeholder="Nhập hoặc chỉnh đáp án…"
+                  onChange={(event) => onUpdateVqaAnswer?.(item.key, event.target.value)}
+                />
               </div>
               <div className="answer-actions">
                 <button type="button" aria-label={`Đưa frame ${item.frame_id} lên`} disabled={index === 0} onClick={() => onMoveVqaQueueItem?.(index, index - 1)}>↑</button>
@@ -229,13 +239,24 @@ export function AnswerDrawer({
               </div>
             </article>
           )) : isTrake ? trakeQueue.map((item, index) => {
-            const complete = isCompleteTrakeQueueItem(item);
+            const complete = isCompleteTrakeQueueItem(item, trakeFrameCount);
             const frameLabel = complete
               ? item.frames.map((frame) => frame.original_frame_id).join(' → ')
-              : 'Chưa chọn đủ 4 frame';
+              : `Chưa chọn đủ ${trakeFrameCount} frame`;
             return (
-              <article className={`answer-row answer-row--${complete ? 'complete' : 'missing'}`} key={item.key}>
-                <span className="answer-rank">{String(index + 1).padStart(2, '0')}</span>
+              <article
+                className={`answer-row answer-row--${complete ? 'complete' : 'missing'}${draggedIndex === index ? ' is-dragging' : ''}`}
+                key={item.key}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={() => dropQueueItem(index, onMoveTrakeQueueItem)}
+              >
+                <span
+                  className="answer-rank answer-drag-handle"
+                  draggable
+                  title="Kéo để đổi thứ hạng"
+                  onDragStart={() => setDraggedIndex(index)}
+                  onDragEnd={() => setDraggedIndex(null)}
+                >{String(index + 1).padStart(2, '0')}</span>
                 <div>
                   <strong>{item.anchor.video_id} · anchor frame {item.anchor.original_frame_id}</strong>
                   <small>{complete ? `Frame ${frameLabel}` : frameLabel}</small>
@@ -248,8 +269,19 @@ export function AnswerDrawer({
               </article>
             );
           }) : answers.map((answer, index) => (
-            <article className="answer-row" key={`${index}-${answer.video_id}`}>
-              <span className="answer-rank">{String(index + 1).padStart(2, '0')}</span>
+            <article
+              className={`answer-row${draggedIndex === index ? ' is-dragging' : ''}`}
+              key={`${index}-${answer.video_id}`}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={() => dropQueueItem(index, onMove)}
+            >
+              <span
+                className="answer-rank answer-drag-handle"
+                draggable
+                title="Kéo để đổi thứ hạng"
+                onDragStart={() => setDraggedIndex(index)}
+                onDragEnd={() => setDraggedIndex(null)}
+              >{String(index + 1).padStart(2, '0')}</span>
               <div>
                 <strong>{answerLabel(answer)}</strong>
                 {'answer' in answer && <small>{answer.answer}</small>}
@@ -261,32 +293,33 @@ export function AnswerDrawer({
               </div>
             </article>
           ))}
-          {isVqa && onApplyAnswerToPending && (
+          {isVqa && onApplyAnswerToAll && (
             <div className="bulk-answer-panel">
-              <label htmlFor="bulk-vqa-answer">Áp dụng cùng answer cho pending</label>
+              <label htmlFor="bulk-vqa-answer">Một đáp án cho tất cả frame</label>
               <div>
                 <input
                   id="bulk-vqa-answer"
                   value={bulkAnswer}
+                  maxLength={100}
                   onChange={(event) => setBulkAnswer(event.target.value)}
                   placeholder="Nhập câu trả lời chung"
                 />
-                <button type="button" className="secondary-button" disabled={!bulkAnswer.trim() || pendingCount === 0} onClick={applyBulkAnswer}>
-                  Áp dụng ({pendingCount})
+                <button type="button" className="secondary-button" disabled={!bulkAnswer.trim() || vqaQueue.length === 0} onClick={applyBulkAnswer}>
+                  Áp dụng tất cả ({vqaQueue.length})
                 </button>
               </div>
             </div>
           )}
           {isTrake && onCompleteMissingTrakeQueue && missingTrakeCount > 0 && (
             <div className="bulk-answer-panel">
-              <p>Đang thiếu 4 frame ở {missingTrakeCount} câu trả lời TRAKE.</p>
+              <p>Đang thiếu {trakeFrameCount} frame ở {missingTrakeCount} câu trả lời TRAKE.</p>
               <button
                 type="button"
                 className="secondary-button full-width"
                 disabled={trakeQueueLoading}
                 onClick={onCompleteMissingTrakeQueue}
               >
-                {trakeQueueLoading ? 'Đang chọn frame…' : 'Chọn 4 frame cho các câu trả lời đang thiếu'}
+                {trakeQueueLoading ? 'Đang chọn frame…' : `Chọn ${trakeFrameCount} frame cho các câu trả lời đang thiếu`}
               </button>
             </div>
           )}
@@ -302,14 +335,21 @@ export function AnswerDrawer({
               {previewing ? 'Đang tạo…' : 'Tạo preview'}
             </button>
           </div>
-          <button type="button" className="secondary-button" disabled={!answers.length} onClick={copyPayload}>
-            {copied ? 'Đã sao chép' : 'Sao chép JSON'}
-          </button>
-          <button type="button" className="secondary-button" disabled={!answers.length} onClick={exportCsv}>
+          <label className="csv-filename-field">
+            <span>Tên file CSV (phải khớp tên truy vấn)</span>
+            <div>
+              <input
+                aria-label="Tên file CSV"
+                value={csvFilename}
+                maxLength={100}
+                placeholder="query-p2-1-kis"
+                onChange={(event) => setCsvFilename(event.target.value)}
+              />
+              <span>.csv</span>
+            </div>
+          </label>
+          <button type="button" className="primary-button" disabled={!answers.length || !csvFilename.trim()} onClick={exportCsv}>
             {csvExported ? 'Đã export CSV' : 'Export CSV'}
-          </button>
-          <button type="button" className="primary-button" disabled={!answers.length} onClick={exportPayload}>
-            {exported ? 'Đã export' : 'Export JSON'}
           </button>
         </footer>
       </aside>

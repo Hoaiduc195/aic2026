@@ -13,7 +13,7 @@ describe('submission preview', () => {
 
     expect(preview.submittable).toBe(false);
     expect(preview.answer_count).toBe(1);
-    expect(preview.csv).toBe('video-1,42,"màu đỏ"\r\n');
+    expect(preview.csv).toBe('video-1,42,màu đỏ\r\n');
   });
 
   it('quotes CSV values and preserves TRAKE frame order', () => {
@@ -26,12 +26,20 @@ describe('submission preview', () => {
     expect(preview.csv).toContain('"video,2",10,20,30');
   });
 
-  it('neutralizes spreadsheet formulas in free-form VQA answers', () => {
+  it('removes an .mp4 suffix from exported video names', () => {
+    const preview = buildSubmissionPreview({
+      query_id: 'q-video', task: 'textual_kis',
+      answers: [{ video_id: 'L01_V028.mp4', frame_id: 3450 }],
+    });
+    expect(preview.csv).toBe('L01_V028,3450\r\n');
+  });
+
+  it('preserves free-form VQA answers exactly', () => {
     const preview = buildSubmissionPreview({
       query_id: 'q-formula', task: 'vqa',
       answers: [{ video_id: 'video-1', frame_id: 1, answer: '=HYPERLINK("bad")' }],
     });
-    expect(preview.csv).toContain('"\'=HYPERLINK(""bad"")"');
+    expect(preview.csv).toContain('"=HYPERLINK(""bad"")"');
   });
 
   it('rejects task-mismatched or excessive answers', () => {

@@ -16,17 +16,17 @@ describe('buildSubmissionCsv', () => {
     ])).toBe('video-01,12,"Có, ""đúng""\nnhư vậy"\r\n');
   });
 
-  it('quotes answers containing spaces so each answer remains one CSV field', () => {
+  it('keeps simple answers unquoted and preserves their whitespace', () => {
     expect(buildSubmissionCsv('qa', [
       { video_id: 'video-01', frame_id: 12, answer: 'Màu đỏ' },
       { video_id: 'video-02', frame_id: 34, answer: 'Năm người' },
-    ])).toBe('video-01,12,"Màu đỏ"\r\nvideo-02,34,"Năm người"\r\n');
+    ])).toBe('video-01,12,Màu đỏ\r\nvideo-02,34,Năm người\r\n');
   });
 
-  it('neutralizes spreadsheet formulas in free-form answers', () => {
+  it('preserves answer text exactly instead of altering formulas', () => {
     expect(buildSubmissionCsv('qa', [
       { video_id: 'video-01', frame_id: 12, answer: '=HYPERLINK("bad")' },
-    ])).toBe('video-01,12,"\'=HYPERLINK(""bad"")"\r\n');
+    ])).toBe('video-01,12,"=HYPERLINK(""bad"")"\r\n');
   });
 
   it('exports TRAKE frame ids in the supplied temporal order', () => {
@@ -35,7 +35,10 @@ describe('buildSubmissionCsv', () => {
     ])).toBe('video-01,12,18,25\r\n');
   });
 
-  it('rejects a Q&A answer over the 100-character limit', () => {
+  it('accepts a Q&A answer up to 100 characters and rejects longer text', () => {
+    expect(buildSubmissionCsv('qa', [
+      { video_id: 'video-01', frame_id: 12, answer: 'a'.repeat(100) },
+    ])).toContain('a'.repeat(100));
     expect(() => buildSubmissionCsv('qa', [
       { video_id: 'video-01', frame_id: 12, answer: 'a'.repeat(101) },
     ])).toThrowError(CsvExportError);

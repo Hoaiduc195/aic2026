@@ -221,7 +221,7 @@ export function mergeNearbyFrameCandidates(
 ): FrameCandidate[] {
   const existingKeys = new Set(current.map(frameIdentity));
   const known = new Set(existingKeys);
-  const nearbyCandidates = nearby.map(nearbyFrameToCandidate);
+  const nearbyCandidates = orderNearbyFramesByDistance(nearby, centerFrame).map(nearbyFrameToCandidate);
   const additions = nearbyCandidates.filter((candidate) => {
     if (known.has(candidate.result_key)) return false;
     known.add(candidate.result_key);
@@ -241,6 +241,23 @@ export function mergeNearbyFrameCandidates(
     ...additions,
     ...current.slice(insertionIndex),
   ];
+}
+
+/** Orders a temporal window from the center outward, alternating earlier and later frames on ties. */
+export function orderNearbyFramesByDistance<T extends Pick<VideoFrame, 'video_id' | 'original_frame_id'>>(
+  frames: readonly T[],
+  centerFrame?: Pick<FrameCandidate, 'video_id' | 'original_frame_id'>,
+): T[] {
+  if (!centerFrame) return [...frames];
+  return [...frames].sort((left, right) => {
+    const leftDistance = left.video_id === centerFrame.video_id
+      ? Math.abs(left.original_frame_id - centerFrame.original_frame_id)
+      : Number.POSITIVE_INFINITY;
+    const rightDistance = right.video_id === centerFrame.video_id
+      ? Math.abs(right.original_frame_id - centerFrame.original_frame_id)
+      : Number.POSITIVE_INFINITY;
+    return leftDistance - rightDistance || left.original_frame_id - right.original_frame_id;
+  });
 }
 
 function frameIdentity(frame: Pick<FrameCandidate, 'video_id' | 'original_frame_id'>): string {
@@ -373,8 +390,11 @@ export function groupEvidence(evidence: readonly SearchEvidence[], frameTimestam
 
 export const TRAKE_FRAME_COUNT = 4;
 
-export function validateTrakeSequence(frames: readonly FrameCandidate[]): boolean {
-  if (frames.length !== TRAKE_FRAME_COUNT) return false;
+export function validateTrakeSequence(
+  frames: readonly FrameCandidate[],
+  requiredFrameCount = TRAKE_FRAME_COUNT,
+): boolean {
+  if (!Number.isSafeInteger(requiredFrameCount) || requiredFrameCount < 1 || frames.length !== requiredFrameCount) return false;
   const videoId = frames[0].video_id;
   return frames.every((frame, index) => (
     frame.video_id === videoId
@@ -383,14 +403,15 @@ export function validateTrakeSequence(frames: readonly FrameCandidate[]): boolea
   ));
 }
 
-export function emptyTrakeFrameSlots(): Array<FrameCandidate | null> {
-  return Array.from({ length: TRAKE_FRAME_COUNT }, () => null);
+export function emptyTrakeFrameSlots(frameCount = TRAKE_FRAME_COUNT): Array<FrameCandidate | null> {
+  return Array.from({ length: Math.max(1, Math.floor(frameCount)) }, () => null);
 }
 
 export function normalizeTrakeFrameSlots(
   frames: readonly (FrameCandidate | null)[],
+  frameCount = TRAKE_FRAME_COUNT,
 ): Array<FrameCandidate | null> {
-  return Array.from({ length: TRAKE_FRAME_COUNT }, (_, index) => frames[index] ?? null);
+  return Array.from({ length: Math.max(1, Math.floor(frameCount)) }, (_, index) => frames[index] ?? null);
 }
 
 export function sortTrakeFrames(frames: readonly FrameCandidate[]): FrameCandidate[] {
@@ -400,12 +421,13 @@ export function sortTrakeFrames(frames: readonly FrameCandidate[]): FrameCandida
 }
 
 /**
- * Automatically selects 4 chronological frames for TRAKE from available video frames or studio frames.
+ * Automatically selects the requested number of chronological TRAKE frames.
  */
 export function autoSelectNearbyTrakeFrames(
   anchor: FrameCandidate,
   availableFrames: readonly (StudioFrame | FrameCandidate)[],
   asrSpans: readonly StudioAsrSpan[] = [],
+  frameCount = TRAKE_FRAME_COUNT,
 ): FrameCandidate[] {
   const converted: FrameCandidate[] = availableFrames
     .filter((frame) => frame.video_id === anchor.video_id)
@@ -423,11 +445,11 @@ export function autoSelectNearbyTrakeFrames(
 
   const sorted = sortTrakeFrames(Array.from(uniqueMap.values()));
 
-  if (sorted.length >= TRAKE_FRAME_COUNT) {
+  if (sorted.length >= frameCount) {
     const anchorIdx = sorted.findIndex((frame) => frame.original_frame_id === anchor.original_frame_id);
-    const startIdx = Math.max(0, Math.min(anchorIdx >= 0 ? anchorIdx : 0, sorted.length - TRAKE_FRAME_COUNT));
-    const selected = sorted.slice(startIdx, startIdx + TRAKE_FRAME_COUNT);
-    if (validateTrakeSequence(selected)) {
+    const startIdx = Math.max(0, Math.min(anchorIdx >= 0 ? anchorIdx : 0, sorted.length - frameCount));
+    const selected = sorted.slice(startIdx, startIdx + frameCount);
+    if (validateTrakeSequence(selected, frameCount)) {
       return selected;
     }
   }
@@ -441,6 +463,7 @@ export function autoSelectNearbyTrakeFrames(
 export function autoBuildTrakeAnswers(
   rankedFrames: readonly FrameCandidate[],
   maxCount = 100,
+  frameCount = TRAKE_FRAME_COUNT,
 ): TrakeAnswer[] {
   const byVideo = new Map<string, FrameCandidate[]>();
   for (const frame of rankedFrames) {
@@ -458,13 +481,13 @@ export function autoBuildTrakeAnswers(
     ));
 
     let frameIds: number[];
-    if (unique.length >= TRAKE_FRAME_COUNT) {
-      frameIds = unique.slice(0, TRAKE_FRAME_COUNT).map((frame) => frame.original_frame_id);
+    if (unique.length >= frameCount) {
+      frameIds = unique.slice(0, frameCount).map((frame) => frame.original_frame_id);
     } else {
       frameIds = [];
     }
 
-    if (frameIds.length === TRAKE_FRAME_COUNT) {
+    if (frameIds.length === frameCount) {
       answers.push({
         video_id: videoId,
         frame_ids: frameIds,

@@ -249,7 +249,7 @@ describe('qualification frame-first workbench', () => {
     }));
   });
 
-  it('loads and exports a selectable nearby frame window around the current result', async () => {
+  it('adds a compact, configurable nearby window to the queue from Top 1', async () => {
     const user = userEvent.setup();
     const loadNearbyFrames = vi.fn(async (
       videoId: string,
@@ -281,14 +281,14 @@ describe('qualification frame-first workbench', () => {
     await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
     await user.click(screen.getByRole('button', { name: 'Tìm frame' }));
 
-    const frameCount = await screen.findByLabelText('Top-K frame bao quát');
+    const frameCount = await screen.findByLabelText('Số frame lân cận thêm vào queue');
     expect(frameCount).toHaveValue(4);
     await user.clear(frameCount);
     await user.type(frameCount, '6');
-    const frameStep = screen.getByLabelText('Khoảng cách giữa các frame (frame nguồn)');
+    const frameStep = screen.getByLabelText('Khoảng cách frame lân cận');
     await user.clear(frameStep);
     await user.type(frameStep, '90');
-    await user.click(screen.getByRole('button', { name: 'Tải frame lân cận' }));
+    await user.click(screen.getByRole('button', { name: 'Thêm quanh Top 1' }));
 
     await waitFor(() => expect(loadNearbyFrames).toHaveBeenCalledWith('video_01', 385, 6, 90));
     const resultList = screen.getByRole('list', { name: 'Danh sách kết quả frame' });
@@ -300,29 +300,14 @@ describe('qualification frame-first workbench', () => {
       'Chọn keyframe video_01 · 4 · source frame 350',
     ]);
 
-    const nearbyHeading = screen.getByRole('heading', { name: 'Frame lân cận' });
-    const resultHeading = screen.getByRole('heading', { name: 'Kết quả frame' });
-    expect(nearbyHeading.compareDocumentPosition(resultHeading)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-
-    const createObjectURL = vi.fn((_blob: Blob) => 'blob:nearby-csv');
-    const revokeObjectURL = vi.fn();
-    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
-    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
-    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
-    await user.click(screen.getByRole('button', { name: 'Xuất CSV frame lân cận' }));
-
-    const blob = createObjectURL.mock.calls[0]?.[0] as Blob;
-    const blobText = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result));
-      reader.onerror = () => reject(reader.error);
-      reader.readAsText(blob);
-    });
-    expect(blobText).toContain('video_id,original_frame_id,keyframe_no,timestamp_ms,is_center');
-    expect(blobText).toContain('video_01,385,5,12800,true');
-    expect(click).toHaveBeenCalledOnce();
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:nearby-csv');
-    click.mockRestore();
+    expect(screen.queryByRole('heading', { name: 'Frame lân cận' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Đáp án (2)' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Đáp án (2)' }));
+    const rows = screen.getAllByText(/video_01 · frame/);
+    expect(rows.map((row) => row.textContent)).toEqual([
+      'video_01 · frame 385',
+      'video_01 · frame 350',
+    ]);
   });
 
   it('resolves a keyframe ordinal before running exact frame lookup', async () => {
@@ -791,7 +776,7 @@ describe('qualification frame-first workbench', () => {
     expect(screen.getByLabelText('Mô tả sự kiện 4')).toHaveValue('The person walks outside');
   });
 
-  it('keeps task input in the left sidebar and exposes task-specific fields', async () => {
+  it('keeps task input in the left sidebar and allows a dynamic TRAKE event count', async () => {
     const user = userEvent.setup();
     renderWorkbench();
 
@@ -805,7 +790,12 @@ describe('qualification frame-first workbench', () => {
     await user.click(screen.getByRole('tab', { name: 'TRAKE' }));
     expect(screen.getByLabelText('Truy vấn chính')).toBeInTheDocument();
     expect(screen.getAllByRole('textbox', { name: /Mô tả sự kiện [1-4]/ })).toHaveLength(4);
-    expect(screen.queryByRole('button', { name: 'Thêm sự kiện' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '+ Thêm sự kiện (4/20)' }));
+    expect(screen.getByLabelText('Mô tả sự kiện 5')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Xóa sự kiện 5' }));
+    expect(screen.queryByLabelText('Mô tả sự kiện 5')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Xóa sự kiện 4' }));
+    expect(screen.getByRole('button', { name: '+ Thêm sự kiện (3/20)' })).toBeInTheDocument();
   });
 
   it('submits only the TRAKE overview query for retrieval', async () => {
@@ -984,8 +974,6 @@ describe('qualification frame-first workbench', () => {
 
   it('adds the selected frame and reveals answers only through the drawer badge', async () => {
     const user = userEvent.setup();
-    const writeText = vi.fn(async () => undefined);
-    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     renderWorkbench();
 
     await user.type(screen.getByLabelText('Mô tả sự kiện'), 'Một cửa hàng trên phố');
@@ -997,8 +985,8 @@ describe('qualification frame-first workbench', () => {
     await user.click(screen.getByRole('button', { name: 'Đáp án (1)' }));
     expect(screen.getByRole('dialog', { name: 'Hàng đợi đáp án' })).toBeInTheDocument();
     expect(screen.getByText('video_01 · frame 385')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Sao chép JSON' }));
-    expect(writeText).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('button', { name: /JSON/ })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Tên file CSV')).toHaveValue('query_0001');
     await user.click(screen.getByRole('button', { name: 'Xóa đáp án 1' }));
     expect(screen.getByText('Chưa có đáp án.')).toBeInTheDocument();
     await user.keyboard('{Escape}');
@@ -1052,7 +1040,8 @@ describe('qualification frame-first workbench', () => {
     expect(screen.getByText('video_02 · frame 410')).toBeInTheDocument();
     expect(screen.getByText('video_01 · frame 385')).toBeInTheDocument();
     expect(screen.getByText('video_03 · frame 530')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Export JSON' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /JSON/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeInTheDocument();
   });
 
   it('clears the answer queue before executing a new textual query', async () => {
@@ -1254,7 +1243,7 @@ describe('qualification frame-first workbench', () => {
     expect(screen.getByText('Rẽ phải')).toBeInTheDocument();
   });
 
-  it('fills the VQA queue with ranked frames and applies one answer to every pending item', async () => {
+  it('fills the VQA queue, applies one answer to all frames, and edits each answer', async () => {
     const user = userEvent.setup();
     const multiFrameVqaResponse: SearchResponse = {
       ...vqaResponse,
@@ -1281,13 +1270,29 @@ describe('qualification frame-first workbench', () => {
     await user.click(screen.getByRole('button', { name: 'Đáp án (3)' }));
     expect(screen.getAllByText('Đang chờ answer')).toHaveLength(3);
 
-    await user.type(screen.getByLabelText('Áp dụng cùng answer cho pending'), 'một chiếc chai');
-    await user.click(screen.getByRole('button', { name: 'Áp dụng (3)' }));
+    await user.type(screen.getByLabelText('Một đáp án cho tất cả frame'), 'một chiếc chai');
+    await user.click(screen.getByRole('button', { name: 'Áp dụng tất cả (3)' }));
 
     expect(screen.getByText(/3\/100 item · 3 đã trả lời/)).toBeInTheDocument();
     expect(screen.getAllByText('một chiếc chai')).toHaveLength(3);
-    expect(screen.getByRole('button', { name: 'Export JSON' })).toBeEnabled();
+    const secondAnswer = screen.getByLabelText('Đáp án VQA frame 411');
+    await user.clear(secondAnswer);
+    await user.type(secondAnswer, 'một chiếc cốc');
+    expect(secondAnswer).toHaveValue('một chiếc cốc');
+    const dragHandles = screen.getAllByTitle('Kéo để đổi thứ hạng');
+    fireEvent.dragStart(dragHandles[2]);
+    fireEvent.drop(dragHandles[0].closest('article') as HTMLElement);
+    expect(screen.getAllByLabelText(/^Đáp án VQA frame/).map((input) => input.getAttribute('aria-label'))).toEqual([
+      'Đáp án VQA frame 530',
+      'Đáp án VQA frame 385',
+      'Đáp án VQA frame 411',
+    ]);
+    expect(screen.queryByRole('button', { name: /JSON/ })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Export CSV' })).toBeEnabled();
+
+    const filename = screen.getByLabelText('Tên file CSV');
+    await user.clear(filename);
+    await user.type(filename, 'query-p2-1-vqa');
 
     const createObjectURL = vi.fn((_blob: Blob) => 'blob:vqa-csv');
     const revokeObjectURL = vi.fn();
@@ -1304,7 +1309,8 @@ describe('qualification frame-first workbench', () => {
       reader.readAsText(blob);
     });
     expect(blob.type).toBe('text/csv;charset=utf-8');
-    expect(blobText).toBe('video_01,385,"một chiếc chai"\r\nvideo_02,411,"một chiếc chai"\r\nvideo_03,530,"một chiếc chai"\r\n');
+    expect(blobText).toBe('video_03,530,một chiếc chai\r\nvideo_01,385,một chiếc chai\r\nvideo_02,411,một chiếc cốc\r\n');
+    expect((click.mock.contexts[0] as HTMLAnchorElement).download).toBe('query-p2-1-vqa.csv');
     expect(click).toHaveBeenCalledOnce();
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:vqa-csv');
     click.mockRestore();
@@ -1337,6 +1343,7 @@ describe('qualification frame-first workbench', () => {
 
   it('stops a running VQA batch before sending the next rate-limited request', async () => {
     const user = userEvent.setup();
+    localStorage.setItem('aic.vqa.batch.settings', JSON.stringify({ request_delay_ms: 1_000 }));
     const suggestVqaAnswer = vi.fn(async () => vqaSuggestion);
     const multiFrameVqaResponse: SearchResponse = {
       ...vqaResponse,

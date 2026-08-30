@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { FrameCandidate } from '@/lib/contracts';
 import type { VqaBatchResult } from '@/lib/vqa-batch';
 import {
+  applyAnswerToAll,
   applyAnswerToPending,
   applyVqaBatchResults,
   autoFillVqaQueueWithMajority,
@@ -56,6 +57,18 @@ describe('VQA queue model', () => {
     expect(next.map((item) => [item.frame_id, item.status, item.answer])).toEqual([
       [1, 'answered', 'cùng một đáp án'],
       [2, 'answered', 'đã có'],
+    ]);
+  });
+
+  it('overwrites every queue item when one answer is applied to all frames', () => {
+    const queue: VqaQueueItem[] = [
+      { ...fillVqaQueue([], [frame(1)], 100)[0], status: 'pending' },
+      { ...fillVqaQueue([], [frame(2)], 100)[0], status: 'answered', answer: 'đáp án cũ' },
+    ];
+
+    expect(applyAnswerToAll(queue, 'đáp án chung').map((item) => item.answer)).toEqual([
+      'đáp án chung',
+      'đáp án chung',
     ]);
   });
 

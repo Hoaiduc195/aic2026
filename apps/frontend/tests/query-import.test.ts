@@ -8,11 +8,11 @@ describe('answer CSV import', () => {
 
     expect(result.answers).toEqual([
       { video_id: 'video_01', frame_id: 385 },
-      { video_id: 'video_02.mp4', frame_id: 17 },
+      { video_id: 'video_02', frame_id: 17 },
     ]);
     expect(result.frame_refs).toEqual([
       { video_id: 'video_01', original_frame_id: 385 },
-      { video_id: 'video_02.mp4', original_frame_id: 17 },
+      { video_id: 'video_02', original_frame_id: 17 },
     ]);
     expect(result.issues).toEqual([]);
   });

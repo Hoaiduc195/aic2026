@@ -91,14 +91,13 @@ import {
   nearbyFrameToCandidate,
   normalizeFrameCandidate,
   normalizeTrakeFrameSlots,
+  orderNearbyFramesByDistance,
   reorderFrames,
   sortTrakeFrames,
   toFrameCandidates,
   TRAKE_FRAME_COUNT,
   validateTrakeSequence,
 } from '../lib/workbench-model';
-import { buildSubmissionCsv } from '../lib/submission-csv';
-import { buildNearbyFrameCsv } from '../lib/nearby-frame-export';
 import {
   DEFAULT_NEARBY_FRAME_COUNT,
   DEFAULT_NEARBY_FRAME_STEP,
@@ -133,7 +132,7 @@ import {
 } from '../lib/vqa-batch-settings';
 import {
   addVqaFrame,
-  applyAnswerToPending,
+  applyAnswerToAll,
   applyVqaBatchResults,
   autoFillVqaQueueWithMajority,
   completedVqaAnswers,
@@ -155,7 +154,6 @@ import {
 } from './workbench/FrameInspector';
 import { HistoryPanel } from './workbench/HistoryPanel';
 import { LlmSettingsPopover } from './workbench/LlmSettingsPopover';
-import { NearbyFramePanel } from './workbench/NearbyFramePanel';
 import { SearchSidebar } from './workbench/SearchSidebar';
 import { VideoStudioModal } from './workbench/VideoStudioModal';
 
@@ -311,10 +309,11 @@ function orderFramesByRefs(
 function buildTrakeFrameSelections(
   queue: readonly TrakeQueueItem[],
   inProgress: Readonly<TrakeFrameSelections>,
+  requiredFrameCount = TRAKE_FRAME_COUNT,
 ): Record<string, readonly FrameCandidate[]> {
   const selections: Record<string, readonly FrameCandidate[]> = {};
   queue.forEach((item) => {
-    if (isCompleteTrakeQueueItem(item)) {
+    if (isCompleteTrakeQueueItem(item, requiredFrameCount)) {
       selections[item.anchor.result_key] = item.frames.map((frame) => ({ ...frame }));
     }
   });
@@ -370,6 +369,7 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
   const [description, setDescription] = useState('');
   const [question, setQuestion] = useState('');
   const [events, setEvents] = useState<QualificationEventInput[]>(initialEvents);
+  const trakeFrameCount = Math.max(1, events.length);
   const [queryImproverSettings, setQueryImproverSettings] = useState<QueryImproverSettings>({ enabled: false });
   const [queryImproverError, setQueryImproverError] = useState<string | null>(null);
   const [response, setResponse] = useState<SearchResponse | null>(null);
@@ -461,17 +461,23 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
   );
   const vqaAnswers = useMemo(() => completedVqaAnswers(vqaQueue), [vqaQueue]);
   const vqaQueueKeys = useMemo(() => new Set(vqaQueue.map((item) => item.key)), [vqaQueue]);
-  const trakeAnswers = useMemo(() => trakeQueueAnswers(trakeQueue), [trakeQueue]);
-  const trakeMissingCount = useMemo(() => incompleteTrakeQueueCount(trakeQueue), [trakeQueue]);
+  const trakeAnswers = useMemo(
+    () => trakeQueueAnswers(trakeQueue, trakeFrameCount),
+    [trakeFrameCount, trakeQueue],
+  );
+  const trakeMissingCount = useMemo(
+    () => incompleteTrakeQueueCount(trakeQueue, trakeFrameCount),
+    [trakeFrameCount, trakeQueue],
+  );
   const trakeFrameSelections = useMemo(
-    () => buildTrakeFrameSelections(trakeQueue, assignedFramesByResult),
-    [assignedFramesByResult, trakeQueue],
+    () => buildTrakeFrameSelections(trakeQueue, assignedFramesByResult, trakeFrameCount),
+    [assignedFramesByResult, trakeFrameCount, trakeQueue],
   );
   const assignedFrames = useMemo(
     () => selectedAnchor
-      ? assignedFramesByResult[selectedAnchor.result_key] ?? emptyTrakeFrameSlots()
-      : emptyTrakeFrameSlots(),
-    [assignedFramesByResult, selectedAnchor],
+      ? assignedFramesByResult[selectedAnchor.result_key] ?? emptyTrakeFrameSlots(trakeFrameCount)
+      : emptyTrakeFrameSlots(trakeFrameCount),
+    [assignedFramesByResult, selectedAnchor, trakeFrameCount],
   );
 
   const captureSnapshot = useCallback((overrides: Partial<WorkbenchSnapshot> = {}): WorkbenchSnapshot => ({
@@ -600,6 +606,7 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
   }
 
   function applyWorkspaceSnapshot(snapshot: WorkbenchSnapshot, historyId: string | null) {
+    const restoredTrakeFrameCount = Math.max(1, snapshot.events.length || TRAKE_FRAME_COUNT);
     const restoredRankedFrames = snapshot.rankedFrames.length > 0
       ? snapshot.rankedFrames.map(normalizeFrameCandidate)
       : snapshot.response ? toFrameCandidates(snapshot.response).frames : [];
@@ -610,12 +617,12 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
       ? Object.fromEntries(
         Object.entries(snapshot.assignedFramesByResult).map(([resultKey, frames]) => [
           resultKey,
-          normalizeTrakeFrameSlots(frames).map((frame) => frame ? normalizeFrameCandidate(frame) : null),
+          normalizeTrakeFrameSlots(frames, restoredTrakeFrameCount).map((frame) => frame ? normalizeFrameCandidate(frame) : null),
         ]),
       )
       : snapshot.selectedAnchor
         ? {
-          [snapshot.selectedAnchor.result_key]: normalizeTrakeFrameSlots(snapshot.assignedFrames)
+          [snapshot.selectedAnchor.result_key]: normalizeTrakeFrameSlots(snapshot.assignedFrames, restoredTrakeFrameCount)
             .map((frame) => frame ? normalizeFrameCandidate(frame) : null),
         }
         : {};
@@ -635,13 +642,15 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
         restoredTrakeCandidates,
       );
     setTask(snapshot.task);
-    replaceAnswers(snapshot.task === 'trake' ? trakeQueueAnswers(restoredTrakeQueue) : snapshot.answers);
+    replaceAnswers(snapshot.task === 'trake'
+      ? trakeQueueAnswers(restoredTrakeQueue, restoredTrakeFrameCount)
+      : snapshot.answers);
     setDescription(snapshot.description);
     setQuestion(snapshot.question);
     setEvents(snapshot.task === 'trake'
-      ? initialEvents().map((event, index) => ({
+      ? (snapshot.events.length > 0 ? snapshot.events : initialEvents()).map((event, index) => ({
         ...event,
-        description: snapshot.events[index]?.description ?? '',
+        event_ordinal: index + 1,
       }))
       : snapshot.events.map((event) => ({ ...event })));
     restoredRankedQueryRef.current = snapshot.response?.query_id ?? null;
@@ -899,6 +908,14 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
       const importedTrakeAnswers = task === 'trake'
         ? importedFrameAnswers.filter((answer): answer is TrakeAnswer => 'frame_ids' in answer)
         : [];
+      const importedTrakeFrameCount = importedTrakeAnswers[0]?.frame_ids.length ?? trakeFrameCount;
+      const restoredImportEvents = task === 'trake' && importedTrakeAnswers.length > 0
+        ? Array.from({ length: importedTrakeFrameCount }, (_, index) => ({
+          event_id: `event-${index + 1}`,
+          event_ordinal: index + 1,
+          description: events[index]?.description ?? '',
+        }))
+        : events;
       const orderedFrames = orderFramesByRefs(frameRefs, nextFrames);
       const displayFrames = importedTrakeAnswers.length > 0
         ? importedTrakeDisplayFrames(importedTrakeAnswers, orderedFrames)
@@ -914,14 +931,14 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
         : [];
       const restoredTrakeSelections: TrakeFrameSelections = task === 'trake'
         ? Object.fromEntries(
-          Object.entries(buildTrakeFrameSelections(restoredTrakeQueue, {})).map(([resultKey, frames]) => [
+          Object.entries(buildTrakeFrameSelections(restoredTrakeQueue, {}, importedTrakeFrameCount)).map(([resultKey, frames]) => [
             resultKey,
-            normalizeTrakeFrameSlots(frames),
+            normalizeTrakeFrameSlots(frames, importedTrakeFrameCount),
           ]),
         )
         : {};
       const restoredAnswers = task === 'trake'
-        ? trakeQueueAnswers(restoredTrakeQueue)
+        ? trakeQueueAnswers(restoredTrakeQueue, importedTrakeFrameCount)
         : task === 'qa'
           ? completedVqaAnswers(restoredVqaQueue)
           : importedFrameAnswers.filter((answer) => (
@@ -930,13 +947,15 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
 
       setVqaQueue(restoredVqaQueue);
       setTrakeQueue(restoredTrakeQueue);
+      if (restoredImportEvents !== events) setEvents(restoredImportEvents);
       setAssignedFramesByResult(restoredTrakeSelections);
       replaceAnswers(restoredAnswers);
       const snapshot = captureSnapshot({
         response: next,
+        events: restoredImportEvents,
         rankedFrames: displayFrames,
         selectedAnchor: null,
-        assignedFrames: emptyTrakeFrameSlots(),
+        assignedFrames: emptyTrakeFrameSlots(importedTrakeFrameCount),
         assignedFramesByResult: restoredTrakeSelections,
         answers: restoredAnswers,
         vqaQueue: restoredVqaQueue,
@@ -1123,6 +1142,43 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
     setNotice('Đã tắt Query Improver.');
   }
 
+  function setTrakeEvents(nextEvents: QualificationEventInput[]) {
+    const normalizedEvents = nextEvents.slice(0, 20).map((event, index) => ({
+      ...event,
+      event_ordinal: index + 1,
+    }));
+    const frameCount = Math.max(1, normalizedEvents.length);
+    setEvents(normalizedEvents);
+    setAssignedFramesByResult((current) => Object.fromEntries(
+      Object.entries(current).map(([resultKey, frames]) => [
+        resultKey,
+        normalizeTrakeFrameSlots(frames, frameCount),
+      ]),
+    ));
+    setTrakeQueue((current) => current.map((item) => ({
+      ...item,
+      frames: sortTrakeFrames(item.frames).slice(0, frameCount),
+    })));
+    setError(null);
+  }
+
+  function addTrakeEvent() {
+    if (events.length >= 20) return;
+    setTrakeEvents([
+      ...events,
+      {
+        event_id: `event-${Date.now()}-${events.length + 1}`,
+        event_ordinal: events.length + 1,
+        description: '',
+      },
+    ]);
+  }
+
+  function removeTrakeEvent(eventId: string) {
+    if (events.length <= 1) return;
+    setTrakeEvents(events.filter((event) => event.event_id !== eventId));
+  }
+
   function selectSearchFrame(frame: FrameCandidate) {
     setSelectedAnchor(frame);
     setActiveFrame(frame);
@@ -1172,14 +1228,14 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
   }
 
   function selectStudioFrames(frames: readonly StudioFrame[]) {
-    if (!selectedAnchor || !studioQuery.data || frames.length !== TRAKE_FRAME_COUNT) return;
+    if (!selectedAnchor || !studioQuery.data || frames.length !== trakeFrameCount) return;
     const selectionKey = selectedAnchor.result_key;
     const representatives = sortTrakeFrames(frames.map((frame) => (
       applyStudioFrameToCandidate(selectedAnchor, frame, studioQuery.data.asr_spans)
     )));
     const representative = representatives[0];
     if (!representative) return;
-    const normalizedRepresentatives = normalizeTrakeFrameSlots(representatives);
+    const normalizedRepresentatives = normalizeTrakeFrameSlots(representatives, trakeFrameCount);
     setAssignedFramesByResult((current) => ({
       ...current,
       [selectionKey]: normalizedRepresentatives,
@@ -1190,7 +1246,7 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
     setRankedFrames((current) => current.map((candidate) => (
       candidate.result_key === representative.result_key ? representative : candidate
     )));
-    setNotice(`Đã chọn đủ 4 frame TRAKE: ${representatives.map((frame) => frame.original_frame_id).join(' → ')}.`);
+    setNotice(`Đã chọn đủ ${trakeFrameCount} frame TRAKE: ${representatives.map((frame) => frame.original_frame_id).join(' → ')}.`);
   }
 
   function selectAssignedFrame(index: number) {
@@ -1203,8 +1259,9 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
 
   async function loadNearbyFrameContext() {
     if (!loadNearbyFrames || nearbyFrameMutation.isPending) return;
-    if (!nearbyCenterFrame) {
-      setNearbyFrameError('Hãy chọn một frame tâm trước khi tải dữ liệu lân cận.');
+    const centerFrame = rankedFrames[0] ?? nearbyCenterFrame;
+    if (!centerFrame) {
+      setNearbyFrameError('Chưa có frame Top 1 để thêm frame lân cận.');
       return;
     }
     const limit = parseNearbyFrameCount(nearbyFrameCount);
@@ -1221,48 +1278,35 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
     setNearbyFrameError(null);
     try {
       const result = await nearbyFrameMutation.mutateAsync({
-        videoId: nearbyCenterFrame.video_id,
-        centerFrameId: nearbyCenterFrame.original_frame_id,
+        videoId: centerFrame.video_id,
+        centerFrameId: centerFrame.original_frame_id,
         limit,
         frameStep,
       });
-      if (result.video_id !== nearbyCenterFrame.video_id || result.center_frame_id !== nearbyCenterFrame.original_frame_id) {
+      if (result.video_id !== centerFrame.video_id || result.center_frame_id !== centerFrame.original_frame_id) {
         throw new Error('API trả về cửa sổ frame không khớp với frame tâm đã chọn.');
       }
-      const contextFrames = result.frames.filter((frame) => frame.video_id === nearbyCenterFrame.video_id);
+      const contextFrames = orderNearbyFramesByDistance(
+        result.frames.filter((frame) => frame.video_id === centerFrame.video_id),
+        centerFrame,
+      );
       const knownResultKeys = new Set(rankedFrames.map((frame) => frame.result_key));
       const contextCandidates = contextFrames.map(nearbyFrameToCandidate);
       const addedCount = contextCandidates.filter((frame) => !knownResultKeys.has(frame.result_key)).length;
       setNearbyFrames(contextFrames);
-      setRankedFrames((current) => mergeNearbyFrameCandidates(current, contextFrames, nearbyCenterFrame));
-      setNotice(`Đã tải ${contextFrames.length} frame quanh ${nearbyCenterFrame.video_id} · frame ${nearbyCenterFrame.original_frame_id}; bổ sung ${addedCount} frame mới vào danh sách kết quả.`);
+      setRankedFrames((current) => mergeNearbyFrameCandidates(current, contextFrames, centerFrame));
+      const orderedCandidates = contextFrames.map(nearbyFrameToCandidate);
+      if (task === 'qa') {
+        setVqaQueue((current) => fillVqaQueue(current, orderedCandidates, 100));
+      } else if (task === 'trake') {
+        setTrakeQueue((current) => fillTrakeQueue(current, orderedCandidates, 100));
+      } else {
+        replaceAnswers(fillTextualKisAnswers(answers as readonly TextualKisAnswer[], orderedCandidates, 100));
+      }
+      setNotice(`Đã thêm ${contextFrames.length} frame quanh Top 1 vào queue theo khoảng cách gần dần; ${addedCount} frame mới được bổ sung vào kết quả.`);
     } catch (reason) {
       setNearbyFrames([]);
       setNearbyFrameError(readError(reason, 'Không thể tải frame lân cận.'));
-    }
-  }
-
-  function exportNearbyFrameContext() {
-    if (!nearbyCenterFrame || nearbyFrames.length === 0) {
-      setNearbyFrameError('Hãy tải frame lân cận trước khi xuất CSV.');
-      return;
-    }
-
-    try {
-      const csv = buildNearbyFrameCsv(nearbyCenterFrame, nearbyFrames);
-      const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `aic-${safeFilenamePart(nearbyCenterFrame.video_id)}-frame-${nearbyCenterFrame.original_frame_id}-nearby.csv`;
-      document.body.append(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-      setNearbyFrameError(null);
-      setNotice(`Đã xuất CSV ${nearbyFrames.length} frame lân cận.`);
-    } catch (reason) {
-      setNearbyFrameError(readError(reason, 'Không thể xuất CSV frame lân cận.'));
     }
   }
 
@@ -1274,12 +1318,12 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
     const asrSpans = studioQuery.data?.video.video_id === selectedAnchor.video_id
       ? studioQuery.data.asr_spans
       : [];
-    const selected = autoSelectNearbyTrakeFrames(selectedAnchor, availableFrames, asrSpans);
-    if (selected.length !== TRAKE_FRAME_COUNT || !validateTrakeSequence(selected)) {
-      setError('Không đủ frame thực tế cùng video để tự động chọn đủ 4 frame TRAKE.');
+    const selected = autoSelectNearbyTrakeFrames(selectedAnchor, availableFrames, asrSpans, trakeFrameCount);
+    if (selected.length !== trakeFrameCount || !validateTrakeSequence(selected, trakeFrameCount)) {
+      setError(`Không đủ frame thực tế cùng video để tự động chọn đủ ${trakeFrameCount} frame TRAKE.`);
       return;
     }
-    const normalized = normalizeTrakeFrameSlots(selected);
+    const normalized = normalizeTrakeFrameSlots(selected, trakeFrameCount);
     const selectionKey = selectedAnchor.result_key;
     setAssignedFramesByResult((current) => ({
       ...current,
@@ -1289,7 +1333,7 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
     setActiveFrame(firstFrame);
     setNearbyCenterFrame(firstFrame);
     clearNearbyFrameContext();
-    setNotice(`Đã tự động chọn 4 frame: ${selected.map((frame) => frame.original_frame_id).join(' → ')}.`);
+    setNotice(`Đã tự động chọn ${trakeFrameCount} frame: ${selected.map((frame) => frame.original_frame_id).join(' → ')}.`);
   }
 
   function fillTrakeAnswerQueue() {
@@ -1316,51 +1360,26 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
 
     try {
       const nextItems = await Promise.all(trakeQueue.map(async (item) => {
-        if (isCompleteTrakeQueueItem(item)) return item;
+        if (isCompleteTrakeQueueItem(item, trakeFrameCount)) return item;
 
         const rankedForVideo = rankedFrames.filter((frame) => frame.video_id === item.anchor.video_id);
-        const studio = rankedForVideo.length >= TRAKE_FRAME_COUNT ? null : await getStudio(item.anchor.video_id);
+        const studio = rankedForVideo.length >= trakeFrameCount ? null : await getStudio(item.anchor.video_id);
         const availableFrames = studio
           ? [...rankedForVideo, ...studio.frames]
           : rankedForVideo;
-        const selected = autoSelectNearbyTrakeFrames(item.anchor, availableFrames, studio?.asr_spans ?? []);
-        return selected.length === TRAKE_FRAME_COUNT && validateTrakeSequence(selected)
-          ? completeTrakeQueueItem(item, selected)
+        const selected = autoSelectNearbyTrakeFrames(item.anchor, availableFrames, studio?.asr_spans ?? [], trakeFrameCount);
+        return selected.length === trakeFrameCount && validateTrakeSequence(selected, trakeFrameCount)
+          ? completeTrakeQueueItem(item, selected, trakeFrameCount)
           : item;
       }));
-      const completedCount = nextItems.filter(isCompleteTrakeQueueItem).length;
+      const completedCount = nextItems.filter((item) => isCompleteTrakeQueueItem(item, trakeFrameCount)).length;
       const remainingCount = nextItems.length - completedCount;
       setTrakeQueue(nextItems);
       setNotice(remainingCount > 0
-        ? `Đã chọn đủ 4 frame cho ${completedCount} item; còn ${remainingCount} item thiếu frame thực tế.`
-        : `Đã chọn đủ 4 frame cho ${completedCount} câu trả lời TRAKE.`);
+        ? `Đã chọn đủ ${trakeFrameCount} frame cho ${completedCount} item; còn ${remainingCount} item thiếu frame thực tế.`
+        : `Đã chọn đủ ${trakeFrameCount} frame cho ${completedCount} câu trả lời TRAKE.`);
     } finally {
       setTrakeQueueLoading(false);
-    }
-  }
-
-  function exportRankedTrakeCsv() {
-    if (task !== 'trake' || !response?.query_id || rankedFrames.length === 0) return;
-
-    if (trakeAnswers.length === 0) {
-      setError('Không có đáp án TRAKE để xuất CSV.');
-      return;
-    }
-
-    try {
-      const csv = buildSubmissionCsv('trake', trakeAnswers);
-      const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `aic-${safeFilenamePart(response.query_id)}-trake.csv`;
-      document.body.append(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-      setNotice(`Đã xuất CSV ${trakeAnswers.length} chuỗi TRAKE.`);
-    } catch (reason) {
-      setError(readError(reason, 'Không thể xuất CSV TRAKE.'));
     }
   }
 
@@ -1401,9 +1420,9 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
     setNotice(`Đã nạp tối đa 100 frame KIS vào hàng đợi (${Math.min(100, rankedFrames.length)} frame).`);
   }
 
-  function applyAnswerToAllPending(answer: string) {
-    setVqaQueue((current) => applyAnswerToPending(current, answer));
-    setNotice('Đã áp dụng answer cho toàn bộ frame pending.');
+  function applyAnswerToEveryFrame(answer: string) {
+    setVqaQueue((current) => applyAnswerToAll(current, answer));
+    setNotice('Đã áp dụng cùng một đáp án cho tất cả frame trong queue.');
   }
 
   function removeVqaQueueItem(key: string) {
@@ -1512,16 +1531,16 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
       }
       setVqaQueue((current) => {
         const withFrame = addVqaFrame(current, activeFrame);
-        return updateVqaQueueItem(withFrame, activeKey, { status: 'answered', answer: qaAnswer.trim() });
+        return updateVqaQueueItem(withFrame, activeKey, { status: 'answered', answer: qaAnswer });
       });
       setQaAnswer('');
     } else {
       const sequence = sortTrakeFrames(assignedFrames.filter((frame): frame is FrameCandidate => frame !== null));
-      if (sequence.length !== TRAKE_FRAME_COUNT || !validateTrakeSequence(sequence)) {
-        setError('TRAKE cần chọn đủ 4 frame, cùng video và tăng dần theo thời gian.');
+      if (sequence.length !== trakeFrameCount || !validateTrakeSequence(sequence, trakeFrameCount)) {
+        setError(`TRAKE cần chọn đủ ${trakeFrameCount} frame theo số sự kiện, cùng video và tăng dần theo thời gian.`);
         return;
       }
-      setTrakeQueue((current) => upsertCompletedTrakeQueueItem(current, selectedAnchor, sequence, 100));
+      setTrakeQueue((current) => upsertCompletedTrakeQueueItem(current, selectedAnchor, sequence, 100, trakeFrameCount));
       const selectionKey = selectedAnchor.result_key;
       setAssignedFramesByResult((current) => {
         const { [selectionKey]: _removed, ...remaining } = current;
@@ -1763,6 +1782,8 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
             )));
             clearQueryImproverError();
           }}
+          onAddEvent={addTrakeEvent}
+          onRemoveEvent={removeTrakeEvent}
           queryImproverEnabled={queryImproverSettings.enabled}
           queryImproverPending={queryImproverMutation.isPending}
           queryImproverError={queryImproverError}
@@ -1790,28 +1811,6 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
           style={{ '--inspector-width': `${inspectorWidth}px` } as CSSProperties}
         >
           <div className="results-column">
-            {loadNearbyFrames && response !== null && (
-              <NearbyFramePanel
-                frames={rankedFrames}
-                centerFrame={nearbyCenterFrame}
-                nearbyFrames={nearbyFrames}
-                frameCount={nearbyFrameCount}
-                frameStep={nearbyFrameStep}
-                loading={nearbyFrameMutation.isPending}
-                error={nearbyFrameError}
-                onCenterChange={selectNearbyCenterFrame}
-                onFrameCountChange={(value) => {
-                  setNearbyFrameCount(value);
-                  setNearbyFrameError(null);
-                }}
-                onFrameStepChange={(value) => {
-                  setNearbyFrameStep(value);
-                  setNearbyFrameError(null);
-                }}
-                onLoad={loadNearbyFrameContext}
-                onExport={exportNearbyFrameContext}
-              />
-            )}
             <FrameGrid
               frames={rankedFrames}
               selectedKey={selectedAnchor?.result_key ?? null}
@@ -1823,7 +1822,6 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
               onMoveToTop={(frame) => moveFrameToEdge(frame, 'top')}
               onMoveToBottom={(frame) => moveFrameToEdge(frame, 'bottom')}
               onQueryFrame={queryByFrame}
-              onExportTrakeCsv={task === 'trake' ? exportRankedTrakeCsv : undefined}
               trakeFrameSelections={task === 'trake' ? trakeFrameSelections : undefined}
               queueKeys={task === 'qa' ? vqaQueueKeys : undefined}
               queueCount={task === 'qa' ? vqaQueue.length : task === 'trake' ? trakeQueue.length : answers.length}
@@ -1842,6 +1840,20 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
               onStopBatchVqa={task === 'qa' ? stopBatchVqa : undefined}
               batchVqaLoading={task === 'qa' ? batchVqaLoading : false}
               batchVqaProgress={task === 'qa' ? batchVqaProgress : null}
+              nearbyFrameCount={loadNearbyFrames ? nearbyFrameCount : undefined}
+              nearbyFrameStep={loadNearbyFrames ? nearbyFrameStep : undefined}
+              nearbyFrameLoading={nearbyFrameMutation.isPending}
+              nearbyFrameError={nearbyFrameError}
+              nearbyLoadedCount={nearbyFrames.length}
+              onNearbyFrameCountChange={(value) => {
+                setNearbyFrameCount(value);
+                setNearbyFrameError(null);
+              }}
+              onNearbyFrameStepChange={(value) => {
+                setNearbyFrameStep(value);
+                setNearbyFrameError(null);
+              }}
+              onAddNearbyFrames={loadNearbyFrames ? loadNearbyFrameContext : undefined}
             />
           </div>
           {selectedAnchor && activeFrame && (
@@ -1901,6 +1913,7 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
           onSelectFrame={selectStudioFrame}
           onSelectFrames={selectStudioFrames}
           selectionMode={task === 'trake' ? 'multiple' : 'single'}
+          selectionLimit={trakeFrameCount}
           initialSelectedFrameIds={task === 'trake'
             ? assignedFrames.flatMap((frame) => frame ? [frame.original_frame_id] : [])
             : []}
@@ -1935,12 +1948,20 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
         vqaQueue={task === 'qa' ? vqaQueue : undefined}
         onRemoveVqaQueueItem={task === 'qa' ? removeVqaQueueItem : undefined}
         onMoveVqaQueueItem={task === 'qa' ? moveVqaQueueItem : undefined}
-        onApplyAnswerToPending={task === 'qa' ? applyAnswerToAllPending : undefined}
+        onUpdateVqaAnswer={task === 'qa' ? (key, answer) => setVqaQueue((current) => updateVqaQueueItem(
+          current,
+          key,
+          answer.trim()
+            ? { status: 'answered', answer }
+            : { status: 'pending', answer: undefined },
+        )) : undefined}
+        onApplyAnswerToAll={task === 'qa' ? applyAnswerToEveryFrame : undefined}
         trakeQueue={task === 'trake' ? trakeQueue : undefined}
         onRemoveTrakeQueueItem={task === 'trake' ? (key) => setTrakeQueue((current) => removeTrakeQueueItem(current, key)) : undefined}
         onMoveTrakeQueueItem={task === 'trake' ? (from, to) => setTrakeQueue((current) => moveTrakeQueueItem(current, from, to)) : undefined}
         onCompleteMissingTrakeQueue={task === 'trake' ? completeMissingTrakeQueue : undefined}
         trakeQueueLoading={task === 'trake' ? trakeQueueLoading : false}
+        trakeFrameCount={trakeFrameCount}
       />
     </main>
   );
@@ -1948,8 +1969,4 @@ export function Workbench({ exactFrameSearch, search, loadFrame, loadKeyframe, l
 
 function readError(value: unknown, fallback: string): string {
   return value instanceof Error ? value.message : fallback;
-}
-
-function safeFilenamePart(value: string): string {
-  return value.replace(/[^a-z0-9._-]/gi, '_').slice(0, 80) || 'query';
 }

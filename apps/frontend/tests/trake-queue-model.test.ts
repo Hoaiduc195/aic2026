@@ -48,6 +48,19 @@ describe('TRAKE queue model', () => {
     ]);
   });
 
+  it('uses the configured event count instead of hard-coding four frames', () => {
+    const item: TrakeQueueItem = { key: 'video-1\u000010', anchor: frame('video-1', 10), frames: [] };
+    const completed = completeTrakeQueueItem(item, [
+      frame('video-1', 10), frame('video-1', 20), frame('video-1', 30),
+    ], 3);
+
+    expect(isCompleteTrakeQueueItem(completed, 3)).toBe(true);
+    expect(isCompleteTrakeQueueItem(completed)).toBe(false);
+    expect(trakeQueueAnswers([completed], 3)).toEqual([
+      { video_id: 'video-1', frame_ids: [10, 20, 30] },
+    ]);
+  });
+
   it('does not complete a sequence containing a fabricated, unordered, or cross-video frame', () => {
     const item: TrakeQueueItem = { key: 'video-1\u000010', anchor: frame('video-1', 10), frames: [] };
 

@@ -76,6 +76,7 @@ export function FrameInspector({
     [active.evidence, active.timestamp_ms],
   );
   const modalityLabel = displayMatchedModalities(active.matched_modalities);
+  const trakeFrameCount = Math.max(1, events.length);
 
   function beginResize(event: ReactPointerEvent<HTMLDivElement>) {
     event.preventDefault();
@@ -190,7 +191,7 @@ export function FrameInspector({
         ) : task === 'trake' ? (
           <div className="trake-frame-selection">
             <div className="trake-selection-header">
-              <p className="muted-copy">Chọn đủ 4 frame trong Video Studio hoặc tự động gán frame lân cận.</p>
+              <p className="muted-copy">Chọn đủ {trakeFrameCount} frame theo số sự kiện trong Video Studio hoặc tự động gán frame lân cận.</p>
               {onAutoSelectNearbyFrames && (
                 <button
                   type="button"
@@ -198,11 +199,11 @@ export function FrameInspector({
                   style={{ marginBottom: '8px' }}
                   onClick={onAutoSelectNearbyFrames}
                 >
-                  ⚡ Tự động chọn 4 frame lân cận
+                  ⚡ Tự động chọn {trakeFrameCount} frame lân cận
                 </button>
               )}
             </div>
-            <div className="trake-frame-slots" aria-label="Bốn frame TRAKE đã chọn">
+            <div className="trake-frame-slots" aria-label={`${trakeFrameCount} frame TRAKE đã chọn`}>
               {assignedFrames.map((frame, index) => {
                 const objects = frame ? groupEvidence(frame.evidence, frame.timestamp_ms).object : [];
                 return frame ? (
@@ -222,7 +223,7 @@ export function FrameInspector({
                 );
               })}
             </div>
-            <span className="trake-frame-count">{assignedFrames.filter(Boolean).length}/4 frame đã chọn</span>
+            <span className="trake-frame-count">{assignedFrames.filter(Boolean).length}/{trakeFrameCount} frame đã chọn</span>
             <button type="button" className="primary-button full-width" onClick={onAddAnswer}>
               Thêm chuỗi vào đáp án
             </button>

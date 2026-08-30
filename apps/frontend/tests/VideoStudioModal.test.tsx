@@ -111,6 +111,31 @@ describe('VideoStudioModal', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it('uses the event count as the TRAKE frame selection limit', async () => {
+    const user = userEvent.setup();
+    const onSelectFrames = vi.fn();
+    render(
+      <VideoStudioModal
+        studio={multiStudio}
+        initialFrameId={50}
+        selectionMode="multiple"
+        selectionLimit={3}
+        onClose={vi.fn()}
+        onSelectFrames={onSelectFrames}
+      />,
+    );
+
+    for (const frameId of [50, 100, 150]) {
+      if (frameId !== 50) {
+        await user.click(screen.getByRole('button', { name: `Chọn keyframe ${frameId / 50} · source frame ${frameId}` }));
+      }
+      await user.click(screen.getByRole('button', { name: 'Thêm frame đang xem vào bộ 3' }));
+    }
+    await user.click(screen.getByRole('button', { name: 'Xác nhận bộ 3 frame' }));
+
+    expect(onSelectFrames).toHaveBeenCalledWith(multiStudio.frames.slice(0, 3));
+  });
+
   it('rejects duplicate TRAKE frames and keeps confirmation disabled until four exist', async () => {
     const user = userEvent.setup();
 
