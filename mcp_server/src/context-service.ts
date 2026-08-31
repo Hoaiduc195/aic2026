@@ -1,4 +1,4 @@
-import { assessTrake, summarizeFrame } from './search-loop.js';
+import { assessTrake, MAX_TRAKE_EVENTS, parseExplicitTrakeEvents, summarizeFrame } from './search-loop.js';
 import type {
   BackendClientPort,
   BackendFrame,
@@ -92,8 +92,8 @@ export async function checkTrakeSequence(
   events: readonly string[],
   refs: readonly FrameRef[],
 ): Promise<TrakeSequenceCheck> {
-  if (events.length !== 4) throw new Error('TRAKE requires exactly four events');
-  if (refs.length < 1 || refs.length > 20) throw new Error('frames must contain 1-20 items');
+  const normalizedEvents = parseExplicitTrakeEvents(events);
+  if (refs.length < 1 || refs.length > MAX_TRAKE_EVENTS) throw new Error(`frames must contain 1-${MAX_TRAKE_EVENTS} items`);
   const warnings: string[] = [];
   const loaded = await Promise.all(refs.map(async (ref) => {
     try {
@@ -105,8 +105,9 @@ export async function checkTrakeSequence(
   }));
   const frames = loaded.filter((frame): frame is BackendFrame => frame !== undefined);
   const evidence = frames.map(summarizeFrame);
+  if (new Set(frames.map((frame) => frame.video_id)).size > 1) warnings.push('trake_frames_span_multiple_videos');
   return {
-    coverage: assessTrake(events, evidence),
+    coverage: assessTrake(normalizedEvents, evidence),
     evidence,
     frames: frames.map((frame) => ({ videoId: frame.video_id, originalFrameId: frame.original_frame_id, ...(frame.keyframe_no === null ? {} : { keyframeNo: frame.keyframe_no }) })),
     warnings,

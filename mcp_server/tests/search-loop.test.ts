@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { SearchLoopService } from '../src/search-loop.js';
+import { assessTrake, SearchLoopService } from '../src/search-loop.js';
 import { SearchSessionStore } from '../src/session-store.js';
 import type {
   BackendClientPort,
@@ -8,6 +8,7 @@ import type {
   BackendRetrievalPlan,
   BackendSearchResponse,
   BackendVqaAnswer,
+  FrameEvidenceSummary,
 } from '../src/types.js';
 
 const playback = {
@@ -77,6 +78,21 @@ function result(frameId: number, score: number, text = 'umbrella') {
     evidence_ids: [`caption-${frameId}`],
     evidence: [{ evidence_id: `caption-${frameId}`, type: 'caption', snippet: text, producer: 'test' }],
     matched_modalities: ['caption'],
+  };
+}
+
+function evidence(videoId: string, frameId: number, text: string): FrameEvidenceSummary {
+  return {
+    videoId,
+    originalFrameId: frameId,
+    keyframeNo: frameId + 1,
+    timestampMs: frameId * 100,
+    thumbnailUri: 'https://signed.example/frame.jpg',
+    captions: [text],
+    ocr: [],
+    objects: [],
+    asr: [],
+    evidenceIds: [`caption-${videoId}-${frameId}`],
   };
 }
 
@@ -168,14 +184,88 @@ describe('SearchLoopService', () => {
     const report = await service(backend).run({
       task: 'trake',
       query: 'chuỗi sự kiện chính',
-      events: ['first event', 'second event', 'third event', 'fourth event'],
+      events: ['1. first event', '2. second event', '3. third event', '4. fourth event'],
     });
 
     expect(searchInput).toEqual({ query: 'chuỗi sự kiện chính', task: 'trake' });
-    expect(report.trake?.requiredEvents).toHaveLength(4);
+    expect(report.trake?.requiredEvents).toEqual(['first event', 'second event', 'third event', 'fourth event']);
     expect(report.trake?.coveredEvents).toHaveLength(4);
     expect(report.trake?.chronological).toBe(true);
     expect(report.status).toBe('supported');
+  });
+
+  it('supports a variable number of explicitly numbered TRAKE events', async () => {
+    const events = ['1. first event', '2. second event', '3. third event'];
+    const backend = baseBackend({
+      planSearch: async (input) => ({ ...plan, task: 'trake', original_query: input.query, query_variants: [input.query] }),
+      searchFrames: async () => ({
+        query_id: 'query-trake-3', confidence: { level: 'high', score: 0.9, action: 'return' }, warnings: [],
+        results: [result(10, 0.9, 'first event'), result(20, 0.88, 'second event'), result(30, 0.86, 'third event')],
+      }),
+      getCandidates: async () => ({ query_id: 'query-trake-3', total: 3, limit: 20, offset: 0, candidates: [] }),
+      getFrame: async (ref) => frame(ref.originalFrameId ?? 10, `${['first', 'second', 'third'][(ref.originalFrameId ?? 10) / 10 - 1] ?? 'event'} event`),
+    });
+
+    const report = await service(backend).run({ task: 'trake', query: 'chuỗi ba sự kiện', events });
+
+    expect(report.trake?.requiredEvents).toEqual(['first event', 'second event', 'third event']);
+    expect(report.trake?.coveredEvents).toHaveLength(3);
+    expect(report.trake?.chronological).toBe(true);
+    expect(report.confidence).toBe(0.9);
+    expect(report.status).toBe('supported');
+  });
+
+  it('does not cover a TRAKE sequence by mixing frames from different videos', () => {
+    const coverage = assessTrake(
+      ['first event', 'second event', 'third event', 'fourth event'],
+      [
+        evidence('video-1', 10, 'first event'),
+        evidence('video-2', 20, 'second event'),
+        evidence('video-1', 30, 'third event'),
+        evidence('video-2', 40, 'fourth event'),
+      ],
+    );
+
+    expect(coverage.coveredEvents.length).toBeLessThan(4);
+    expect(new Set(coverage.selectedFrames.map((frame) => frame.videoId)).size).toBeLessThanOrEqual(1);
+  });
+
+  it('does not cover TRAKE events with decreasing frame IDs', () => {
+    const coverage = assessTrake(
+      ['first lantern', 'second bicycle'],
+      [evidence('video-1', 20, 'first lantern'), evidence('video-1', 10, 'second bicycle')],
+    );
+
+    expect(coverage.coveredEvents.length).toBeLessThan(2);
+    expect(coverage.chronological).toBe(true);
+  });
+
+  it('does not execute TRAKE when the request has no explicit numbered events', async () => {
+    let planCalls = 0;
+    let searchCalls = 0;
+    const backend = baseBackend({
+      planSearch: async () => {
+        planCalls += 1;
+        return plan;
+      },
+      searchFrames: async () => {
+        searchCalls += 1;
+        return { query_id: 'query-1', confidence: { level: 'high', score: 0.9, action: 'return' }, results: [], warnings: [] };
+      },
+    });
+
+    await expect(service(backend).run({ task: 'trake', query: 'sư tử, sau đó nhân viên cân con vật' }))
+      .rejects.toThrow(/explicitly numbered event descriptions/iu);
+    expect(planCalls).toBe(0);
+    expect(searchCalls).toBe(0);
+  });
+
+  it('rejects TRAKE events that are separate but not individually numbered', async () => {
+    await expect(service(baseBackend()).run({
+      task: 'trake',
+      query: 'chuỗi sự kiện chính',
+      events: ['first event', 'second event', 'third event', 'fourth event'],
+    })).rejects.toThrow(/numbered separately/iu);
   });
 
   it('stops safely when the tool-call budget is exhausted', async () => {

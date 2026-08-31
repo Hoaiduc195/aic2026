@@ -44,6 +44,13 @@ describe('MCP stdio protocol', () => {
     expect(listed.tools.find((tool) => tool.name === 'search_loop')?.description).toMatch(/Vietnamese.*English|English.*Vietnamese/i);
     expect(listed.tools.find((tool) => tool.name === 'trace_answer')?.description).toMatch(/original language/i);
 
+    const invalidTrake = await client.callTool({ name: 'search_loop', arguments: {
+      task: 'trake', query: 'lions, then staff weigh an animal',
+    } });
+    expect(invalidTrake.isError).toBe(true);
+    expect(String(invalidTrake.content[0]?.type === 'text' ? invalidTrake.content[0].text : ''))
+      .toMatch(/explicitly numbered event descriptions/iu);
+
     const result = await client.callTool({ name: 'get_frame', arguments: { videoId: 'v-1', originalFrameId: 10 } });
     expect(result.isError).not.toBe(true);
     expect(JSON.parse(String(result.content[0].type === 'text' ? result.content[0].text : ''))).toMatchObject({

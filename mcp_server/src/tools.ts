@@ -4,7 +4,7 @@ import * as z from 'zod/v4';
 import { BackendClient } from './backend-client.js';
 import { checkTrakeSequence, getFrameContextBatch, getVideoContext } from './context-service.js';
 import { parseSubmissionCsv } from './csv-parser.js';
-import { SearchLoopService } from './search-loop.js';
+import { MAX_TRAKE_EVENTS, parseExplicitTrakeEvents, SearchLoopService } from './search-loop.js';
 import { SearchSessionStore } from './session-store.js';
 import {
   DEFAULT_FOCUS_FRAME_COUNT,
@@ -49,7 +49,7 @@ export function registerTools(server: McpServer, dependencies: ToolDependencies)
 
   server.registerTool('search_frames', {
     title: 'Search AIC frames',
-    description: 'Search the AIC retrieval database for relevant video frames and evidence. Pass query in concise English; translate Vietnamese visual descriptions first because embedding and caption retrieval are English-optimized. This is read-only.',
+    description: 'Search the AIC retrieval database for relevant video frames and evidence. Pass one concise English retrieval query; translate Vietnamese visual descriptions first because embedding and caption retrieval are English-optimized. Use this for bounded retrieval before exact-frame verification. This is read-only.',
     inputSchema: z.object({
       query: z.string().max(2000).default(''),
       task: taskInput,
@@ -173,7 +173,7 @@ export function registerTools(server: McpServer, dependencies: ToolDependencies)
 
   server.registerTool('get_nearby_frames', {
     title: 'Get nearby AIC frames',
-    description: 'Get the nearest indexed frames before and after a source frame.',
+    description: 'Get the nearest indexed frames before and after a source frame. Use only to resolve missing temporal context or an event sequence after primary retrieval.',
     inputSchema: z.object({
       videoId: videoIdSchema,
       centerFrameId: z.number().int().nonnegative(),
@@ -208,7 +208,7 @@ export function registerTools(server: McpServer, dependencies: ToolDependencies)
 
   server.registerTool('suggest_vqa_answer', {
     title: 'Suggest grounded VQA answer',
-    description: 'Run the configured backend VQA answerer for one exact frame. This is a suggestion and must be checked against returned evidence.',
+    description: 'Run the configured backend VQA answerer for one exact frame. This is a suggestion, not proof; check it against exact frame evidence, especially for visual claims.',
     inputSchema: z.object({
       queryId: videoIdSchema,
       question: z.string().trim().min(1).max(2000),
@@ -218,7 +218,7 @@ export function registerTools(server: McpServer, dependencies: ToolDependencies)
 
   server.registerTool('get_candidates', {
     title: 'Get persisted AIC candidates',
-    description: 'Read the candidate page persisted for a retrieval query. This never changes manual selection.',
+    description: 'Read the candidate page persisted for a retrieval query. Use for persisted ranking or final Textual KIS preparation, not routine exploratory evidence search. This never changes manual selection.',
     inputSchema: z.object({
       queryId: videoIdSchema,
       limit: z.number().int().positive().max(1000).optional(),
@@ -239,7 +239,7 @@ export function registerTools(server: McpServer, dependencies: ToolDependencies)
   ]);
   server.registerTool('preview_submission', {
     title: 'Preview AIC submission CSV',
-    description: 'Validate answer rows and generate the organizer CSV preview. Submission remains disabled and no selection is written.',
+    description: 'Validate answer rows and generate the organizer CSV preview. Call only for an explicit final/submission request; preview-only, submission remains disabled and no selection is written.',
     inputSchema: z.object({
       queryId: videoIdSchema,
       task: taskInput,
@@ -320,22 +320,28 @@ export function registerTools(server: McpServer, dependencies: ToolDependencies)
 
   server.registerTool('check_trake_sequence', {
     title: 'Check TRAKE frame sequence',
-    description: 'Load exact frames and verify four event coverage, distinct frames and chronological order using the same deterministic logic as search_loop.',
+    description: `Load exact frames and verify 1-${MAX_TRAKE_EVENTS} explicitly numbered events, same-video distinct frames and chronological order using the same deterministic logic as search_loop.`,
     inputSchema: z.object({
-      events: z.array(z.string().trim().min(1).max(2000)).length(4),
-      frames: z.array(frameRefInput).min(1).max(20),
+      events: z.array(z.string().trim().min(1).max(2000)).min(1).max(MAX_TRAKE_EVENTS),
+      frames: z.array(frameRefInput).min(1).max(MAX_TRAKE_EVENTS),
     }),
-  }, async ({ events, frames }) => successResult(await checkTrakeSequence(backend, events, frames as FrameRef[])));
+  }, async ({ events, frames }) => {
+    try {
+      return successResult(await checkTrakeSequence(backend, events, frames as FrameRef[]));
+    } catch (error) {
+      return errorResult(error instanceof Error ? error.message : 'invalid TRAKE event list');
+    }
+  });
 
   server.registerTool('search_loop', {
     title: 'Run bounded AIC evidence search loop',
-    description: 'Run a bounded, read-only retrieval loop using the query supplied by the agent: inspect the plan, search, load exact evidence, expand nearby frames, and optionally suggest VQA. Translate Vietnamese visual descriptions into concise English and improve the query before calling this tool. For TRAKE, exactly four English event descriptions are tracked for coverage, while backend retrieval receives only the main query.',
+    description: `Run a bounded, read-only retrieval loop using the query supplied by the agent: inspect the plan, search, load exact evidence, expand nearby frames, and optionally suggest VQA. Translate Vietnamese visual descriptions into concise English and improve the query before calling this tool. TRAKE requires 1-${MAX_TRAKE_EVENTS} separately numbered event descriptions; backend retrieval receives only the main query.`,
     inputSchema: z.object({
       sessionId: z.string().max(200).optional(),
       task: taskInput,
       query: z.string().trim().min(1).max(2000),
       question: z.string().trim().min(1).max(2000).optional(),
-      events: z.array(z.string().trim().min(1).max(2000)).length(4).optional(),
+      events: z.array(z.string().trim().min(1).max(2000)).min(1).max(MAX_TRAKE_EVENTS).optional(),
       seedFrames: z.array(frameRefInput).max(100).optional(),
       maxIterations: z.number().int().min(1).max(8).optional(),
       maxToolCalls: z.number().int().min(1).max(50).optional(),
@@ -346,6 +352,13 @@ export function registerTools(server: McpServer, dependencies: ToolDependencies)
   }, async (input) => {
     if (input.task === 'vqa' && !input.question) return errorResult('question is required for vqa search loop');
     if (input.task !== 'trake' && input.events) return errorResult('events are only supported for trake');
+    if (input.task === 'trake') {
+      try {
+        parseExplicitTrakeEvents(input.events);
+      } catch (error) {
+        return errorResult(error instanceof Error ? error.message : 'invalid TRAKE event list');
+      }
+    }
     const report = await loop.run({
       ...(input.sessionId ? { sessionId: input.sessionId } : {}),
       task: input.task,

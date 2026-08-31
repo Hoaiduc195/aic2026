@@ -6,6 +6,8 @@ This guide explains how the TRAKE feature is implemented in this codebase. If yo
 
 Unlike standard retrieval tasks (like `textual_kis` or `vqa`) that search for individual keyframes matching a query, **TRAKE** queries consist of an ordered sequence of events. The goal of a TRAKE task is to return an ordered sequence of frames within a single video that semantically match the respective events in the query, strictly maintaining chronological order.
 
+TRAKE is executed only when the request explicitly provides 1-20 events separately and numbers them sequentially from `1.` through `N.`. A prose description containing words such as “then” or “after” is not sufficient; the agent must not invent or split events.
+
 For example, a query like:
 1. `mở cửa` (opens door)
 2. `bước vào phòng` (steps into the room)
@@ -30,6 +32,12 @@ The `TrakeExecutor` is responsible for taking these candidates and finding the o
 - **Grouping**: Candidates are grouped by `video_id`.
 - **Dynamic Programming (Viterbi)**: For each video, the candidates are sorted by their `original_frame_id`. A DP algorithm scans through the sorted candidates to find the highest-scoring sequence of frames that matches the events (0 to N-1). It enforces the constraint that the `original_frame_id`s must strictly increase.
 - **Boosting**: The candidates that form the winning sequence are boosted in score and emitted as the top results.
+
+The MCP layer applies the same safety constraints when checking exact evidence locally: it
+groups evidence by video, finds the best chronological path for the N event descriptions,
+requires strictly increasing `originalFrameId` values, and never treats frames from
+different videos as one TRAKE sequence. The number of events is not hard-coded to four;
+the current bounded MCP tools accept 1-20 events.
 
 ## Relevant Files
 

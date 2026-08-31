@@ -31,7 +31,7 @@ const HARD_MAX_ITERATIONS = 8;
 const HARD_MAX_TOOL_CALLS = 50;
 const HARD_MAX_TIME_BUDGET_MS = 120_000;
 const DEFAULT_TARGET_CONFIDENCE = 0.75;
-const TRAKE_EVENT_COUNT = 4;
+export const MAX_TRAKE_EVENTS = 20;
 
 export class SearchLoopService {
   private readonly now: () => number;
@@ -72,7 +72,7 @@ export class SearchLoopService {
     // server instructions. The loop only removes surrounding whitespace.
     let improvedQuery = input.query.trim();
     let improvedQuestion = input.question?.trim();
-    const requiredEvents = normalizeTrakeEvents(input, warnings);
+    const requiredEvents = normalizeTrakeEvents(input);
     const session = this.sessions.get(input.sessionId ?? '')
       ?? this.sessions.create({
         ...(input.sessionId ? { sessionId: input.sessionId } : {}),
@@ -198,9 +198,9 @@ export class SearchLoopService {
       trake = input.task === 'trake' ? assessTrake(requiredEvents, evidence) : undefined;
       if (trake) {
         selectedFrames.splice(0, selectedFrames.length, ...trake.selectedFrames.map((item) => ({ ...item })));
-        confidence = Math.min(clampNumber(backendConfidence, 0, 1), trake.coveredEvents.length / TRAKE_EVENT_COUNT);
-        if (trake.coveredEvents.length === TRAKE_EVENT_COUNT && trake.chronological && confidence >= targetConfidence) {
-          stopReason = 'target_confidence_and_four_event_coverage_reached';
+        confidence = Math.min(clampNumber(backendConfidence, 0, 1), trake.coveredEvents.length / Math.max(requiredEvents.length, 1));
+        if (trake.coveredEvents.length === requiredEvents.length && trake.chronological && confidence >= targetConfidence) {
+          stopReason = 'target_confidence_and_trake_coverage_reached';
           return this.finish({ sessionId, input, improvedQuery, improvedQuestion, plan, results: searchResponse.results, rankedFrames, evidence, nearbyFrames, candidates, vqa, trake, confidence, status: 'supported', stopReason, iterations, calls, warnings, attemptedFrames, selectedFrames, rejectedFrames, images });
         }
       }
@@ -382,21 +382,26 @@ interface FinishInput {
   readonly images?: readonly ImageSummary[];
 }
 
-function normalizeTrakeEvents(input: SearchLoopInput, warnings: string[]): string[] {
+function normalizeTrakeEvents(input: SearchLoopInput): string[] {
   if (input.task !== 'trake') {
     if (input.events?.length) throw new Error('events are only supported for trake');
     return [];
   }
-  if (input.events && input.events.length !== TRAKE_EVENT_COUNT) {
-    throw new Error('trake requires exactly four event descriptions');
+  return parseExplicitTrakeEvents(input.events);
+}
+
+export function parseExplicitTrakeEvents(events: readonly string[] | undefined): string[] {
+  if (!events || events.length < 1 || events.length > MAX_TRAKE_EVENTS) {
+    throw new Error(`trake requires 1-${MAX_TRAKE_EVENTS} explicitly numbered event descriptions`);
   }
-  if (input.events) return input.events.map((event) => event.trim());
-  const numbered = input.query.split(/\r?\n/u)
-    .map((line) => line.trim().replace(/^\d+[.)]\s*/u, ''))
-    .filter((line) => line.length > 0);
-  if (numbered.length === TRAKE_EVENT_COUNT) return numbered;
-  warnings.push('trake_event_descriptions_missing_or_incomplete');
-  return Array.from({ length: TRAKE_EVENT_COUNT }, (_, index) => `event ${index + 1}`);
+
+  return events.map((event, index) => {
+    const match = event.trim().match(/^(\d+)[.)]\s+(.+)$/u);
+    if (!match || Number(match[1]) !== index + 1 || !match[2].trim()) {
+      throw new Error(`trake requires events numbered separately and sequentially from 1 to ${events.length}`);
+    }
+    return match[2].trim();
+  });
 }
 
 function resultFrameRef(result: BackendSearchResult): FrameRef | null {
@@ -460,31 +465,103 @@ function mergeSearchResponses(current: BackendSearchResponse | undefined, next: 
 }
 
 export function assessTrake(events: readonly string[], evidence: readonly FrameEvidenceSummary[]): TrakeCoverageReport {
-  const used = new Set<string>();
-  const coveredEvents: number[] = [];
-  const selectedFrames: FrameRef[] = [];
-  for (let index = 0; index < events.length; index += 1) {
-    const eventTerms = meaningfulTerms(events[index]);
-    let best: { frame: FrameEvidenceSummary; score: number } | undefined;
-    for (const frame of evidence) {
-      const key = frameKey(frame);
-      if (used.has(key)) continue;
-      const text = [...frame.captions, ...frame.ocr, ...frame.objects, ...frame.asr].join(' ');
-      const score = eventTerms.filter((term) => text.toLocaleLowerCase().includes(term)).length;
-      if (score > 0 && (!best || score > best.score || (score === best.score && frame.timestampMs < best.frame.timestampMs))) best = { frame, score };
-    }
-    if (!best) continue;
-    used.add(frameKey(best.frame));
-    coveredEvents.push(index);
-    selectedFrames.push({ videoId: best.frame.videoId, originalFrameId: best.frame.originalFrameId, ...(best.frame.keyframeNo === null ? {} : { keyframeNo: best.frame.keyframeNo }) });
+  const framesByVideo = new Map<string, FrameEvidenceSummary[]>();
+  for (const frame of evidence) {
+    const frames = framesByVideo.get(frame.videoId) ?? [];
+    framesByVideo.set(frame.videoId, [...frames, frame]);
   }
+  let bestVideoId: string | undefined;
+  let bestPath: TrakePath | undefined;
+  for (const [videoId, frames] of framesByVideo) {
+    const path = findBestTrakePath(events, frames);
+    if (!bestPath || compareTrakePaths(path, bestPath) > 0 || (compareTrakePaths(path, bestPath) === 0 && videoId < (bestVideoId ?? '\uffff'))) {
+      bestPath = path;
+      bestVideoId = videoId;
+    }
+  }
+  const coveredEvents = bestPath?.coveredEvents ?? [];
+  const selectedFrames = bestPath?.selectedFrames ?? [];
   return {
     requiredEvents: [...events],
-    coveredEvents,
+    coveredEvents: [...coveredEvents],
     missingEvents: events.map((_, index) => index).filter((index) => !coveredEvents.includes(index)),
-    selectedFrames,
-    chronological: selectedFrames.every((frame, index) => index === 0 || frame.originalFrameId! > selectedFrames[index - 1].originalFrameId!),
+    selectedFrames: selectedFrames.map((frame) => ({ ...frame })),
+    chronological: isChronologicalTrakePath(selectedFrames),
+    ...(bestVideoId === undefined || selectedFrames.length === 0 ? {} : { videoId: bestVideoId }),
   };
+}
+
+interface TrakePath {
+  readonly coveredEvents: readonly number[];
+  readonly selectedFrames: readonly FrameRef[];
+  readonly score: number;
+  readonly lastFrameId?: number;
+}
+
+function findBestTrakePath(events: readonly string[], frames: readonly FrameEvidenceSummary[]): TrakePath {
+  const orderedFrames = [...frames].sort((left, right) => left.originalFrameId - right.originalFrameId || left.timestampMs - right.timestampMs);
+  let paths = new Map<string, TrakePath>([['start', { coveredEvents: [], selectedFrames: [], score: 0 }]]);
+  for (let eventIndex = 0; eventIndex < events.length; eventIndex += 1) {
+    const nextPaths = new Map(paths);
+    for (const path of paths.values()) {
+      for (const frame of orderedFrames) {
+        if (path.lastFrameId !== undefined && frame.originalFrameId <= path.lastFrameId) continue;
+        const score = trakeEventScore(events[eventIndex], frame);
+        if (score === 0) continue;
+        const candidate: TrakePath = {
+          coveredEvents: [...path.coveredEvents, eventIndex],
+          selectedFrames: [...path.selectedFrames, toFrameRef(frame)],
+          score: path.score + score,
+          lastFrameId: frame.originalFrameId,
+        };
+        const key = String(frame.originalFrameId);
+        const existing = nextPaths.get(key);
+        if (!existing || compareTrakePaths(candidate, existing) > 0) nextPaths.set(key, candidate);
+      }
+    }
+    paths = nextPaths;
+  }
+  return [...paths.values()].reduce((best, path) => compareTrakePaths(path, best) > 0 ? path : best);
+}
+
+function compareTrakePaths(left: TrakePath, right: TrakePath): number {
+  if (left.coveredEvents.length !== right.coveredEvents.length) return left.coveredEvents.length - right.coveredEvents.length;
+  if (left.score !== right.score) return left.score - right.score;
+  for (let index = 0; index < Math.min(left.coveredEvents.length, right.coveredEvents.length); index += 1) {
+    if (left.coveredEvents[index] !== right.coveredEvents[index]) return right.coveredEvents[index] - left.coveredEvents[index];
+  }
+  const length = Math.min(left.selectedFrames.length, right.selectedFrames.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftFrame = left.selectedFrames[index].originalFrameId ?? Number.MAX_SAFE_INTEGER;
+    const rightFrame = right.selectedFrames[index].originalFrameId ?? Number.MAX_SAFE_INTEGER;
+    if (leftFrame !== rightFrame) return rightFrame - leftFrame;
+  }
+  return 0;
+}
+
+function trakeEventScore(event: string, frame: FrameEvidenceSummary): number {
+  const text = [...frame.captions, ...frame.ocr, ...frame.objects, ...frame.asr].join(' ').toLocaleLowerCase();
+  return meaningfulTerms(event).filter((term) => text.includes(term)).length;
+}
+
+function toFrameRef(frame: FrameEvidenceSummary): FrameRef {
+  return {
+    videoId: frame.videoId,
+    originalFrameId: frame.originalFrameId,
+    ...(frame.keyframeNo === null ? {} : { keyframeNo: frame.keyframeNo }),
+  };
+}
+
+function isChronologicalTrakePath(frames: readonly FrameRef[]): boolean {
+  return frames.every((frame, index) => {
+    if (index === 0) return true;
+    const previous = frames[index - 1];
+    return previous !== undefined
+      && frame.videoId === previous.videoId
+      && frame.originalFrameId !== undefined
+      && previous.originalFrameId !== undefined
+      && frame.originalFrameId > previous.originalFrameId;
+  });
 }
 
 function selectVqaFrame(evidence: readonly FrameEvidenceSummary[], answered: ReadonlySet<string>): FrameEvidenceSummary | undefined {

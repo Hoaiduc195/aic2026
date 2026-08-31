@@ -36,42 +36,38 @@ Set `AIC_BACKEND_URL` and, when backend operator authentication is enabled, `AIC
 - `compare_frames` — compare candidates through backend visual retrieval.
 - `trace_answer` — orchestrate retrieval, exact frame loading and nearby evidence.
 - `search_loop` — run a bounded loop for an agent-supplied improved query: inspect the plan, search, load exact evidence, expand nearby frames and optionally fetch images/VQA suggestions.
-- `check_trake_sequence` — verify four exact frames against four events and chronological order using the loop's coverage logic.
+- `check_trake_sequence` — verify 1-20 explicitly numbered events against same-video frames in chronological order using the loop's coverage logic.
 - `get_search_session` — inspect in-memory loop progress and stop reason.
 - `get_backend_health` — inspect branch/dependency degradation.
 
 Use `search_loop` first for VQA, KIS and TRAKE verification. The default limits are five iterations, 30 backend tool calls and 60 seconds; hard caps are eight iterations, 50 calls and 120 seconds. The loop stops only when exact evidence and the configured confidence target support the answer, or reports `uncertain`, `insufficient` or `budget_exhausted`.
 
-For every successful `textual_kis` frame retrieval, the MCP instructions require an
-automatic top-100 CSV workflow. The agent builds a candidate pool, chooses the video
-owned by the strongest deterministically ranked candidate, reads an explicit focus
-count from the prompt (default 20), and calls `prepare_top100_focus_csv`. The tool
-keeps the requested focus rows in one temporal segment, caps the total at 100, and
-reports shortfalls instead of padding. After a successful validated preview, including
-the normal `preview_only` warning, the host agent
-saves the returned headerless UTF-8 CSV in the current working directory as
-`submission/<query-id>.csv`, keeping the exact query filename required by the
-organizer. The focus video, effective focus count and row count are reported in the
-Vietnamese response; the focus count is not appended to the filename.
+Every user query is an AND contract: the agent extracts its explicit entities, actions,
+attributes, counts, order, time, location, relations and output requirements, then
+checks each one independently. It returns a result only when all requirements are
+verified. A high retrieval score or a candidate matching only part of the query is not
+enough; missing, ambiguous or contradictory requirements produce `uncertain` or
+`insufficient`, and are never hidden behind a confidence score or exported to CSV.
 
-VQA and TRAKE are also exported automatically after successful evidence verification;
-the agent does not wait for a separate CSV request. VQA uses only answered,
-evidence-backed rows in the official `video_id,frame_id,answer` shape, with up to 100
-rows and the same configurable focus ordering when multiple frames are ranked. It
-calls `suggest_vqa_answer` as needed and then `preview_submission`, saving a
-validated result as `submission/<query-id>.csv`. TRAKE first calls
-`check_trake_sequence`, then `preview_submission` with the official single sequence
-row (`video_id` plus one frame ID per requested event, chronological). TRAKE is not
-forced into 100 rows because that would violate its submission format; its validated
-file is saved to the same exact-name path, `submission/<query-id>.csv`.
+CSV generation is submission-on-demand. Search and evidence requests do not preview or save CSV. When the user explicitly asks for CSV, submission, nộp bài or a final deliverable, the agent verifies the evidence and then uses the task-specific workflow:
 
-All user-facing summaries, warnings and paths are concise Vietnamese. For every task,
-the host agent always saves a non-empty CSV returned by a successful validated preview
-under `./submission/` relative to the current working directory and reports the
-resolved absolute path. A `preview_only` warning means external submission is disabled;
-it does not prevent this local save. Invalid or unsupported results are never saved.
+- Textual KIS uses `prepare_top100_focus_csv` only for a requested final ranked CSV. It
+  keeps the requested focus rows in one temporal segment, caps the total at 100 and
+  reports shortfalls instead of padding.
+- VQA uses only verified, non-empty answers in the official
+  `video_id,frame_id,answer` shape and validates them with `preview_submission`.
+- TRAKE first calls `check_trake_sequence`, then previews exactly one row containing
+  one video ID and one chronological frame ID per numbered event.
 
-For TRAKE, pass four event descriptions when they are available. The loop uses those events for local four-event coverage/order assessment; `/v1/search` and `/v1/search/plan` receive the main query only, never four event strings. VQA output is a suggestion and must be checked against the returned evidence. Every supported conclusion should cite `videoId`, `originalFrameId` or `keyframeNo`, timestamp and evidence IDs.
+After a successful validated preview, including the normal `preview_only` warning, the
+host agent saves the non-empty headerless UTF-8 CSV under `./submission/` relative to
+the current working directory. If the user explicitly provides or requests an
+organizer query filename or basename, use it with exactly one `.csv` extension;
+otherwise use `submission/<query-id>.csv`. Never derive the filename from the task,
+focus count or UUID. All user-facing summaries, warnings and paths are concise
+Vietnamese. Invalid or unsupported results are never saved.
+
+For TRAKE, execute only when the user's request explicitly supplies 1-20 separate events numbered sequentially from `1.` through `N.`. Do not infer, split, or invent events from prose such as “then” or “after”. The loop validates those numbered events for local same-video coverage and chronological order; `/v1/search` and `/v1/search/plan` receive the main query only, never event strings. VQA output is a suggestion and must be checked against the returned evidence. Every supported conclusion should cite `videoId`, `originalFrameId` or `keyframeNo`, timestamp and evidence IDs.
 
 Retrieval queries should be concise English visual descriptions. Before calling `search_frames`, `plan_search`, `search_loop` or `trace_answer`, improve the query yourself: translate Vietnamese visual descriptions, preserve proper names and literal OCR text, include visible objects/actions/relations and temporal order, and remove filler. There is no `improve_query` tool; the agent supplies the improved query directly. Keep the original language for the user's question, final answer and evidence explanation.
 

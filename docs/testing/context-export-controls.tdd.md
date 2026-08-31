@@ -19,7 +19,22 @@
 | GREEN | Frontend: 31 files, 199 tests passed. Backend: 33 files, 152 tests passed. |
 | E2E | Chromium: 5/5 tests passed, including Context export. |
 | Static/build checks | Frontend and backend typecheck/build passed; frontend lint passed. |
-| Coverage | Frontend lines 89.48%. Backend test suite passes; repository-wide coverage is 75.9% and remains below its existing 80% threshold. |
+| Coverage | Frontend lines 89.54% (branches 78.88%). Backend test suite passes; repository-wide coverage is 75.9% and remains below its existing 80% threshold. |
+
+## Regression follow-up — stable thumbnails for inserted context frames
+
+The context-to-result adapter now rewrites backend signed thumbnail URLs to the
+stable frontend media route before inserted frames enter the ranked list. This
+keeps those cards working after a signed URL expires and matches the existing
+search/history normalization path.
+
+| Stage | Command | Result |
+|---|---|---|
+| RED | `pnpm test --run tests/workbench-model.test.ts` | 1 intended failure: the inserted frame retained a temporary signed URL. |
+| GREEN | `pnpm test --run tests/workbench-model.test.ts` | 19/19 tests passed. |
+| Full suite | `pnpm test` | 31 files, 200 tests passed. |
+| Static/build | `pnpm typecheck`, `pnpm lint`, `pnpm build` | All passed. |
+| Coverage | `pnpm test:coverage` | 89.54% lines/statements; 78.88% branches. |
 
 ## Guarantees
 

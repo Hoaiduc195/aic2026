@@ -375,6 +375,7 @@ export interface TrakeCoverageReport {
   readonly missingEvents: readonly number[];
   readonly selectedFrames: readonly FrameRef[];
   readonly chronological: boolean;
+  readonly videoId?: string;
 }
 
 export interface SearchLoopReport {

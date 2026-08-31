@@ -51,7 +51,7 @@ describe('context service', () => {
   });
 
   it('reuses the TRAKE coverage algorithm for four exact frames', async () => {
-    const result = await checkTrakeSequence(backend(), ['event 10', 'event 20', 'event 30', 'event 40'], [
+    const result = await checkTrakeSequence(backend(), ['1. event 10', '2. event 20', '3. event 30', '4. event 40'], [
       { videoId: 'video-1', originalFrameId: 10 },
       { videoId: 'video-1', originalFrameId: 20 },
       { videoId: 'video-1', originalFrameId: 30 },
@@ -59,5 +59,27 @@ describe('context service', () => {
     ]);
     expect(result.coverage.coveredEvents).toEqual([0, 1, 2, 3]);
     expect(result.coverage.chronological).toBe(true);
+    expect(result.coverage.videoId).toBe('video-1');
+  });
+
+  it('supports a variable number of numbered TRAKE events', async () => {
+    const result = await checkTrakeSequence(backend(), ['1. event 10', '2. event 20', '3. event 30'], [
+      { videoId: 'video-1', originalFrameId: 10 },
+      { videoId: 'video-1', originalFrameId: 20 },
+      { videoId: 'video-1', originalFrameId: 30 },
+    ]);
+
+    expect(result.coverage.requiredEvents).toEqual(['event 10', 'event 20', 'event 30']);
+    expect(result.coverage.coveredEvents).toEqual([0, 1, 2]);
+    expect(result.coverage.chronological).toBe(true);
+  });
+
+  it('rejects TRAKE coverage checks without individually numbered events', async () => {
+    await expect(checkTrakeSequence(backend(), ['event 10', 'event 20', 'event 30', 'event 40'], [
+      { videoId: 'video-1', originalFrameId: 10 },
+      { videoId: 'video-1', originalFrameId: 20 },
+      { videoId: 'video-1', originalFrameId: 30 },
+      { videoId: 'video-1', originalFrameId: 40 },
+    ])).rejects.toThrow(/numbered separately/iu);
   });
 });
