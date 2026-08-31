@@ -1,13 +1,15 @@
-# Greenfield multimodal pipeline
+# Greenfield Multimodal Pipeline
 
-`pipelines/main` là orchestration DAG mới cho một hoặc nhiều video. Package này
-có registry/node/checkpoint/artifact store riêng và **không import** pipeline
-legacy ở `pipelines/preprocessing` hoặc `pipelines/feature_extraction`.
+`pipelines/main` is a new orchestration DAG for one or more videos. This package
+has its own registry, nodes, checkpoints, and artifact store, and **does not
+import** the legacy pipelines in `pipelines/preprocessing` or
+`pipelines/feature_extraction`.
 
-Các JSON Schema canonical vẫn lấy từ repository-level
-[`contracts/`](../../contracts/README.md) và được validate ở boundary của node.
+The canonical JSON Schemas still come from the repository-level
+[contracts/](../../contracts/README.md) and are validated at each node
+boundary.
 
-## Task mặc định
+## Default task graph
 
 ```text
 ingestion -> frame_manifest -> shot_detection -> keyframes
@@ -15,27 +17,29 @@ ingestion -> frame_manifest -> shot_detection -> keyframes
           -> normalization
 ```
 
-Dependency closure được tự động thêm khi chọn một task. Một node thiếu optional
-model dependency sẽ trả lỗi rõ ràng và run có thể ở trạng thái `partial`; hệ
-thống không tạo feature row giả để che lỗi.
+Dependency closure is added automatically when a task is selected. If an
+optional model dependency is missing, the node returns a clear error and the
+run may finish with status `partial`; the system does not create fake feature
+rows to hide the failure.
 
-## Profile
+## Profiles
 
-| Profile | Cách chạy |
+| Profile | Execution |
 |---|---|
-| `local` | Tất cả node dùng local provider |
-| `hybrid` | Timeline/keyframe core chạy local, task model có thể chạy Modal |
-| `modal` | Các node được cấu hình chạy qua Modal dispatcher |
+| `local` | All nodes use local providers |
+| `hybrid` | Timeline/keyframe core runs locally; model tasks may run on Modal |
+| `modal` | Configured nodes run through the Modal dispatcher |
 
-Mặc định là `local`. Cấu hình mẫu nằm ở
-[`pipeline.example.toml`](pipeline.example.toml), gồm pipeline/schema version,
-dataset identity, task list và options của từng node.
+The default is `local`. The example configuration is in
+[pipeline.example.toml](pipeline.example.toml); it includes the
+pipeline/schema version, dataset identity, task list, and options for each
+node.
 
-## Cài đặt
+## Installation
 
 ### Local
 
-Yêu cầu Python `3.11+`:
+Python `3.11+` is required:
 
 ```powershell
 python -m pip install -r pipelines/main/requirements-local.txt
@@ -48,13 +52,13 @@ python -m pip install -r pipelines/main/requirements-modal.txt
 modal token new
 ```
 
-Node Modal nhận task name, source identity, config và artifact manifest. Cache
-content-addressed trong `storage/modal_cache.py` được dùng để tránh stage lại
-artifact không đổi.
+Modal nodes receive the task name, source identity, configuration, and artifact
+manifest. The content-addressed cache in `storage/modal_cache.py` prevents
+unchanged artifacts from being staged again.
 
 ## CLI
 
-Từ repository root, plan trước khi run:
+From the repository root, create a plan before running it:
 
 ```powershell
 python -m pipelines.main plan `
@@ -66,11 +70,11 @@ python -m pipelines.main run `
   --profile local
 ```
 
-Có thể truyền nhiều `--input`, hoặc một directory với `--input-dir`; thêm
-`--recursive` để quét thư mục con. `--tasks` cho phép chạy subset, nhưng các
-dependency cần thiết vẫn được thêm vào DAG.
+You can pass multiple `--input` values, or a directory with `--input-dir`.
+Add `--recursive` to scan subdirectories. `--tasks` runs a subset, while still
+adding all required dependencies to the DAG.
 
-Quản lý run:
+Manage runs:
 
 ```powershell
 python -m pipelines.main status `
@@ -83,12 +87,12 @@ python -m pipelines.main retry `
   --output-dir outputs --run-id RUN_ID --failed-only
 ```
 
-`run` trả exit code thành công cho trạng thái `completed` hoặc `partial`.
-`status` đọc run record mà không chạy lại pipeline.
+`run` exits successfully for status `completed` or `partial`.
+`status` reads the run record without rerunning the pipeline.
 
-## Output và resume
+## Output and resume
 
-Mỗi run được namespaced dưới:
+Each run is namespaced under:
 
 ```text
 outputs/runs/<run_id>/
@@ -98,24 +102,24 @@ outputs/runs/<run_id>/
 └── artifacts/
 ```
 
-Checkpoint chứa fingerprint của input/config/node. Chỉ checkpoint `completed`
-và fingerprint trùng mới được reuse; thay đổi input hoặc cấu hình sẽ chạy lại
-node đó. Processing run ghi dataset/pipeline/schema version, input/output
-artifact IDs, metrics và error để audit.
+A checkpoint contains the input/config/node fingerprint. Only checkpoints with
+status `completed` and a matching fingerprint are reused; changing the input
+or configuration reruns that node. A processing run records dataset, pipeline,
+and schema versions, input/output artifact IDs, metrics, and errors for audit.
 
-## Ranh giới với pipeline legacy
+## Boundary with the legacy pipeline
 
-Dùng package này khi cần một DAG orchestrator có profile, retry/resume và
-artifact contract thống nhất. Dùng
-[`pipelines/preprocessing/README.md`](../preprocessing/README.md) cho keyframe
-pipeline hai tầng hiện hữu và các lệnh sparse/dense cụ thể. Dùng các README
-feature extraction tương ứng khi chạy worker độc lập trên Modal.
+Use this package when you need a DAG orchestrator with profiles, retry/resume,
+and a unified artifact contract. Use
+[pipelines/preprocessing/README.md](../preprocessing/README.md) for the existing
+two-stage keyframe pipeline and its sparse/dense commands. Use the relevant
+feature-extraction README when running an independent worker on Modal.
 
-## Kiểm tra
+## Verification
 
 ```powershell
 python -m unittest discover -s pipelines/main/tests -v
 ```
 
-Thay đổi node contract phải cập nhật validator, fixture và test trong cùng
-commit; không bỏ qua trạng thái `partial` bằng cách ghi output placeholder.
+Changes to a node contract must update the validator, fixtures, and tests in
+the same commit. Do not bypass `partial` status by writing placeholder output.

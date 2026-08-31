@@ -1,20 +1,22 @@
-# Visual embedding bằng CLIPA-v2
+# CLIPA-v2 Visual Embeddings
 
-Module này tạo vector visual cho retrieval-eligible keyframe bằng CLIPA-v2
-Vision Encoder. Vector được lưu dạng NumPy matrix và manifest Parquet, map từng
-row về `video_id` và `original_frame_id` của source frame.
+This module creates visual vectors for retrieval-eligible keyframes using the
+CLIPA-v2 Vision Encoder. Vectors are stored as a NumPy matrix and a Parquet
+manifest, with each row mapped to the source frame's `video_id` and
+`original_frame_id`.
 
-Model mặc định là `hf-hub:UCSC-VLAA/ViT-H-14-CLIPA-336-laion2B`; output chuẩn
-là `float32`, 1024 chiều và L2-normalized để tương thích với query embedding
-service/backend pgvector. Text query encoder phải dùng cùng checkpoint,
-projection và normalization.
+The default model is
+`hf-hub:UCSC-VLAA/ViT-H-14-CLIPA-336-laion2B`. Standard output is
+`float32`, 1024-dimensional, and L2-normalized for compatibility with the
+query embedding service and backend pgvector. The text query encoder must use
+the same checkpoint, projection, and normalization.
 
-## Hai cách chạy
+## Two execution options
 
 ### Local CLI
 
-`cli.py` nhận thư mục gồm các file `<video_id>.parquet`. Mỗi Parquet mô tả
-keyframe và `storage_uri`/`path` của ảnh local:
+`cli.py` accepts a directory containing one `<video_id>.parquet` file per video.
+Each Parquet file describes keyframes and the local image `storage_uri`/`path`:
 
 ```powershell
 python -m pip install -r pipelines/requirements.txt
@@ -24,13 +26,14 @@ python -m pipelines.feature_extraction.visual_embedding.cli `
   --overwrite
 ```
 
-Local CLI đọc ảnh theo batch, ghi `<video_id>.npy` và `<video_id>.parquet`.
-Không truyền URI credentialed hoặc path ngoài layout được phép.
+The local CLI reads images in batches and writes `<video_id>.npy` and
+`<video_id>.parquet`. Do not pass credential-bearing URIs or paths outside the
+allowed layout.
 
 ### Modal GPU
 
-`modal_clip_embedding.py` có thể discover một `.zip`, thư mục Parquet hoặc thư
-mục ảnh theo video:
+`modal_clip_embedding.py` can discover a `.zip`, a directory of Parquet files,
+or a directory of images organized by video:
 
 ```powershell
 python -m pip install -r pipelines/feature_extraction/embedding/requirements-modal.txt
@@ -41,39 +44,41 @@ modal run pipelines/feature_extraction/visual_embedding/modal_clip_embedding.py 
   --budget-usd 30
 ```
 
-`--dry-run` chỉ scan input; `--overwrite` ghi lại output hiện có;
-`--video-ids V001,V002` giới hạn video; `--submission-window` và
-`--concurrency` điều chỉnh số work local đang in-flight. Modal worker mặc định
-dùng A10G, batch GPU 64 và giữ model cache trong volume.
+`--dry-run` only scans the input. `--overwrite` rewrites existing output.
+`--video-ids V001,V002` limits the run to selected videos.
+`--submission-window` and `--concurrency` control the number of local work
+items in flight. The Modal worker uses A10G by default, a GPU batch size of 64,
+and a model cache in a volume.
 
-## Cấu hình local
+## Local configuration
 
-| Biến | Mặc định | Ý nghĩa |
+| Variable | Default | Purpose |
 |---|---|---|
-| `CLIP_MODEL_NAME` | CLIPA checkpoint ở trên | OpenCLIP model identifier |
-| `CLIP_BATCH_SIZE` | `32` | Số ảnh mỗi local inference batch |
-| `CLIP_DEVICE` | `cuda` nếu có, ngược lại `cpu` | Thiết bị local |
+| `CLIP_MODEL_NAME` | CLIPA checkpoint above | OpenCLIP model identifier |
+| `CLIP_BATCH_SIZE` | `32` | Images per local inference batch |
+| `CLIP_DEVICE` | `cuda` when available, otherwise `cpu` | Local device |
 
-Không đổi `CLIP_MODEL_NAME` mà vẫn dùng index cũ. Khi checkpoint/projection hoặc
-normalization thay đổi, phải tạo lại image index và query embedding tương ứng.
+Do not change `CLIP_MODEL_NAME` while reusing an existing index. When the
+checkpoint, projection, or normalization changes, recreate both the image index
+and the corresponding query embeddings.
 
 ## Output contract
 
 ```text
 <output-dir>/
 ├── <video_id>.npy       # shape (N, 1024)
-└── <video_id>.parquet   # metadata theo thứ tự row của matrix
+└── <video_id>.parquet   # metadata in matrix row order
 ```
 
-Manifest lưu model/pipeline version, dimension, dtype, normalization, storage
-URI và source-frame identity. Ingestion sẽ fail-closed nếu matrix không khớp row
-count, row index, dimension hoặc model contract.
+The manifest stores model/pipeline version, dimension, dtype, normalization,
+storage URI, and source-frame identity. Ingestion fails closed when the matrix
+does not match the row count, row indexes, dimension, or model contract.
 
-## Kiểm tra
+## Verification
 
 ```powershell
 python -m unittest tests.test_visual_embedding_modal tests.test_modal_clip_embedding -v
 ```
 
-Test utility không cần GPU khi dùng fake Modal response. Chạy pilot nhỏ trước
-khi tạo full index để kiểm tra row order và chất lượng vector.
+Utility tests do not require a GPU when using a fake Modal response. Run a small
+pilot before creating the full index to verify row order and vector quality.

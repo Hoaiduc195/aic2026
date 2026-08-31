@@ -1,16 +1,17 @@
-# Florence-2 image captioning trên Modal
+# Florence-2 Image Captioning on Modal
 
-Module gửi keyframe local theo batch giới hạn tới một Modal GPU chạy
-`microsoft/Florence-2-base` và ghi một caption tiếng Anh cho mỗi ảnh. Frame
-không được copy vào Modal Volume; volume chỉ giữ Hugging Face model cache.
+This module sends local keyframes in bounded batches to a Modal GPU running
+`microsoft/Florence-2-base` and writes one English caption per image. Frames are
+not copied to a Modal Volume; the volume stores only the Hugging Face model
+cache.
 
-Caption tiếng Anh là artifact canonical được ingestion sử dụng. Dịch tiếng
-Việt là bước downstream độc lập và output `captioning_vi/` không được importer
-canonical nạp vào database.
+English captions are the canonical artifacts consumed by ingestion. Vietnamese
+translation is an independent downstream step, and the `captioning_vi/` output
+is not loaded by the canonical importer.
 
-## Input và output
+## Input and output
 
-Input phải có một thư mục cho mỗi video:
+Input must contain one directory per video:
 
 ```text
 keyframes/
@@ -21,7 +22,7 @@ keyframes/
     └── 001.jpg
 ```
 
-Output giữ nguyên layout:
+The output keeps the same layout:
 
 ```text
 captioning/
@@ -30,22 +31,24 @@ captioning/
 └── run_batch_0_of_3.jsonl
 ```
 
-JSONL là progress/error manifest append-only. File `.txt` đã tồn tại, kể cả
-file rỗng, được xem là đã xử lý và bỏ qua trừ khi có `--overwrite`.
+JSONL is an append-only progress/error manifest. An existing `.txt` file,
+including an empty file, is considered processed and skipped unless
+`--overwrite` is used.
 
-## Cài đặt và xác thực Modal
+## Install and authenticate with Modal
 
 ```powershell
 python -m pip install -r pipelines/feature_extraction/captioning/requirements-modal.txt
 modal token new
 ```
 
-Florence-2, PyTorch, Transformers, Accelerate và Pillow được cài trong remote
-image. Worker giữ model trong memory và dynamic-batch trên T4.
+Florence-2, PyTorch, Transformers, Accelerate, and Pillow are installed in the
+remote image. The worker keeps the model in memory and uses dynamic batching on
+T4.
 
-## Chạy pilot
+## Run a pilot
 
-Luôn dry-run một partition trước:
+Always dry-run one partition first:
 
 ```powershell
 modal run pipelines/feature_extraction/captioning/modal_florence_captioning.py `
@@ -55,8 +58,8 @@ modal run pipelines/feature_extraction/captioning/modal_florence_captioning.py `
   --max-images 500 --dry-run
 ```
 
-Chạy pilot thật bằng cách bỏ `--dry-run`, giữ `--max-images 500` để kiểm tra
-chất lượng caption. Sau khi duyệt sample mới chạy toàn bộ dataset:
+Run a real pilot by removing `--dry-run` and keeping `--max-images 500` to
+inspect caption quality. After reviewing the sample, process the full dataset:
 
 ```powershell
 modal run pipelines/feature_extraction/captioning/modal_florence_captioning.py `
@@ -66,32 +69,34 @@ modal run pipelines/feature_extraction/captioning/modal_florence_captioning.py `
   --budget-usd 25
 ```
 
-Các worker độc lập dùng `--batch-index` từ `0` đến `--num-batches - 1`. Không
-cho hai process ghi cùng output partition. Chạy lại cùng command sẽ resume
-những file còn thiếu; dùng `--overwrite` chỉ khi chủ động regenerate.
+Independent workers use `--batch-index` values from `0` through
+`--num-batches - 1`. Do not let two processes write to the same output
+partition. Repeating the command resumes missing files; use `--overwrite` only
+when deliberately regenerating output.
 
-## Điều chỉnh throughput và chi phí
+## Throughput and cost tuning
 
-- `--batch-size` là submission window local, không phải GPU batch cố định;
-- `--max-new-tokens` và `--num-beams` đổi chất lượng/thời gian generation;
-- `--max-retries` chỉ nên retry lỗi transient;
-- `--budget-usd` là guardrail ước tính theo thời gian remote, không phải hóa
-  đơn Modal chính thức;
-- `--gpu-rate-usd-per-hour` dùng để hiệu chỉnh ước tính khi giá GPU thay đổi.
+- `--batch-size` is the local submission window, not a fixed GPU batch size;
+- `--max-new-tokens` and `--num-beams` change generation quality and runtime;
+- `--max-retries` should be used only for transient errors;
+- `--budget-usd` is a remote-time estimate guardrail, not an official Modal
+  invoice;
+- `--gpu-rate-usd-per-hour` calibrates the estimate when GPU prices change.
 
-Mặc định greedy decoding (`--num-beams 1`) ưu tiên throughput. Tăng beams chỉ
-sau khi pilot cho thấy chất lượng cần cải thiện.
+Greedy decoding (`--num-beams 1`) is the default for throughput. Increase the
+beam count only when a pilot shows that quality needs improvement.
 
-## Dịch sang tiếng Việt
+## Translate into Vietnamese
 
-Cài dependency dịch local:
+Install the local translation dependency:
 
 ```powershell
 python -m pip install -r pipelines/feature_extraction/captioning/requirements-translation.txt
 ```
 
-Translator dùng model pinned `Helsinki-NLP/opus-mt-en-vi`, deduplicate caption
-trùng trước inference, giữ nguyên file tiếng Anh và resume file tiếng Việt:
+The translator uses the pinned model `Helsinki-NLP/opus-mt-en-vi`, deduplicates
+repeated captions before inference, preserves the English files, and resumes
+Vietnamese output files:
 
 ```powershell
 python -m pipelines.feature_extraction.captioning.translate_captions `
@@ -100,15 +105,15 @@ python -m pipelines.feature_extraction.captioning.translate_captions `
   --batch-size 64 --device auto
 ```
 
-Có thể chia deterministic partitions bằng `--batch-index` và `--num-batches`.
-Dùng `--overwrite` để dịch lại output đã có. CUDA được dùng nếu khả dụng,
-ngược lại translator chạy CPU.
+You can split deterministic partitions with `--batch-index` and
+`--num-batches`. Use `--overwrite` to translate existing output again. CUDA
+is used when available; otherwise the translator runs on CPU.
 
-## Kiểm tra
+## Verification
 
 ```powershell
 python -m unittest tests.test_captioning_modal tests.test_translation_captions -v
 ```
 
-Test local không cần Modal SDK hoặc GPU. Cần một pilot Modal thật để xác nhận
-model loading, quota và chất lượng caption trước full run.
+Local tests do not require the Modal SDK or a GPU. Run a real Modal pilot to
+confirm model loading, quota, and caption quality before a full run.

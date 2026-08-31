@@ -49,7 +49,7 @@ verified. A high retrieval score or a candidate matching only part of the query 
 enough; missing, ambiguous or contradictory requirements produce `uncertain` or
 `insufficient`, and are never hidden behind a confidence score or exported to CSV.
 
-CSV generation is submission-on-demand. Search and evidence requests do not preview or save CSV. When the user explicitly asks for CSV, submission, nộp bài or a final deliverable, the agent verifies the evidence and then uses the task-specific workflow:
+CSV generation is submission-on-demand. Search and evidence requests do not preview or save CSV. When the user explicitly asks for CSV, submission, the Vietnamese phrase “nộp bài” (“submit”), or a final deliverable, the agent verifies the evidence and then uses the task-specific workflow:
 
 - Textual KIS uses `prepare_top100_focus_csv` only for a requested final ranked CSV. It
   keeps the requested focus rows in one temporal segment, caps the total at 100 and
@@ -64,8 +64,8 @@ host agent saves the non-empty headerless UTF-8 CSV under `./submission/` relati
 the current working directory. If the user explicitly provides or requests an
 organizer query filename or basename, use it with exactly one `.csv` extension;
 otherwise use `submission/<query-id>.csv`. Never derive the filename from the task,
-focus count or UUID. All user-facing summaries, warnings and paths are concise
-Vietnamese. Invalid or unsupported results are never saved.
+focus count or UUID. All user-facing summaries, warnings, and paths are concise
+and written in Vietnamese. Invalid or unsupported results are never saved.
 
 For TRAKE, execute only when the user's request explicitly supplies 1-20 separate events numbered sequentially from `1.` through `N.`. Do not infer, split, or invent events from prose such as “then” or “after”. The loop validates those numbered events for local same-video coverage and chronological order; `/v1/search` and `/v1/search/plan` receive the main query only, never event strings. VQA output is a suggestion and must be checked against the returned evidence. Every supported conclusion should cite `videoId`, `originalFrameId` or `keyframeNo`, timestamp and evidence IDs.
 

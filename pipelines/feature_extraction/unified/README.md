@@ -1,30 +1,32 @@
-# Unified feature extraction trên Modal
+# Unified Feature Extraction on Modal
 
-Pipeline này xử lý một keyframe một lần trên một Modal GPU và tạo đồng thời
-bốn feature. Nó giảm số lần cold-start so với chạy từng script riêng.
+This pipeline processes one keyframe at a time on a Modal GPU and creates four
+features together. It reduces cold starts compared with running each script
+separately.
 
-## Bốn feature
+## Four features
 
-| Feature | Model mặc định | Output |
+| Feature | Default model | Output |
 |---|---|---|
-| Caption tiếng Anh | Florence-2-base | `captioning/<video>/<frame>.txt` |
-| Visual embedding | CLIPA ViT-H/14, 1024 chiều | `embeddings/<video>/<frame>.npy` |
+| English caption | Florence-2-base | `captioning/<video>/<frame>.txt` |
+| Visual embedding | CLIPA ViT-H/14, 1024 dimensions | `embeddings/<video>/<frame>.npy` |
 | Object detection | YOLO26n, COCO | `object_detection/<video>/<frame>.json` |
 | Vietnamese OCR | PaddleOCR PP-OCRv6 | `ocr/<video>/<frame>.jsonl` |
 
-ASR không nằm trong pipeline vì ASR đọc audio track của video gốc, không đọc
-ảnh keyframe. Chạy riêng tại [`../asr/`](../asr/README.md).
+ASR is not part of this pipeline because ASR reads the original video's audio
+track rather than a keyframe image. Run it separately using
+[`../asr/`](../asr/README.md).
 
-## Cài đặt và quick start
+## Installation and quick start
 
-Máy local chỉ cần Modal CLI:
+The local machine only needs the Modal CLI:
 
 ```powershell
 python -m pip install -r pipelines/feature_extraction/unified/requirements-modal.txt
 modal token new
 ```
 
-Chạy partition đầu tiên:
+Run the first partition:
 
 ```powershell
 modal run pipelines/feature_extraction/unified/modal_unified_pipeline.py `
@@ -33,10 +35,10 @@ modal run pipelines/feature_extraction/unified/modal_unified_pipeline.py `
   --batch-index 0 --num-batches 3 --budget-usd 25
 ```
 
-Ba worker có thể dùng index `0`, `1`, `2`. Không cho hai worker ghi cùng
-partition hoặc cùng output folder.
+Three workers can use indexes `0`, `1`, and `2`. Do not let two workers write
+to the same partition or output directory.
 
-Dry-run để đếm frame pending và ước tính chi phí mà không upload:
+Use a dry-run to count pending frames and estimate cost without uploading:
 
 ```powershell
 modal run pipelines/feature_extraction/unified/modal_unified_pipeline.py `
@@ -45,11 +47,11 @@ modal run pipelines/feature_extraction/unified/modal_unified_pipeline.py `
   --dry-run
 ```
 
-## Resume và output
+## Resume and output
 
-Một frame chỉ được xem là hoàn tất khi **cả bốn file output** tồn tại. File
-được ghi atomic; frame partial sẽ được xử lý lại ở lần chạy tiếp theo. Dùng
-`--overwrite` để chủ động chạy lại tất cả frame trong partition.
+A frame is complete only when **all four output files** exist. Files are written
+atomically; a partial frame is processed again on the next run. Use
+`--overwrite` to deliberately rerun every frame in a partition.
 
 ```text
 <data-root>/
@@ -59,14 +61,14 @@ Một frame chỉ được xem là hoàn tất khi **cả bốn file output** t�
 └── ocr/<video>/<frame>.jsonl
 ```
 
-Input hỗ trợ `.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp` đệ quy. `--max-images`
-giới hạn số frame pending (`0` = không giới hạn), `--batch-size` là số frame
-trong một submission window local, và `--max-retries` kiểm soát retry lỗi
-transient.
+Inputs support `.jpg`, `.jpeg`, `.png`, `.webp`, and `.bmp` recursively.
+`--max-images` limits pending frames (`0` = unlimited), `--batch-size` is the
+number of frames in one local submission window, and `--max-retries` controls
+retries for transient errors.
 
-## GPU, model và flag
+## GPU, models, and flags
 
-Mặc định dùng L4 16 GB. Đổi GPU hoặc model YOLO trước khi chạy:
+The default GPU is L4 16 GB. Change the GPU or YOLO model before running:
 
 ```powershell
 $env:UNIFIED_GPU = "A10G"
@@ -76,36 +78,37 @@ modal run pipelines/feature_extraction/unified/modal_unified_pipeline.py `
   --data-root E:\aic2026\data
 ```
 
-Các flag chính:
+Main flags:
 
-| Flag | Mặc định | Ý nghĩa |
+| Flag | Default | Meaning |
 |---|---:|---|
-| `--keyframe-dir` | `keyframes` | Root ảnh input |
-| `--data-root` | `data` | Root bốn output |
-| `--batch-index` | `0` | Partition hiện tại |
-| `--num-batches` | `1` | Tổng partition |
-| `--batch-size` | `8` | Frame/submission window |
-| `--max-retries` | `2` | Retry mỗi chunk |
+| `--keyframe-dir` | `keyframes` | Input image root |
+| `--data-root` | `data` | Root for the four outputs |
+| `--batch-index` | `0` | Current partition |
+| `--num-batches` | `1` | Total partitions |
+| `--batch-size` | `8` | Frames per submission window |
+| `--max-retries` | `2` | Retries per chunk |
 | `--budget-usd` | `25` | Cost guardrail |
-| `--max-images` | `0` | Giới hạn frame; 0 = unlimited |
-| `--overwrite` | tắt | Bỏ qua resume và chạy lại |
-| `--dry-run` | tắt | Chỉ lập kế hoạch |
+| `--max-images` | `0` | Frame limit; 0 = unlimited |
+| `--overwrite` | disabled | Ignore resume state and rerun |
+| `--dry-run` | disabled | Plan only |
 
-Model names, threshold và output version tập trung ở
-`unified/config.py`. Nếu đổi model/projection/normalization, cập nhật metadata
-contract và downstream importer tương ứng.
+Model names, thresholds, and output versions are centralized in
+`unified/config.py`. If the model, projection, or normalization changes, update
+the metadata contract and the corresponding downstream importer.
 
-## Khi nào dùng pipeline riêng?
+## When to use separate pipelines
 
-Unified phù hợp khi cùng một tập keyframe cần cả bốn feature và muốn giảm
-cold-start. Chạy script riêng khi chỉ cần một modality, cần retry độc lập hoặc
-muốn chọn cấu hình GPU/model khác cho từng modality.
+Use the unified pipeline when the same keyframe set needs all four features and
+you want to reduce cold starts. Use separate scripts when only one modality is
+needed, retries must be independent, or each modality needs a different GPU or
+model configuration.
 
-## Kiểm tra
+## Verification
 
 ```powershell
 python -m unittest discover -s tests -q
 ```
 
-Các utility test không cần Modal GPU; nên luôn chạy dry-run và một pilot nhỏ
-trước full dataset.
+Utility tests do not require a Modal GPU. Always run a dry-run and a small pilot
+before processing the full dataset.

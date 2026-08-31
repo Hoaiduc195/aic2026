@@ -1,41 +1,44 @@
 # AIC 2026 Frontend Workbench
 
-Frontend là ứng dụng Next.js/React/TypeScript cho operator duyệt kết quả
-retrieval và tạo submission preview. UI đi theo mô hình `frame-first`: mỗi kết
-quả có một source frame rõ ràng, còn video, frame lân cận và metadata được tải
-lazy khi operator cần xác minh.
+This Next.js/React/TypeScript application lets operators review retrieval
+results and create submission previews. The UI follows a `frame-first` model:
+every result has a clearly identified source frame, while video, nearby frames,
+and metadata are loaded lazily when the operator needs to verify the result.
 
-## Luồng sử dụng
+## User flow
 
-1. Chọn task và nhập query trong sidebar.
-2. Bấm `Tìm frame` để lấy các candidate từ `/api/v1/search`.
-3. Chọn một frame để xem evidence, canonical frame hoặc video studio.
-4. Với VQA/TRAKE, đưa frame vào queue và chỉnh đáp án thủ công.
-5. Lưu selection và tạo JSON/CSV submission preview trong drawer `Đáp án`.
+1. Choose a task and enter a query in the sidebar.
+2. Select `Search frames` to retrieve candidates from
+   `/api/v1/search`.
+3. Select a frame to inspect its evidence, canonical frame, or video studio.
+4. For VQA/TRAKE, add frames to the queue and edit answers manually.
+5. Save the selection and create a JSON/CSV submission preview in the
+   `Answers` drawer.
 
-Frontend hỗ trợ các task qualification `textual_kis`, `vqa` và `trake`. Search
-API còn nhận các task retrieval khác theo contract backend.
+The frontend supports the qualification tasks `textual_kis`, `vqa`, and
+`trake`. The search API also accepts other retrieval tasks defined by the
+backend contract.
 
-## Kiến trúc runtime
+## Runtime architecture
 
 ```text
 Browser
   -> Next.js route handlers (/api/v1/*)
-  -> NestJS backend (server-to-server, nếu được cấu hình)
-  -> PostgreSQL/pgvector, R2 và các model service tùy chọn
+  -> NestJS backend (server-to-server, when configured)
+  -> PostgreSQL/pgvector, R2, and optional model services
 ```
 
-Browser chỉ gọi các route `/api/v1/*`. `BACKEND_API_URL` và
-`BACKEND_OPERATOR_TOKEN` chỉ được đọc ở server; BFF forward token tới backend
-và không gửi token đó xuống browser.
+The browser calls only `/api/v1/*` routes. `BACKEND_API_URL` and
+`BACKEND_OPERATOR_TOKEN` are read only on the server; the BFF forwards the
+token to the backend and never sends it to the browser.
 
-Khi `BACKEND_API_URL` để trống, search dùng fixture deterministic để phát triển
-UI. Những route cần persistence hoặc media backend trả `503` thay vì tạo dữ
-liệu giả.
+When `BACKEND_API_URL` is empty, search uses deterministic fixtures for UI
+development. Routes that require persistence or media from the backend return
+`503` instead of creating fake data.
 
-## Cài đặt và chạy local
+## Install and run locally
 
-Yêu cầu Node.js `>=20`. Từ thư mục này:
+Node.js `>=20` is required. From this directory:
 
 ```powershell
 corepack enable
@@ -43,8 +46,9 @@ pnpm install
 pnpm dev
 ```
 
-Mở <http://localhost:3000>. Để dùng backend thật, tạo `.env.local` từ file
-mẫu rồi điền `BACKEND_API_URL` và token tương ứng:
+Open <http://localhost:3000>. To use the real backend, create `.env.local`
+from the example file and fill in `BACKEND_API_URL` and the corresponding
+token:
 
 ```powershell
 Copy-Item .env.example .env.local
@@ -56,38 +60,48 @@ BACKEND_OPERATOR_TOKEN=replace-with-backend-operator-token
 NEXT_PUBLIC_API_BASE_URL=/api
 ```
 
-Backend và database có hướng dẫn riêng tại
-[`../backend/README.md`](../backend/README.md). Cách khởi động cả stack nằm ở
-[`../../README.md`](../../README.md) và [`../../RUNBOOK_LOCAL_DOCKER.md`](../../RUNBOOK_LOCAL_DOCKER.md).
+The backend and database have separate instructions in
+[../backend/README.md](../backend/README.md). Instructions for starting the
+full stack are in [../../README.md](../../README.md) and
+[../../RUNBOOK_LOCAL_DOCKER.md](../../RUNBOOK_LOCAL_DOCKER.md).
 
-## Frame lân cận và xuất CSV
+## Nearby frames and CSV export
 
-Sau khi có kết quả search, panel `Frame lân cận` cho phép:
+After a search result is available, the `Nearby frames` panel lets the operator:
 
-- chọn frame tâm từ danh sách kết quả hiện tại;
-- chọn Top-K từ `1` đến `100`, mặc định `4`; số lượng này **đã gồm frame tâm**;
-- chọn `frame_step` từ `1` đến `100.000` frame nguồn, mặc định `1`, để điều khiển khoảng cách bao quát;
-- gọi `GET /api/v1/videos/:videoId/frames?center_frame_id=...&limit=...&frame_step=...`;
-- xem danh sách frame cùng video theo timeline và đánh dấu frame tâm;
-- sau khi tải, các frame mới được chèn ngay dưới frame tâm trong danh sách `Kết quả frame`, loại trùng theo `(video_id, original_frame_id)`; danh sách này có thể vượt số lượng hiển thị ban đầu;
-- nút fill answer queue luôn chỉ nạp tối đa `100` frame theo thứ tự hiện tại của danh sách kết quả;
-- xuất CSV sau khi tải thành công.
+- choose a center frame from the current result list;
+- choose Top-K from `1` to `100`, defaulting to `4`; the count **includes the
+  center frame**;
+- choose `frame_step` from `1` to `100,000` source frames, defaulting to `1`,
+  to control the spacing between selected frames;
+- call
+  `GET /api/v1/videos/:videoId/frames?center_frame_id=...&limit=...&frame_step=...`;
+- view frames from the same video in timeline order and mark the center frame;
+- after loading, insert new frames directly below the center frame in the
+  `Frame results` list and deduplicate by
+  `(video_id, original_frame_id)`; the list may exceed its initial display
+  count;
+- fill the answer queue with at most `100` frames in the current result-list
+  order;
+- export CSV after a successful load.
 
-CSV có các cột `video_id`, `original_frame_id`, `keyframe_no`, `timestamp_ms`
-và `is_center`. Dữ liệu export chỉ giữ các frame thuộc cùng video với frame
-tâm, loại duplicate theo `(video_id, original_frame_id)`, đồng thời bảo vệ
-các cell bắt đầu bằng `=`, `+`, `-` hoặc `@` khi mở bằng spreadsheet.
+The CSV contains `video_id`, `original_frame_id`, `keyframe_no`,
+`timestamp_ms`, and `is_center`. Exported data is limited to frames from the
+center frame's video, deduplicated by `(video_id, original_frame_id)`, and
+protects cells beginning with `=`, `+`, `-`, or `@` when opened in a
+spreadsheet.
 
-Backend có thể trả frame sparse hoặc decode exact source frame bằng FFmpeg khi
-thumbnail chưa tồn tại. Frontend không tự suy ra frame ID từ timestamp.
+The backend may return sparse frames or decode an exact source frame with
+FFmpeg when a thumbnail does not exist. The frontend never derives a frame ID
+from a timestamp.
 
-## Media local và R2
+## Local media and R2
 
-Khi backend/R2 đã cấu hình, playback và thumbnail dùng signed URL do server
-cấp. Khi backend chưa cấu hình, các route lazy preview có thể dùng local media
-root qua `AIC_MEDIA_ROOT`.
+When the backend/R2 is configured, playback and thumbnails use server-issued
+signed URLs. When the backend is not configured, lazy preview routes can use a
+local media root through `AIC_MEDIA_ROOT`.
 
-Local media tối thiểu nên có:
+At minimum, local media should include:
 
 ```text
 <AIC_MEDIA_ROOT>/
@@ -97,28 +111,30 @@ Local media tối thiểu nên có:
 └── media-info-aic25-b1/media-info/
 ```
 
-Windows fallback trong code là `E:\aic2026`, nhưng nên đặt giá trị rõ ràng để
-local, E2E và máy khác dùng cùng layout. `AIC_MEDIA_ACCESS_TOKEN` là secret
-server-only; không bật `AIC_ALLOW_UNAUTHENTICATED_MEDIA=true` trên máy có thể
-truy cập từ mạng ngoài.
+The Windows fallback in the code is `E:\aic2026`, but an explicit value is
+recommended so local development, E2E tests, and other machines use the same
+layout. `AIC_MEDIA_ACCESS_TOKEN` is server-only; do not enable
+`AIC_ALLOW_UNAUTHENTICATED_MEDIA=true` on a machine reachable from an external
+network.
 
-## Biến môi trường
+## Environment variables
 
-| Biến | Phạm vi | Bắt buộc | Mục đích |
+| Variable | Scope | Required | Purpose |
 |---|---|---:|---|
-| `BACKEND_API_URL` | Server | Không | URL NestJS; bỏ trống để dùng fixture search |
-| `BACKEND_OPERATOR_TOKEN` | Server | Không ở local | Token BFF forward tới backend |
-| `NEXT_PUBLIC_API_BASE_URL` | Browser | Không | Base route của browser, mặc định `/api` |
-| `AIC_MEDIA_ROOT` | Server | Không | Root media local cho fallback |
-| `AIC_MEDIA_ACCESS_TOKEN` | Server | Không | Bảo vệ session media local |
-| `AIC_ALLOW_UNAUTHENTICATED_MEDIA` | Server | Không | Chỉ dùng trong môi trường local cô lập |
+| `BACKEND_API_URL` | Server | No | NestJS URL; leave empty to use fixture search |
+| `BACKEND_OPERATOR_TOKEN` | Server | No for local | Token forwarded by the BFF to the backend |
+| `NEXT_PUBLIC_API_BASE_URL` | Browser | No | Browser route base, default `/api` |
+| `AIC_MEDIA_ROOT` | Server | No | Local media root for fallback |
+| `AIC_MEDIA_ACCESS_TOKEN` | Server | No | Protects local media sessions |
+| `AIC_ALLOW_UNAUTHENTICATED_MEDIA` | Server | No | Only for isolated local environments |
 
-Không đặt credential, R2 key, LLM/VLM key hoặc backend token dưới tiền tố
-`NEXT_PUBLIC_`; mọi biến có tiền tố đó có thể xuất hiện trong bundle browser.
+Do not put credentials, R2 keys, LLM/VLM keys, or backend tokens under the
+`NEXT_PUBLIC_` prefix. Variables with that prefix may be included in the
+browser bundle.
 
-## API routes của Next.js
+## Next.js API routes
 
-| Nhóm | Route |
+| Group | Routes |
 |---|---|
 | Search | `/api/v1/search`, `/api/v1/search/exact-frames` |
 | Query/VQA | `/api/v1/query/improve`, `/api/v1/vqa/answer` |
@@ -126,11 +142,11 @@ Không đặt credential, R2 key, LLM/VLM key hoặc backend token dưới tiề
 | Manual review | `/api/v1/queries/:queryId/candidates`, `/selection` |
 | Submission | `/api/v1/submissions/preview` |
 
-Contract response được parse và validate ở `src/lib/api.ts` trước khi đưa vào
-UI. Thay đổi payload nên cập nhật `src/lib/contracts.ts` và test route tương
-ứng cùng lúc.
+Contract responses are parsed and validated in `src/lib/api.ts` before they
+reach the UI. When changing a payload, update `src/lib/contracts.ts` and the
+corresponding route tests at the same time.
 
-## Kiểm tra
+## Verification
 
 ```powershell
 pnpm test
@@ -141,6 +157,7 @@ pnpm lint
 pnpm build
 ```
 
-E2E trong `tests/e2e/qualification.spec.ts` mock API để flow frame-first ổn
-định. Integration với backend thật cần backend, database, embedding service và
-R2 (nếu cần playback) được cấu hình riêng.
+E2E tests in `tests/e2e/qualification.spec.ts` mock the API so the frame-first
+flow remains deterministic. Integration with the real backend requires the
+backend, database, embedding service, and R2 (when playback is needed) to be
+configured separately.

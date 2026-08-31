@@ -1,35 +1,37 @@
-# AIC 2026 — Tìm kiếm video đa phương thức
+# AIC 2026 — Multimodal Video Search
 
-Đây là codebase cho hệ thống tìm kiếm và duyệt bằng chứng video của AIC 2026.
-Hệ thống đi từ video gốc, tạo frame có định danh chính xác và các feature đa
-phương thức, nạp chúng vào bộ máy retrieval, sau đó cung cấp Workbench để
-người vận hành chọn frame và tạo submission preview.
+This repository contains the codebase for the AIC 2026 video evidence search
+and browsing system. It starts with source video, creates precisely identified
+frames and multimodal features, loads them into the retrieval engine, and then
+provides a Workbench where operators can select frames and create submission
+previews.
 
-## Phạm vi hiện tại
+## Current scope
 
-Các phần chính đã có trong repository:
+The repository currently includes:
 
-- preprocessing hai tầng: sparse retrieval frames và dense exact-frame
+- two-stage preprocessing: sparse retrieval frames and dense exact-frame
   alignment;
-- feature extraction cho caption, OCR tiếng Việt, object detection, visual
-  embedding và ASR theo timeline;
-- contract JSON Schema dùng chung giữa pipeline, ingestion và backend;
-- NestJS retrieval backend với PostgreSQL/pgvector, full-text search, RRF
-  fusion, R2 signed URL và các chế độ degraded khi dependency chưa sẵn sàng;
-- Next.js Workbench theo hướng frame-first cho `textual_kis`, VQA và TRAKE;
-- lựa chọn thủ công, submission preview JSON/CSV và xuất CSV các frame lân cận
-  quanh một frame tâm do người dùng chọn (1–50 frame, gồm frame tâm).
+- feature extraction for captioning, Vietnamese OCR, object detection, visual
+  embeddings, and timeline-based ASR;
+- shared JSON Schema contracts across the pipelines, ingestion, and backend;
+- a NestJS retrieval backend with PostgreSQL/pgvector, full-text search, RRF
+  fusion, R2 signed URLs, and degraded modes when dependencies are unavailable;
+- a frame-first Next.js Workbench for `textual_kis`, VQA, and TRAKE;
+- manual selection, JSON/CSV submission previews, and CSV export of nearby
+  frames around a user-selected center frame (1–50 frames, including the
+  center frame).
 
-Backend hiện tạo preview để kiểm tra; adapter submit chính thức lên hệ thống
-cuộc thi nằm ngoài phạm vi repository này. Một số retrieval branch/model là
-tùy chọn và sẽ được báo là `unavailable` nếu chưa cấu hình artifact hoặc service
-tương ứng.
+The backend currently creates previews for validation. The official submission
+adapter for the competition system is outside this repository. Some retrieval
+branches and models are optional and are reported as `unavailable` when the
+corresponding artifact or service has not been configured.
 
-## Kiến trúc
+## Architecture
 
 ```mermaid
 flowchart LR
-    A[Video gốc] --> B[Preprocessing]
+    A[Source video] --> B[Preprocessing]
     B --> C[Frame manifest + sparse/dense keyframes]
     C --> D[Feature extraction]
     D --> E[Refined artifacts]
@@ -40,40 +42,41 @@ flowchart LR
     G --> I[Retrieval backend]
     H --> I
     J[Embedding service] --> I
-    K[LLM/VLM tùy chọn] --> I
+    K[Optional LLM/VLM] --> I
     I --> L[Next.js BFF]
     L --> M[Operator Workbench]
 ```
 
-`original_frame_id` là định danh source-frame chuẩn, bắt đầu từ `0`. Timestamp
-chỉ là thông tin phụ trợ; không được suy ngược timestamp thành frame khi đã có
-`original_frame_id`.
+`original_frame_id` is the canonical source-frame identifier and starts at
+`0`. Timestamps are supporting metadata only; once `original_frame_id` exists,
+do not derive a frame from a timestamp.
 
-## Chạy nhanh trên máy local
+## Run locally
 
-### Yêu cầu
+### Requirements
 
-- Docker Desktop đang chạy;
+- Docker Desktop running;
 - Node.js `>=20`;
 - Python `3.11+`;
-- `ffmpeg` và `ffprobe` trong `PATH` cho probing, ASR và exact-frame decode;
-- `npm` cho backend, Corepack/pnpm cho frontend.
+- `ffmpeg` and `ffprobe` available in `PATH` for probing, ASR, and exact-frame
+  decoding;
+- `npm` for the backend and Corepack/pnpm for the frontend.
 
-### Khởi động database và embedding service
+### Start the database and embedding service
 
-Từ thư mục repository:
+From the repository root:
 
 ```powershell
 Copy-Item apps/backend/.env.example apps/backend/.env
 docker compose up -d --build postgres embedding
 ```
 
-Mở `apps/backend/.env` và cấu hình ít nhất `DATABASE_URL`,
-`DATABASE_DIRECT_URL` trỏ tới PostgreSQL local ở port `5433`, cùng
-`EMBEDDING_SERVICE_URL=http://127.0.0.1:8001/embed` nếu muốn dùng CLIP branch.
-Không đưa R2/API key thật vào git hoặc vào frontend.
+Open `apps/backend/.env` and configure at least `DATABASE_URL` and
+`DATABASE_DIRECT_URL` to point to the local PostgreSQL instance on port `5433`.
+Set `EMBEDDING_SERVICE_URL=http://127.0.0.1:8001/embed` to enable the CLIP
+branch. Do not commit real R2/API keys or expose them in the frontend.
 
-### Migration và backend
+### Migration and backend
 
 ```powershell
 Set-Location apps/backend
@@ -85,7 +88,7 @@ npm run start:dev
 
 ### Frontend
 
-Mở terminal khác:
+Open another terminal:
 
 ```powershell
 Set-Location apps/frontend
@@ -94,14 +97,14 @@ pnpm install
 pnpm dev
 ```
 
-Mở <http://localhost:3000>. Nếu `BACKEND_API_URL` để trống, frontend dùng
-fixture deterministic cho search; các thao tác cần backend sẽ trả lỗi rõ ràng
-thay vì ghi dữ liệu giả. Hướng dẫn đầy đủ nằm ở
-[`apps/frontend/README.md`](apps/frontend/README.md).
+Open <http://localhost:3000>. If `BACKEND_API_URL` is empty, the frontend uses
+deterministic fixtures for search. Operations that require the backend return a
+clear error instead of writing fake data. Full instructions are in
+[apps/frontend/README.md](apps/frontend/README.md).
 
-### Import feature vào database
+### Import features into the database
 
-Sau khi đã có refined artifacts, chạy dry-run trước rồi mới import:
+After refined artifacts are available, run a dry-run before importing:
 
 ```powershell
 python -m pip install -r pipelines/ingestion/requirements.txt
@@ -111,64 +114,66 @@ python -m pipelines.ingestion.import_refined `
   --dry-run
 ```
 
-Khi validation thành công, bỏ `--dry-run`, truyền database URL và chạy lại
-`npm run db:build-indexes`, `npm run db:verify` trong `apps/backend`. Chi tiết
-layout artifact và các phase import nằm ở
-[`pipelines/ingestion/README.md`](pipelines/ingestion/README.md).
+After validation succeeds, remove `--dry-run`, provide the database URL, and
+run `npm run db:build-indexes` followed by `npm run db:verify` in
+`apps/backend`. The artifact layout and import phases are documented in
+[pipelines/ingestion/README.md](pipelines/ingestion/README.md).
 
-### Chạy toàn bộ stack bằng Docker
+### Run the complete stack with Docker
 
-Sau khi đã chuẩn bị `apps/backend/.env` và migration, có thể chạy:
+After preparing `apps/backend/.env` and applying the migration, you can run:
 
 ```powershell
 docker compose up -d --build
 ```
 
-Các cổng mặc định là frontend `3000`, backend `4000`, embedding `8001` và
-PostgreSQL `5433`. Compose này dành cho local; đổi credentials và giới hạn
-network trước khi dùng ngoài máy phát triển.
+The default ports are frontend `3000`, backend `4000`, embedding `8001`, and
+PostgreSQL `5433`. This Compose setup is intended for local development; change
+credentials and restrict the network before using it outside a development
+machine.
 
-## Các lệnh thường dùng
+## Common commands
 
-| Scope | Lệnh | Mục đích |
+| Scope | Command | Purpose |
 |---|---|---|
-| Backend | `npm run start:dev` | Chạy NestJS với watch mode |
-| Backend | `npm run db:migrate` | Áp dụng migration |
-| Backend | `npm run db:build-indexes` | Tạo FTS/trigram/HNSW sau khi import |
-| Backend | `npm run db:verify` | Kiểm tra schema, index và release |
-| Backend | `npm test` / `npm run test:coverage` | Unit/integration test và coverage |
-| Backend | `npm run typecheck` / `npm run build` | Kiểm tra TypeScript và build |
-| Frontend | `pnpm dev` | Chạy Next.js dev server |
-| Frontend | `pnpm test` / `pnpm test:coverage` | Component, route và utility tests |
-| Frontend | `pnpm test:e2e` | Playwright qualification flow |
-| Frontend | `pnpm typecheck` / `pnpm lint` / `pnpm build` | Kiểm tra frontend |
-| Pipelines | `python -m unittest discover -s tests -q` | Test pipeline và contract |
-| Preprocessing | `python -m pipelines.preprocessing.cli --help` | Xem các stage offline |
-| Greenfield pipeline | `python -m pipelines.main --help` | Xem DAG local/hybrid/Modal |
+| Backend | `npm run start:dev` | Run NestJS in watch mode |
+| Backend | `npm run db:migrate` | Apply migrations |
+| Backend | `npm run db:build-indexes` | Create FTS/trigram/HNSW indexes after import |
+| Backend | `npm run db:verify` | Check schema, indexes, and release state |
+| Backend | `npm test` / `npm run test:coverage` | Run unit/integration tests and coverage |
+| Backend | `npm run typecheck` / `npm run build` | Check TypeScript and build |
+| Frontend | `pnpm dev` | Run the Next.js development server |
+| Frontend | `pnpm test` / `pnpm test:coverage` | Run component, route, and utility tests |
+| Frontend | `pnpm test:e2e` | Run the Playwright qualification flow |
+| Frontend | `pnpm typecheck` / `pnpm lint` / `pnpm build` | Check the frontend |
+| Pipelines | `python -m unittest discover -s tests -q` | Test pipelines and contracts |
+| Preprocessing | `python -m pipelines.preprocessing.cli --help` | List offline stages |
+| Greenfield pipeline | `python -m pipelines.main --help` | List local/hybrid/Modal DAG commands |
 
-Chạy các lệnh Node trong đúng thư mục con tương ứng; repository không có
-root `package.json`.
+Run Node commands from the relevant subdirectory; the repository has no root
+`package.json`.
 
-## Bản đồ repository
+## Repository map
 
-| Thư mục | Vai trò |
+| Directory | Role |
 |---|---|
-| `apps/frontend/` | Next.js Workbench và BFF routes |
-| `apps/backend/` | NestJS retrieval API, database adapter, media và task executor |
-| `contracts/` | JSON Schema và semantic validation dùng chung |
-| `pipelines/preprocessing/` | Frame manifest, sparse sampling, dense decode, indexing |
-| `pipelines/feature_extraction/` | ASR, caption, OCR, object và visual embedding |
-| `pipelines/ingestion/` | Validate/import refined artifacts vào PostgreSQL |
-| `pipelines/main/` | Greenfield DAG orchestration local/hybrid/Modal |
+| `apps/frontend/` | Next.js Workbench and BFF routes |
+| `apps/backend/` | NestJS retrieval API, database adapter, media, and task executor |
+| `contracts/` | Shared JSON Schema and semantic validation |
+| `pipelines/preprocessing/` | Frame manifest, sparse sampling, dense decoding, and indexing |
+| `pipelines/feature_extraction/` | ASR, captioning, OCR, object, and visual embeddings |
+| `pipelines/ingestion/` | Validate/import refined artifacts into PostgreSQL |
+| `pipelines/main/` | Greenfield DAG orchestration for local/hybrid/Modal runs |
 | `embedding_services/` | FastAPI CLIPA text/image embedding service |
-| `docs/` | PRD, design, testing notes và runbook triển khai |
-| `data/`, `artifacts/`, `outputs/` | Khung lưu dữ liệu local; phần lớn output bị gitignore |
-| `eval/`, `experiments/` | Khu vực đánh giá và thử nghiệm |
+| `docs/` | PRD, design, testing notes, and deployment runbooks |
+| `data/`, `artifacts/`, `outputs/` | Local data storage layout; most output is gitignored |
+| `eval/`, `experiments/` | Evaluation and experimentation areas |
 
-Raw video, model weights, `.env`, parquet/numpy output và local cache không
-thuộc source control. Xem `.gitignore` trước khi chia sẻ hoặc staging artifact.
+Raw video, model weights, `.env` files, Parquet/NumPy output, and local caches
+are not tracked in source control. Review `.gitignore` before sharing or
+staging artifacts.
 
-## README theo module
+## Module READMEs
 
 - [Frontend Workbench](apps/frontend/README.md)
 - [Backend retrieval API](apps/backend/README.md)
@@ -184,7 +189,7 @@ thuộc source control. Xem `.gitignore` trước khi chia sẻ hoặc staging a
 - [Visual embedding](pipelines/feature_extraction/visual_embedding/README.md)
 - [Query embedding service](embedding_services/README.md)
 
-## Tài liệu vận hành liên quan
+## Related operational documentation
 
 - [Local Docker runbook](RUNBOOK_LOCAL_DOCKER.md)
 - [GitHub → Kaggle → R2 keyframe runbook](docs/keyframe_kaggle_r2_runbook.md)
@@ -192,6 +197,6 @@ thuộc source control. Xem `.gitignore` trước khi chia sẻ hoặc staging a
 - [Contract compatibility policy](contracts/versioning/compatibility_policy.md)
 - [Testing/design notes](docs/testing/)
 
-Khi thay đổi schema, identity hoặc output artifact, cập nhật contract và README
-module liên quan trong cùng một thay đổi; không dùng README làm source of truth
-cho dữ liệu máy đọc được.
+When changing schema, identity, or artifact output, update the relevant
+contract and module README in the same change. README files explain the
+interfaces; they are not the source of truth for machine-readable data.

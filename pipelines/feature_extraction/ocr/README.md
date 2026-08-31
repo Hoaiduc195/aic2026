@@ -1,25 +1,26 @@
-# Vietnamese OCR trên Modal
+# Vietnamese OCR on Modal
 
-`modal_paddleocr.py` phát hiện và nhận dạng chữ trong frame bằng PaddleOCR trên
-Modal GPU. Máy local chỉ quét file, gửi batch có giới hạn và ghi JSON; detector
-không chạy ở local.
+`modal_paddleocr.py` detects and recognizes text in frames using PaddleOCR on a
+Modal GPU. The local machine only scans files, sends bounded batches, and
+writes JSON; detection does not run locally.
 
-## Mặc định model/runtime
+## Default model/runtime
 
 - PaddleOCR `3.7.0`;
-- detector `PP-OCRv6_small_det` (đổi sang `PP-OCRv6_medium_det` nếu ưu tiên
+- detector `PP-OCRv6_small_det` (switch to `PP-OCRv6_medium_det` for higher
   accuracy);
-- recognizer `latin_PP-OCRv5_mobile_rec` cho Latin/Vietnamese;
-- PaddlePaddle `3.2.1`, CUDA 11.8, inference FP32;
-- detector batch 8 frame, recognition batch tối đa 64 crop trên T4.
+- recognizer `latin_PP-OCRv5_mobile_rec` for Latin/Vietnamese;
+- PaddlePaddle `3.2.1`, CUDA 11.8, FP32 inference;
+- detector batch size 8 frames and recognition batch size up to 64 crops on T4.
 
-Model cache nằm trong Modal Volume `aic-paddleocr-model-cache` để rerun không
-download lại weights.
+The model cache is stored in the Modal Volume
+`aic-paddleocr-model-cache` so reruns do not download the weights again.
 
-## Input và output
+## Input and output
 
-Input nhận `.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp` đệ quy dưới thư mục frame.
-Output giữ relative layout và tạo một JSON cho mỗi frame:
+Input recursively accepts `.jpg`, `.jpeg`, `.png`, `.webp`, and `.bmp` under
+the frame directory. Output keeps the relative layout and creates one JSON per
+frame:
 
 ```text
 frames/L21_V001/001.jpg
@@ -29,23 +30,25 @@ ocr/
 └── errors_batch_0_of_1.jsonl
 ```
 
-Record chứa `relative_path`, text gốc, `normalized_text` NFC, polygon, độ tin
-cậy từng box, aggregate confidence, language, model và pipeline version. Frame
-không có chữ vẫn ghi record thành công với text rỗng/độ tin cậy `0`; file lỗi
-đọc hoặc inference đi vào `errors_batch_*.jsonl`.
+A record contains `relative_path`, raw text, and NFC-normalized
+`normalized_text`, polygons, per-box confidence, aggregate confidence,
+language, model, and pipeline version. A frame with no text still receives a
+successful record with empty text and confidence `0`. File-read or inference
+errors go to `errors_batch_*.jsonl`.
 
-## Cài đặt
+## Installation
 
 ```powershell
 python -m pip install -r pipelines/feature_extraction/ocr/requirements-modal.txt
 modal token new
 ```
 
-PaddlePaddle, PaddleOCR, Pillow và GPU runtime được cài trong Modal image.
+PaddlePaddle, PaddleOCR, Pillow, and the GPU runtime are installed in the Modal
+image.
 
-## Pilot trước khi chạy full dataset
+## Pilot before the full dataset
 
-Dry-run chỉ discover/count, không tạo container hay output:
+A dry-run only discovers/counts inputs; it does not create a container or output:
 
 ```powershell
 modal run pipelines/feature_extraction/ocr/modal_paddleocr.py `
@@ -54,7 +57,7 @@ modal run pipelines/feature_extraction/ocr/modal_paddleocr.py `
   --max-images 500 --dry-run
 ```
 
-Chạy pilot thật, kiểm tra dấu tiếng Việt và JSON:
+Run a real pilot and check Vietnamese diacritics and the JSON:
 
 ```powershell
 modal run pipelines/feature_extraction/ocr/modal_paddleocr.py `
@@ -63,7 +66,7 @@ modal run pipelines/feature_extraction/ocr/modal_paddleocr.py `
   --max-images 500
 ```
 
-Sau đó bỏ `--max-images` để xử lý toàn bộ:
+Then remove `--max-images` to process the entire dataset:
 
 ```powershell
 modal run pipelines/feature_extraction/ocr/modal_paddleocr.py `
@@ -72,13 +75,13 @@ modal run pipelines/feature_extraction/ocr/modal_paddleocr.py `
   --batch-size 64
 ```
 
-`--max-images 0` là unlimited. JSON không rỗng đã có sẽ được skip; dùng
-`--overwrite` để regenerate. `--batch-size` là upload window local, còn batch
-GPU detector/recognizer vẫn được giới hạn riêng.
+`--max-images 0` means unlimited. Existing non-empty JSON files are skipped;
+use `--overwrite` to regenerate them. `--batch-size` is the local upload
+window, while detector and recognizer GPU batch sizes remain separately capped.
 
-## Chia shard và chọn GPU/model
+## Sharding and GPU/model selection
 
-Các run độc lập dùng deterministic partition:
+Independent runs use deterministic partitions:
 
 ```powershell
 modal run pipelines/feature_extraction/ocr/modal_paddleocr.py `
@@ -86,10 +89,10 @@ modal run pipelines/feature_extraction/ocr/modal_paddleocr.py `
   --batch-index 0 --num-batches 3
 ```
 
-Chạy lại với index `1` và `2`. Không cho nhiều worker ghi cùng partition/output
-đồng thời.
+Run again with indexes `1` and `2`. Do not let multiple workers write to the
+same partition/output at the same time.
 
-T4 là mặc định; chọn L4:
+T4 is the default; choose L4 with:
 
 ```powershell
 $env:OCR_MODAL_GPU = "L4"
@@ -97,19 +100,20 @@ modal run pipelines/feature_extraction/ocr/modal_paddleocr.py `
   --input-dir E:\aic2026\frames --output-dir E:\aic2026\ocr
 ```
 
-Đổi recognizer hoặc detector qua environment trước khi gọi Modal:
+Change the recognizer or detector through environment variables before calling
+Modal:
 
 ```powershell
 $env:OCR_RECOGNITION_MODEL = "latin_PP-OCRv5_mobile_rec"
 $env:OCR_DETECTION_MODEL = "PP-OCRv6_medium_det"
 ```
 
-## Kiểm tra
+## Verification
 
 ```powershell
 python -m unittest tests.test_ocr_modal -v
 ```
 
-Test dùng fake Modal response nên không cần credential, PaddleOCR hoặc GPU.
-Subtitle-heavy video có thể giảm chi phí bằng cách loại frame không đổi hoặc
-crop vùng subtitle trước khi upload.
+Tests use a fake Modal response and therefore do not require credentials,
+PaddleOCR, or a GPU. Subtitle-heavy video can reduce cost by removing unchanged
+frames or cropping the subtitle region before upload.

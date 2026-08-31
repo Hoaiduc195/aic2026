@@ -1,67 +1,71 @@
-# Contract boundary
+# Contract Boundary
 
-`contracts/` là ranh giới dữ liệu machine-checkable giữa preprocessing, feature
-extraction, artifact publication, ingestion, retrieval backend và competition
-adapter. Đây không phải nơi chứa raw video, model code hoặc migration database.
+`contracts/` is the machine-checkable data boundary between preprocessing,
+feature extraction, artifact publication, ingestion, the retrieval backend, and
+the competition adapter. It does not contain raw video, model code, or database
+migrations.
 
-## Quy tắc bất biến
+## Invariants
 
-- `video_id` + `original_frame_id` xác định một source frame; `original_frame_id`
-  zero-based là identity authoritative cho kết quả exact frame.
-- Một lần xuất hiện sparse được xác định bởi `(video_id, keyframe_no)` và có
-  thể là `frame_alias` trỏ tới canonical frame. Fusion phải loại duplicate theo
+- `video_id` + `original_frame_id` identifies one source frame;
+  zero-based `original_frame_id` is the authoritative identity for exact-frame
+  results.
+- A sparse occurrence is identified by `(video_id, keyframe_no)` and may be a
+  `frame_alias` pointing to a canonical frame. Fusion must deduplicate by the
   canonical `(video_id, original_frame_id)`.
-- Khoảng thời gian dùng số nguyên milliseconds và nửa mở: `[start_ms, end_ms)`.
-- `frame_id` là identity legacy/adapter tùy chọn, không được thay thế
-  `original_frame_id` bên trong hệ thống.
-- Evidence có `evidence_id`, producer/model provenance và được tham chiếu độc
-  lập bởi kết quả retrieval/task.
-- Caption canonical dùng `language: "en"`; OCR canonical dùng
+- Time intervals use integer milliseconds and are half-open:
+  `[start_ms, end_ms)`.
+- `frame_id` is an optional legacy/adapter identity and must not replace
+  `original_frame_id` inside the system.
+- Evidence has an `evidence_id` and producer/model provenance and is referenced
+  independently by retrieval and task results.
+- Canonical captions use `language: "en"`; canonical OCR uses
   `language: "vi"`.
-- Mỗi kết quả đã publish phải ghi rõ tuple dataset, pipeline, schema, artifact
-  và index version tương ứng.
-- Retrieval branch lỗi phải được biểu diễn bằng `branch_result` chuẩn hóa;
-  không được âm thầm publish candidate một phần như `completed`.
-- TRAKE có một semantic frame cho mỗi event; `event_ordinal` liên tục và
-  `original_frame_id` tăng nghiêm ngặt.
-- VQA có thể là `answered`, `needs_more_evidence` hoặc `abstained`. Không mã
-  hóa việc chưa trả lời thành chuỗi rỗng có vẻ tự tin.
+- Every published result records the corresponding dataset, pipeline, schema,
+  artifact, and index-version tuple.
+- A failed retrieval branch must be represented by a normalized `branch_result`;
+  a partial candidate must not be silently published as `completed`.
+- TRAKE has one semantic frame per event; `event_ordinal` is contiguous and
+  `original_frame_id` increases strictly.
+- VQA may be `answered`, `needs_more_evidence`, or `abstained`. An unanswered
+  result must not be encoded as an empty string that appears confident.
 
-## Bản đồ schema
+## Schema map
 
-| Boundary | Schema |
+| Boundary | Schemas |
 |---|---|
-| Video và timeline | `video_manifest`, `frame`, `frame_alias`, `micro_event`, `context_window`, `event_window` |
-| Retrieval và evidence | `keyframe`, `dense_candidate`, `semantic_keyframe`, `event_score`, `evidence`, `evidence_relation` |
-| Artifact và reproducibility | `processing_run`, `artifact_manifest`, `version_manifest`, `ingestion_record` |
-| Query và execution | `qualification_request`, `query_plan`, `branch_result`, `search_response` |
+| Video and timeline | `video_manifest`, `frame`, `frame_alias`, `micro_event`, `context_window`, `event_window` |
+| Retrieval and evidence | `keyframe`, `dense_candidate`, `semantic_keyframe`, `event_score`, `evidence`, `evidence_relation` |
+| Artifacts and reproducibility | `processing_run`, `artifact_manifest`, `version_manifest`, `ingestion_record` |
+| Query and execution | `qualification_request`, `query_plan`, `branch_result`, `search_response` |
 | Task output | `textual_kis_response`, `vqa_response`, `trake_alignment`, `qualification_response` |
 
-Mỗi schema nằm ở `contracts/schemas/<name>/schema.json`. Ví dụ hợp lệ và không
-hợp lệ nằm ở `contracts/examples/valid_outputs/` và
+Each schema is in `contracts/schemas/<name>/schema.json`. Valid and invalid
+examples are in `contracts/examples/valid_outputs/` and
 `contracts/examples/invalid_outputs/`.
 
-Ba task vòng sơ tuyển nội bộ dùng tên `textual_kis`, `vqa` và `trake`. Tên
-field/ID/timestamp của organizer phải được chuyển đổi ở competition adapter,
-không làm bẩn contract nội bộ.
+The three internal qualification tasks use the names `textual_kis`, `vqa`, and
+`trake`. Organizer field names, IDs, and timestamps must be converted in the
+competition adapter rather than added to the internal contract.
 
 ## Validation
 
-JSON Schema dùng Draft 2020-12 để kiểm tra shape và type. Các invariant cần so
-sánh nhiều field được kiểm tra thêm ở `semantic_validation.py`, ví dụ:
+JSON Schema uses Draft 2020-12 to validate shape and types. Invariants that
+compare multiple fields are additionally checked in `semantic_validation.py`,
+including:
 
-- `end_ms > start_ms` và frame interval không rỗng;
-- TRAKE event ordinal liên tục, frame ID tăng nghiêm ngặt;
-- VQA `answered` phải có answer không rỗng và evidence;
-- `qualification_response` phải khớp result type với task.
+- `end_ms > start_ms` and non-empty frame intervals;
+- contiguous TRAKE event ordinals and strictly increasing frame IDs;
+- an `answered` VQA result must contain a non-empty answer and evidence;
+- `qualification_response` must have a result type matching the task.
 
-Chạy toàn bộ contract/pipeline test từ repository root:
+Run all contract and pipeline tests from the repository root:
 
 ```powershell
 python -m unittest discover -s tests -q
 ```
 
-Hoặc chạy nhóm contract nhanh:
+Or run the fast contract suite:
 
 ```powershell
 python -m unittest `
@@ -69,7 +73,7 @@ python -m unittest `
   tests.test_qualification_contracts -v
 ```
 
-Khi thay đổi required field, identifier, timestamp unit hoặc meaning của một
-record, đọc [compatibility policy](versioning/compatibility_policy.md), cập
-nhật fixture và thêm regression test. README chỉ giải thích contract; schema
-JSON và semantic validator mới là nguồn sự thật.
+When changing a required field, identifier, timestamp unit, or record meaning,
+read the [compatibility policy](versioning/compatibility_policy.md), update the
+fixtures, and add a regression test. This README explains the contract; the JSON
+Schemas and semantic validator are the source of truth.
